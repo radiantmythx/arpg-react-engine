@@ -10,7 +10,7 @@ import { WEAPONS } from '../config.js';
 export class MagicBolt extends Weapon {
   constructor() {
     super(WEAPONS.MAGIC_BOLT);
-    this.tags = ['Spell', 'Projectile'];
+    this.tags = ['Spell', 'Projectile', 'Thunder'];
     // isActive = false (default) — fires automatically on cooldown.
     this._timer = this.cooldown; // start ready
   }
@@ -27,6 +27,7 @@ export class MagicBolt extends Weapon {
       dy /= dist;
     }
 
+    const stats = this.computedStats(player);
     const speed = this.config.projectileSpeed;
     const count = 1 + (player.projectileCountBonus ?? 0);
     const spread = 0.14;
@@ -38,11 +39,13 @@ export class MagicBolt extends Weapon {
         player.x, player.y,
         Math.cos(a) * speed, Math.sin(a) * speed,
         {
-          damage: this.damage,
+          damage: stats.damage,
+          damageBreakdown: stats.damageBreakdown,
           radius: this.config.projectileRadius,
           color: this.config.color,
           lifetime: this.config.projectileLifetime,
           piercing: false,
+          sourceTags: this.tags,
         },
       );
     }

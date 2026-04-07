@@ -1051,6 +1051,52 @@ body {
   line-height: 1.45;
 }
 
+/* Elemental word highlighting used across tooltips and descriptions. */
+.elem-word {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.elem-word--physical {
+  color: #d9dde3;
+  text-shadow: 0 0 8px rgba(217, 221, 227, 0.3);
+}
+
+.elem-word--blaze,
+.elem-word--fire,
+.elem-word--ignite {
+  color: #ff8b5c;
+  text-shadow: 0 0 10px rgba(255, 139, 92, 0.5);
+}
+
+.elem-word--thunder,
+.elem-word--lightning,
+.elem-word--shock {
+  color: #ffd36f;
+  text-shadow: 0 0 10px rgba(255, 211, 111, 0.55);
+}
+
+.elem-word--frost,
+.elem-word--cold,
+.elem-word--chill,
+.elem-word--freeze {
+  color: #79ccff;
+  text-shadow: 0 0 10px rgba(121, 204, 255, 0.52);
+}
+
+.elem-word--holy {
+  color: #fff5ad;
+  text-shadow: 0 0 11px rgba(255, 245, 173, 0.6);
+}
+
+.elem-word--unholy,
+.elem-word--chaos,
+.elem-word--poison,
+.elem-word--bleed {
+  color: #b889ff;
+  text-shadow: 0 0 10px rgba(184, 137, 255, 0.5);
+}
+
 /* ============================================================
    Item Pickup Popup
    ============================================================ */
@@ -2529,8 +2575,64 @@ body {
   transform: translateX(-50%);
   display: flex;
   gap: 0.55rem;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 300;
+}
+
+.hud-skill-tooltip {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  width: min(320px, 42vw);
+  min-width: 220px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(164, 187, 238, 0.35);
+  border-radius: 8px;
+  background: rgba(6, 10, 18, 0.96);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+  z-index: 420;
+  pointer-events: none;
+}
+
+.hud-skill-tooltip__name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #eaf2ff;
+}
+
+.hud-skill-tooltip__desc {
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  color: #b6c4de;
+  line-height: 1.35;
+}
+
+.hud-skill-tooltip__line {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: #d4e1f6;
+}
+
+.hud-skill-tooltip__breakdown {
+  margin-top: 0.3rem;
+  padding-top: 0.26rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.11);
+}
+
+.hud-skill-tooltip__tags {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.24rem;
+}
+
+.hud-skill-tag {
+  font-size: 0.62rem;
+  border: 1px solid rgba(180, 205, 255, 0.28);
+  border-radius: 999px;
+  padding: 0.06rem 0.36rem;
+  background: rgba(104, 129, 189, 0.14);
 }
 
 .target-lock-hud {

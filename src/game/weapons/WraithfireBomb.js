@@ -11,11 +11,12 @@
 
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import { resolvePenetrationMap } from '../data/skillTags.js';
 
 export class WraithfireBomb extends Weapon {
   constructor() {
     super(WEAPONS.WRAITHFIRE_BOMB);
-    this.tags = ['Spell', 'AoE', 'Fire', 'Duration'];
+    this.tags = ['Spell', 'AoE', 'Blaze', 'Duration'];
     /** @type {{ x, y, vx, vy, age } | null} */
     this._bomb = null;
     /** @type {Array<{ x, y, age, damageTimer }>} active fire zones */
@@ -51,6 +52,11 @@ export class WraithfireBomb extends Weapon {
   }
 
   update(dt, player, entities, engine) {
+    const stats = this.computedStats(player);
+    const hitDamage = stats.damage;
+    const hitBreakdown = stats.damageBreakdown;
+    const penMap = resolvePenetrationMap(this.tags, player);
+
     // -- Advance bomb --
     if (this._bomb) {
       const b = this._bomb;
@@ -76,8 +82,8 @@ export class WraithfireBomb extends Weapon {
           const ex = e.x - zone.x;
           const ey = e.y - zone.y;
           if (ex * ex + ey * ey <= rSq) {
-            if (engine) engine.onEnemyHit(e, this.damage);
-            e.takeDamage(this.damage);
+            if (engine) engine.onEnemyHit(e, hitDamage);
+            e.takeDamage(hitBreakdown ?? hitDamage, this.tags, penMap);
             if (!e.active && engine) engine.onEnemyKilled(e);
           }
         }

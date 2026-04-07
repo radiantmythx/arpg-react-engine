@@ -7,7 +7,7 @@
  */
 export class MapInstance {
   /**
-   * @param {object} [mapDef]  — from mapDefs.js; placeholder until C4
+  * @param {object} [mapDef]  — registry-resolved runtime map definition
    * @param {number} [seed]    — RNG seed for procedural generation
    */
   constructor(mapDef, seed) {

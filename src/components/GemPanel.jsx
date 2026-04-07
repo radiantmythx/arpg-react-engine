@@ -13,6 +13,7 @@
  */
 import { useState } from 'react';
 import { SUPPORT_POOL, isSupportCompatible } from '../game/data/supports.js';
+import { highlightElementalText } from './ElementalText.jsx';
 import '../styles/GemPanel.css';
 
 const GEM_RARITY_COLOR = '#4ecdc4'; // teal for support gems
@@ -206,7 +207,7 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
                   <span className="gem-active-icon">{activeSkill.icon ?? '⚡'}</span>
                   <div>
                     <p className="gem-active-name">{activeSkill.name}</p>
-                    <p className="gem-active-desc">{activeSkill.description}</p>
+                    <p className="gem-active-desc">{highlightElementalText(activeSkill.description)}</p>
                     <div className="gem-tags">
                       {skillTags.map((t) => <TagBadge key={t} tag={t} />)}
                     </div>
@@ -286,7 +287,7 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
                       {gem.name}
                     </span>
                     {def && (
-                      <span className="gem-stash-desc">{def.description}</span>
+                      <span className="gem-stash-desc">{highlightElementalText(def.description)}</span>
                     )}
                   </div>
                 </div>

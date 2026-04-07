@@ -16,83 +16,6 @@ export const PLAYER = {
   PICKUP_RADIUS: 50, // distance at which XP gems begin magnetizing
 };
 
-export const ENEMY_TYPES = {
-  RHOA: {
-    id: 'RHOA',
-    radius: 10,
-    speed: 90,
-    health: 15,
-    damage: 8,
-    xpValue: 2,
-    color: '#9b59b6',
-  },
-  UNDYING_THRALL: {
-    id: 'UNDYING_THRALL',
-    radius: 14,
-    speed: 60,
-    health: 40,
-    damage: 15,
-    xpValue: 5,
-    color: '#27ae60',
-  },
-  RATTLING_REMNANT: {
-    id: 'RATTLING_REMNANT',
-    radius: 12,
-    speed: 110,
-    health: 20,
-    damage: 12,
-    xpValue: 3,
-    color: '#ecf0f1',
-  },
-
-  // ── Phase 10 enemies ──────────────────────────────────────────────────────
-  SHRIEKING_BANSHEE: {
-    id: 'SHRIEKING_BANSHEE',
-    radius: 11,
-    speed: 140,        // very fast
-    health: 25,
-    damage: 14,
-    xpValue: 4,
-    color: '#74b9ff',  // pale blue
-  },
-  PLAGUE_CRAWLER: {
-    id: 'PLAGUE_CRAWLER',
-    radius: 13,
-    speed: 55,         // slow but tanky
-    health: 70,
-    damage: 18,
-    xpValue: 7,
-    color: '#55efc4',  // sickly green
-  },
-  VOID_STALKER: {
-    id: 'VOID_STALKER',
-    radius: 10,
-    speed: 150,        // fastest normal enemy
-    health: 18,
-    damage: 10,
-    xpValue: 3,
-    color: '#6c5ce7',  // dark violet
-  },
-  IRON_COLOSSUS: {
-    id: 'IRON_COLOSSUS',
-    radius: 22,        // large
-    speed: 40,
-    health: 200,
-    damage: 35,
-    xpValue: 18,
-    color: '#b2bec3',  // iron grey
-  },
-  SHADE: {
-    id: 'SHADE',
-    radius: 9,
-    speed: 125,
-    health: 22,
-    damage: 12,
-    xpValue: 3,
-    color: '#2d3436',  // near-black
-  },
-};
-
 export const ENEMY_AI = {
   baseAggroRadius: 420,
   championAggroBonus: 120,
@@ -365,6 +288,7 @@ export const BOSS_DEFS = {
     attackType: 'ring',
     attackCooldown: 3.2,
     attackDamage: 18,
+    resistances: { unholy: 0.20, frost: 0.15 },           // hollow undead — void/cold-touched
   },
   UNDYING_TIDE: {
     id: 'UNDYING_TIDE',
@@ -378,6 +302,7 @@ export const BOSS_DEFS = {
     attackType: 'scatter',
     attackCooldown: 3.8,
     attackDamage: 22,
+    resistances: { frost: 0.25, unholy: 0.20, physical: 0.15 }, // mass of undead — cold/necrotic fortified
   },
   WRAECLASTS_CHOSEN: {
     id: 'WRAECLASTS_CHOSEN',
@@ -391,6 +316,7 @@ export const BOSS_DEFS = {
     attackType: 'combo',
     attackCooldown: 2.8,
     attackDamage: 28,
+    resistances: { physical: 0.20, blaze: 0.15, holy: -0.15 }, // warrior champion; weak to holy
   },
 
   // ── Phase 10 bosses ──────────────────────────────────────────────────────
@@ -406,6 +332,7 @@ export const BOSS_DEFS = {
     attackType: 'scatter',
     attackCooldown: 2.4,
     attackDamage: 30,
+    resistances: { blaze: 0.20, unholy: 0.15, frost: -0.20 }, // feverish ravenous beast; weak to frost
   },
   ABYSSAL_ENGINE: {
     id: 'ABYSSAL_ENGINE',
@@ -419,6 +346,7 @@ export const BOSS_DEFS = {
     attackType: 'combo',
     attackCooldown: 2.0,
     attackDamage: 38,
+    resistances: { physical: 0.35, thunder: 0.25, blaze: -0.20 }, // armored machine; weak to fire
   },
 };
 

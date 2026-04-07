@@ -1,5 +1,6 @@
 import { Enemy } from '../entities/Enemy.js';
-import { WAVE_SCHEDULE, ENEMY_TYPES, SPAWN_RADIUS, DESPAWN_RADIUS } from '../config.js';
+import { WAVE_SCHEDULE, SPAWN_RADIUS, DESPAWN_RADIUS } from '../config.js';
+import { getEnemyById, listEnemyIds } from '../content/registries/enemyRegistry.js';
 
 /**
  * WaveSpawner
@@ -31,7 +32,7 @@ export class WaveSpawner {
     if (this._continuousTimer >= this._continuousInterval) {
       this._continuousTimer -= this._continuousInterval;
 
-      const typeKeys = Object.keys(ENEMY_TYPES);
+      const typeKeys = listEnemyIds();
       const typeKey = typeKeys[Math.floor(Math.random() * typeKeys.length)];
       // Difficulty scales from 1x at t=0 to 5x at t=8min
       const difficulty = Math.min(1 + elapsed / 120, 5);
@@ -44,7 +45,7 @@ export class WaveSpawner {
   }
 
   _spawnGroup(typeId, count, player, mapLayout = null) {
-    const baseConfig = ENEMY_TYPES[typeId];
+    const baseConfig = getEnemyById(typeId);
     if (!baseConfig) return;
     for (let i = 0; i < count; i++) {
       let x;

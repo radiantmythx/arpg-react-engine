@@ -27,6 +27,7 @@ export class SwiftArrow extends Weapon {
       dy /= dist;
     }
 
+    const stats = this.computedStats(player);
     const speed = this.config.projectileSpeed;
     const count = 1 + (player.projectileCountBonus ?? 0);
     const spread = 0.10;  // tighter spread than magic bolt — more accurate
@@ -38,13 +39,13 @@ export class SwiftArrow extends Weapon {
         player.x, player.y,
         Math.cos(a) * speed, Math.sin(a) * speed,
         {
-          damage: this.damage,
-          radius: this.config.projectileRadius,
-          color: this.config.color,
-          lifetime: this.config.projectileLifetime,
-          piercing: false,
-          sourceTags: this.tags,
-          sourceTags: this.tags,
+          damage:          stats.damage,
+          damageBreakdown: stats.damageBreakdown,
+          radius:          this.config.projectileRadius,
+          color:           this.config.color,
+          lifetime:        this.config.projectileLifetime,
+          piercing:        false,
+          sourceTags:      this.tags,
         },
       );
     }

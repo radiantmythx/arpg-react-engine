@@ -1,3 +1,5 @@
+import { ELEMENT_TYPES, makeDamageRange, sumAverageDamageMap } from '../damageUtils.js';
+
 /**
  * Weapon — base class for all auto-fire and active skills implemented as
  * weapons (Attack-tagged skills).  Pure SkillDefs live in skills.js.
@@ -70,13 +72,35 @@ export class Weapon {
       if (support?.modify) support.modify(stats, this);
     }
 
-    // Player tag-based "increased" multipliers (additive pool, applied once)
+    // Player tag-based bonuses — domain (Spell/Attack/AoE) + per-element flat/increased/more
     if (player) {
-      let inc = 0;
-      if (this.tags.includes('Spell')   && (player.spellDamage  ?? 0) > 0) inc += player.spellDamage;
-      if (this.tags.includes('Attack')  && (player.attackDamage ?? 0) > 0) inc += player.attackDamage;
-      if (this.tags.includes('AoE')     && (player.aoeDamage    ?? 0) > 0) inc += player.aoeDamage;
-      if (inc > 0) stats.damage = Math.round(stats.damage * (1 + inc));
+      let domainInc = 0;
+      if (this.tags.includes('Spell')  && (player.spellDamage  ?? 0) > 0) domainInc += player.spellDamage;
+      if (this.tags.includes('Attack') && (player.attackDamage ?? 0) > 0) domainInc += player.attackDamage;
+      if (this.tags.includes('AoE')    && (player.aoeDamage    ?? 0) > 0) domainInc += player.aoeDamage;
+
+      const activeElems = ELEMENT_TYPES.filter((e) => this.tags.includes(e));
+      const typedElems = activeElems.length > 0 ? activeElems : ['Physical'];
+      if (stats.damage != null) {
+        // Always produce typed damage maps so resistance/ailment pipelines can reason by type.
+        const basePer = stats.damage / typedElems.length;
+        const breakdown = {};
+        for (const elem of typedElems) {
+          const flat = player[`flat${elem}Damage`] ?? 0;
+          const elemInc = player[`increased${elem}Damage`] ?? 0;
+          const more = player[`more${elem}Damage`] ?? 0;
+          const baseTyped = (basePer + flat) * (1 + domainInc + elemInc) * (1 + more);
+          breakdown[elem] = makeDamageRange(baseTyped, elem);
+        }
+        stats.damageBreakdown = breakdown;
+        stats.damage = Math.round(sumAverageDamageMap(breakdown));
+        const mins = Object.values(breakdown).map((r) => r.min ?? 0);
+        const maxs = Object.values(breakdown).map((r) => r.max ?? 0);
+        stats.damageRange = { min: mins.reduce((a, b) => a + b, 0), max: maxs.reduce((a, b) => a + b, 0) };
+      }
+    } else {
+      stats.damageBreakdown = null;
+      if (stats.damage != null) stats.damageRange = { min: Math.round(stats.damage), max: Math.round(stats.damage) };
     }
 
     return stats;

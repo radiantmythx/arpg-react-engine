@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { highlightElementalText } from './ElementalText.jsx';
 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -52,16 +53,76 @@ function DollTooltip({ slotKey, entry }) {
     <div className="doll-mini-tooltip">
       <div className="doll-tip-name" style={{ color }}>{entry.name}</div>
       <div className="doll-tip-slot">{cfg.label} · {entry.rarity ?? 'normal'}</div>
-      {entry.description && <div className="doll-tip-desc">{entry.description}</div>}
+      {entry.description && <div className="doll-tip-desc">{highlightElementalText(entry.description)}</div>}
       {stats.length > 0 && (
         <div className="doll-tip-stats">
-          {stats.map(([k, v]) => <div key={k} className="doll-tip-stat">{fmtStat(k, v)}</div>)}
+          {stats.map(([k, v]) => <div key={k} className="doll-tip-stat">{highlightElementalText(fmtStat(k, v))}</div>)}
         </div>
       )}
       {affixes.length > 0 && (
         <div className="doll-tip-affixes">
           {affixes.map((a, i) => (
-            <div key={i} className="doll-tip-affix">{a.label ?? a.id}</div>
+            <div key={i} className="doll-tip-affix">{highlightElementalText(a.label ?? a.id)}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function fmtBreakdownLabel(key) {
+  const labels = {
+    Physical: 'Physical',
+    Blaze: 'Blaze',
+    Thunder: 'Thunder',
+    Frost: 'Frost',
+    Holy: 'Holy',
+    Unholy: 'Unholy',
+  };
+  return labels[key] ?? key;
+}
+
+function fmtDamageEntry(entry) {
+  if (entry == null) return null;
+  if (typeof entry === 'object') {
+    const min = Number(entry.min);
+    const max = Number(entry.max);
+    if (Number.isFinite(min) && Number.isFinite(max)) return `${Math.round(min)}-${Math.round(max)}`;
+  }
+  return `${Math.round(Number(entry) || 0)}`;
+}
+
+function SkillTooltip({ skill, pos }) {
+  if (!skill || !pos) return null;
+  const breakdown = skill.damageBreakdown ?? null;
+  const breakdownEntries = breakdown ? Object.entries(breakdown) : [];
+  const hasDamage = Number.isFinite(skill.computedDamage);
+  const hasRange = skill.damageRange && Number.isFinite(skill.damageRange.min) && Number.isFinite(skill.damageRange.max);
+  return (
+    <div className="hud-skill-tooltip" style={{ left: pos.x, top: pos.y }}>
+      <div className="hud-skill-tooltip__name">{skill.name}</div>
+      {skill.description && <div className="hud-skill-tooltip__desc">{highlightElementalText(skill.description)}</div>}
+      {hasDamage && (
+        <div className="hud-skill-tooltip__line">
+          Damage: <strong>{hasRange ? `${Math.round(skill.damageRange.min)}-${Math.round(skill.damageRange.max)}` : Math.round(skill.computedDamage)}</strong>
+        </div>
+      )}
+      {breakdownEntries.length > 0 && (
+        <div className="hud-skill-tooltip__breakdown">
+          {breakdownEntries.map(([k, v]) => (
+            <div key={k} className="hud-skill-tooltip__line">
+              <span className={`elem-word elem-word--${String(k).toLowerCase()}`}>{fmtBreakdownLabel(k)}</span>: {fmtDamageEntry(v)}
+            </div>
+          ))}
+        </div>
+      )}
+      {skill.castTime > 0 && (
+        <div className="hud-skill-tooltip__line">Cast: {skill.castTime.toFixed(2)}s</div>
+      )}
+      {skill.tags?.length > 0 && (
+        <div className="hud-skill-tooltip__tags">
+          {skill.tags.map((t) => (
+            <span key={t} className={`hud-skill-tag elem-word elem-word--${String(t).toLowerCase()}`}>{t}</span>
           ))}
         </div>
       )}
@@ -89,6 +150,7 @@ function MiniSlot({ slotKey, entry, onHover }) {
 
 export function HUD({ hud, hideTimer = false, mobileMode = false }) {
   const [hoveredEquip, setHoveredEquip] = useState(null);
+  const [hoveredSkill, setHoveredSkill] = useState(null);
 
   const { health, maxHealth, xp, xpToNext, level, elapsed, kills, equipment, skillPoints, shardsThisRun,
           energyShield, maxEnergyShield, primarySkill, activeSkills, portalsRemaining = 0,
@@ -251,6 +313,15 @@ export function HUD({ hud, hideTimer = false, mobileMode = false }) {
               <div
                 key={i}
                 className={`skill-slot${s?.ready ? ' skill-slot--ready' : ''}${!s ? ' skill-slot--empty' : ''}`}
+                onMouseEnter={(e) => {
+                  if (!s) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setHoveredSkill({
+                    skill: s,
+                    pos: { x: rect.left + rect.width / 2, y: rect.top - 10 },
+                  });
+                }}
+                onMouseLeave={() => setHoveredSkill(null)}
               >
                 <span className="skill-key">{key}</span>
                 {s ? (
@@ -270,6 +341,10 @@ export function HUD({ hud, hideTimer = false, mobileMode = false }) {
             );
           })}
         </div>
+      )}
+
+      {hoveredSkill && (
+        <SkillTooltip skill={hoveredSkill.skill} pos={hoveredSkill.pos} />
       )}
     </div>
   );

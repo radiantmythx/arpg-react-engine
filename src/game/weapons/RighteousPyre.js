@@ -7,13 +7,14 @@
 
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import { resolvePenetrationMap } from '../data/skillTags.js';
 
 const PULSE_DURATION = 0.45; // seconds for the ring to fully expand and fade
 
 export class RighteousPyre extends Weapon {
   constructor() {
     super(WEAPONS.RIGHTEOUS_PYRE);
-    this.tags = ['Spell', 'AoE', 'Fire', 'Duration'];
+    this.tags = ['Spell', 'AoE', 'Blaze', 'Duration'];
     /** null when no pulse is showing; seconds elapsed since last fire otherwise. */
     this._pulseAge = null;
     this._pulseX = 0;
@@ -30,14 +31,18 @@ export class RighteousPyre extends Weapon {
   }
 
   fire(player, entities, engine) {
+    const stats = this.computedStats(player);
+    const hitDamage = stats.damage;
+    const hitBreakdown = stats.damageBreakdown;
+    const penMap = resolvePenetrationMap(this.tags, player);
     const radiusSq = this.config.auraRadius * this.config.auraRadius;
     for (const enemy of entities.getHostiles()) {
       if (!enemy.active) continue;
       const dx = enemy.x - player.x;
       const dy = enemy.y - player.y;
       if (dx * dx + dy * dy <= radiusSq) {
-        engine.onEnemyHit(enemy, this.damage);
-        enemy.takeDamage(this.damage);
+        engine.onEnemyHit(enemy, hitDamage);
+        enemy.takeDamage(hitBreakdown ?? hitDamage, this.tags, penMap);
         if (!enemy.active) engine.onEnemyKilled(enemy);
       }
     }

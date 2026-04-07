@@ -7,7 +7,7 @@
  */
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
-import { applyAilmentsOnHit } from '../data/skillTags.js';
+import { applyAilmentsOnHit, resolvePenetrationMap } from '../data/skillTags.js';
 
 const SLASH_DURATION = 0.25; // seconds for the visual ring to fade out
 const ARC_HALF_ANGLE = Math.PI / 5; // ~36 degrees (72-degree arc)
@@ -34,6 +34,11 @@ export class MeleeStrike extends Weapon {
   }
 
   fire(player, entities, engine) {
+    const stats = this.computedStats(player);
+    const hitDamage = stats.damage;
+    const hitBreakdown = stats.damageBreakdown;
+    const penMap = resolvePenetrationMap(this.tags, player);
+
     let dirX = player.facingX ?? 1;
     let dirY = player.facingY ?? 0;
     const dirLen = Math.hypot(dirX, dirY);
@@ -62,9 +67,9 @@ export class MeleeStrike extends Weapon {
       const dist = Math.sqrt(distSq);
       const dot = dist > 0.001 ? (dx * dirX + dy * dirY) / dist : 1;
       if (dot >= minDot) {
-        if (engine) engine.onEnemyHit(enemy, this.damage);
-        enemy.takeDamage(this.damage);
-        applyAilmentsOnHit(this.tags, this.damage, enemy, player);
+        if (engine) engine.onEnemyHit(enemy, hitDamage);
+        enemy.takeDamage(hitBreakdown ?? hitDamage, this.tags, penMap);
+        applyAilmentsOnHit(this.tags, hitBreakdown ?? hitDamage, enemy, player);
         hit = true;
         if (!enemy.active) engine.onEnemyKilled(enemy);
       }

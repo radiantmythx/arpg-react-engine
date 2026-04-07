@@ -542,6 +542,19 @@ export default function App() {
     setVendorFeedback(`Shop rerolled for ${result.price}g.`);
   }, [screen]);
 
+  const handleVendorSell = useCallback((itemUid) => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'VENDOR') return;
+    const result = engine.sellItem?.(itemUid);
+    if (!result?.ok) {
+      setVendorFeedback(`Could not sell item: ${result?.reason ?? 'unknown error'}.`);
+      return;
+    }
+    setVendorFeedback(`Sold ${result.itemName} for ${result.goldReceived}g.`);
+    // Refresh HUD to reflect new gold and inventory state
+    engine._flushHudUpdate();
+  }, [screen]);
+
   const handleSwitchCharacterFromHub = useCallback(() => {
     const engine = engineRef.current;
     if (engine) engine.destroy();
@@ -1107,9 +1120,11 @@ export default function App() {
       {screen === 'VENDOR' && (
         <VendorScreen
           stock={vendorStock}
+          inventory={hud.inventory}
           gold={hud.gold ?? 0}
           feedback={vendorFeedback}
           onBuy={handleVendorBuy}
+          onSell={handleVendorSell}
           onClose={closeVendor}
           onReroll={handleVendorReroll}
           rerollCost={5}

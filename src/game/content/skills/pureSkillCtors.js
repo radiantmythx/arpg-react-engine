@@ -1,0 +1,33 @@
+import {
+  ChaosBlink,
+  FrostNova,
+  GravityWell,
+  BloodPact,
+  WraithSummon,
+  TimeWarp,
+  IronBulwark,
+  ArcaneSurge,
+  Fireball,
+  GlacialCascade,
+  LightningStrike,
+  BladeFlurry,
+  Earthquake,
+  Vortex,
+} from './skillClasses.js';
+
+export const PURE_SKILL_CTORS = {
+  blink: ChaosBlink,
+  frost_nova: FrostNova,
+  gravity_well: GravityWell,
+  blood_pact: BloodPact,
+  wraith_summon: WraithSummon,
+  time_warp: TimeWarp,
+  bulwark: IronBulwark,
+  arcane_surge: ArcaneSurge,
+  fireball: Fireball,
+  glacial_cascade: GlacialCascade,
+  lightning_strike: LightningStrike,
+  blade_flurry: BladeFlurry,
+  earthquake: Earthquake,
+  vortex: Vortex,
+};

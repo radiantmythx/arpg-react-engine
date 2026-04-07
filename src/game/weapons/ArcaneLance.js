@@ -4,7 +4,7 @@ import { WEAPONS } from '../config.js';
 export class ArcaneLance extends Weapon {
   constructor() {
     super(WEAPONS.ARCANE_LANCE);
-    this.tags = ['Attack', 'Spell', 'Projectile'];
+    this.tags = ['Spell', 'Projectile', 'Thunder'];
     this.isActive = true;  // hotbar skill — fires only on key press
     this._timer = this.cooldown; // start ready
   }
@@ -18,6 +18,7 @@ export class ArcaneLance extends Weapon {
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist === 0) return;
 
+    const stats = this.computedStats(player);
     const speed = this.config.projectileSpeed;
     const total = 1 + (player.projectileCountBonus ?? 0);
     const spread = 0.14; // radians between projectiles
@@ -29,11 +30,13 @@ export class ArcaneLance extends Weapon {
       entities.acquireProjectile(
         player.x, player.y, Math.cos(a) * speed, Math.sin(a) * speed,
         {
-          damage: this.damage,
+          damage: stats.damage,
+          damageBreakdown: stats.damageBreakdown,
           radius: this.config.projectileRadius,
           color: this.config.color,
           lifetime: this.config.projectileLifetime,
           piercing: this.config.piercing ?? false,
+          sourceTags: this.tags,
         },
       );
     }

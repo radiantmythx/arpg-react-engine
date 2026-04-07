@@ -1,3 +1,5 @@
+import { averageDamageEntry } from '../damageUtils.js';
+
 /**
  * skillTags.js — Phase 12.1
  *
@@ -32,11 +34,12 @@ export const TAGS = Object.freeze({
   TRIGGER:     'Trigger',     // activates automatically on a condition
 
   // Damage type (elemental identity)
-  FIRE:        'Fire',        // can apply Ignite
-  COLD:        'Cold',        // can apply Chill / Freeze
-  LIGHTNING:   'Lightning',   // can apply Shock
   PHYSICAL:    'Physical',    // can apply Bleed
-  CHAOS:       'Chaos',       // can apply Poison
+  BLAZE:       'Blaze',       // can apply Ignite       (renamed from Fire)
+  THUNDER:     'Thunder',     // can apply Shock        (renamed from Lightning)
+  FROST:       'Frost',       // can apply Chill/Freeze (renamed from Cold)
+  HOLY:        'Holy',        // future ailment TBD
+  UNHOLY:      'Unholy',      // can apply Poison       (renamed from Chaos)
 });
 
 // ─── Ailment Definitions ─────────────────────────────────────────────────────
@@ -54,18 +57,18 @@ export const TAGS = Object.freeze({
 
 export const AILMENT_DEFS = Object.freeze({
 
-  // ─── Fire → Ignite ───────────────────────────────────────────────────────
+  // ─── Blaze → Ignite ──────────────────────────────────────────────────────
   Ignite: {
-    tag:            TAGS.FIRE,
+    tag:            TAGS.BLAZE,
     baseChance:     0.20,           // 20% chance per hit
     duration:       4,              // 4 s burn
     stackable:      false,          // only one ignite instance active at a time; re-applying refreshes
     damageFormula:  (hit) => hit * 0.40,  // 40% of hit damage / second
   },
 
-  // ─── Cold → Chill ────────────────────────────────────────────────────────
+  // ─── Frost → Chill ───────────────────────────────────────────────────────
   Chill: {
-    tag:            TAGS.COLD,
+    tag:            TAGS.FROST,
     baseChance:     0.25,           // 25% chance per hit
     duration:       3,              // 3 s slow
     stackable:      false,
@@ -73,11 +76,11 @@ export const AILMENT_DEFS = Object.freeze({
     speedPenalty:   0.30,           // −30% move speed while chilled
   },
 
-  // ─── Cold → Freeze ───────────────────────────────────────────────────────
+  // ─── Frost → Freeze ──────────────────────────────────────────────────────
   // Freeze supersedes Chill.  Applied by a separate chance roll that only
   // succeeds when the hit is large enough relative to the enemy's max HP.
   Freeze: {
-    tag:            TAGS.COLD,
+    tag:            TAGS.FROST,
     baseChance:     0.08,           // 8% per hit (additionally gated by threshold)
     duration:       1.5,            // 1.5 s full stun
     stackable:      false,
@@ -85,9 +88,9 @@ export const AILMENT_DEFS = Object.freeze({
     freezeThreshold: 0.15,          // hit must deal ≥ 15% of enemy maxHP in one instance
   },
 
-  // ─── Lightning → Shock ───────────────────────────────────────────────────
+  // ─── Thunder → Shock ──────────────────────────────────────────────────────
   Shock: {
-    tag:            TAGS.LIGHTNING,
+    tag:            TAGS.THUNDER,
     baseChance:     0.20,
     duration:       3,
     stackable:      false,
@@ -107,9 +110,9 @@ export const AILMENT_DEFS = Object.freeze({
     requiresMovement: true,
   },
 
-  // ─── Chaos → Poison ──────────────────────────────────────────────────────
+  // ─── Unholy → Poison ─────────────────────────────────────────────────────
   Poison: {
-    tag:            TAGS.CHAOS,
+    tag:            TAGS.UNHOLY,
     baseChance:     0.10,
     duration:       6,
     stackable:      true,           // unlimited stacks; each is tracked independently
@@ -139,22 +142,58 @@ export function resolveAilmentChances(skillTags, player) {
 }
 
 /**
+ * Build a lowercase penetration map from source tags and player stats.
+ * Example output: { blaze: 0.15, frost: 0.10 }
+ *
+ * @param {string[]} sourceTags
+ * @param {object} player
+ * @returns {Record<string, number>|null}
+ */
+export function resolvePenetrationMap(sourceTags, player) {
+  if (!sourceTags || sourceTags.length === 0 || !player) return null;
+  const result = {};
+  for (const tag of sourceTags) {
+    const lower = String(tag).toLowerCase();
+    const key = `${lower}Penetration`;
+    const value = player[key] ?? 0;
+    if (value !== 0) result[lower] = value;
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+/**
+ * Resolve the ailment-relevant hit magnitude from either scalar or typed map payload.
+ * @param {number|Record<string, number>} hitPayload
+ * @param {string} ailmentTag
+ * @returns {number}
+ */
+function resolveAilmentHitMagnitude(hitPayload, ailmentTag) {
+  if (hitPayload && typeof hitPayload === 'object') {
+    const v = hitPayload[ailmentTag];
+    return averageDamageEntry(v);
+  }
+  return Number.isFinite(hitPayload) ? hitPayload : 0;
+}
+
+/**
  * Roll ailment chances and apply qualifying ailments to the enemy.
  *
  * @param {string[]} sourceTags  — tags of the skill/weapon that dealt the hit
- * @param {number}   hitDamage   — damage of the triggering hit
+ * @param {number|Record<string, number>} hitPayload — damage of the triggering hit
  * @param {import('../entities/Enemy.js').Enemy} enemy
  * @param {object}   player      — must have ailmentChanceBonus? field
  */
-export function applyAilmentsOnHit(sourceTags, hitDamage, enemy, player) {
+export function applyAilmentsOnHit(sourceTags, hitPayload, enemy, player) {
   if (!sourceTags || sourceTags.length === 0 || !enemy.active) return;
   const chances = resolveAilmentChances(sourceTags, player ?? {});
   for (const [name, chance] of Object.entries(chances)) {
     if (Math.random() > chance) continue;
     const def = AILMENT_DEFS[name];
     if (!def) continue;
+    const ailmentHit = resolveAilmentHitMagnitude(hitPayload, def.tag);
+    if (ailmentHit <= 0) continue;
     // Freeze requires a minimum hit magnitude relative to enemy max HP
-    if (name === 'Freeze' && hitDamage < def.freezeThreshold * enemy.maxHealth) continue;
-    enemy.applyAilment(name, hitDamage, def);
+    if (name === 'Freeze' && ailmentHit < def.freezeThreshold * enemy.maxHealth) continue;
+    enemy.applyAilment(name, ailmentHit, def);
   }
 }

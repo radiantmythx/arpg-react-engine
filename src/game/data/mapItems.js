@@ -1,4 +1,7 @@
-import { FREE_MAPS, rollMapMods } from './mapDefs.js';
+import { rollMapMods } from '../content/maps/index.js';
+import { listFreeMaps } from '../content/registries/index.js';
+
+const FREE_MAPS = listFreeMaps();
 
 const MAP_ITEM_COLORS = {
   magic: '#6ea8ff',

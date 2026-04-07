@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
-import { FREE_MAPS } from '../game/data/mapDefs.js';
+import { listFreeMaps } from '../game/content/registries/index.js';
 import '../styles/MapSelect.css';
+
+const FREE_MAPS = listFreeMaps();
 
 /**
  * C3 minimal map select opened from the hub map device.

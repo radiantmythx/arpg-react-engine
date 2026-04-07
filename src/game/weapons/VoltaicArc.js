@@ -10,6 +10,7 @@
 
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import { resolvePenetrationMap } from '../data/skillTags.js';
 
 /** Half-width of the collision band that surrounds the ring's leading edge. */
 const RING_TOLERANCE = 10;
@@ -17,7 +18,7 @@ const RING_TOLERANCE = 10;
 export class VoltaicArc extends Weapon {
   constructor() {
     super(WEAPONS.VOLTAIC_ARC);
-    this.tags = ['Spell', 'AoE', 'Lightning'];
+    this.tags = ['Spell', 'AoE', 'Thunder'];
     /** @type {Array<{ x, y, radius, hitEnemies: Set }>} */
     this._arcs = [];
   }
@@ -26,6 +27,11 @@ export class VoltaicArc extends Weapon {
    * Fully overrides base update — manages arc expansion, collision, and cooldown.
    */
   update(dt, player, entities, engine) {
+    const stats = this.computedStats(player);
+    const hitDamage = stats.damage;
+    const hitBreakdown = stats.damageBreakdown;
+    const penMap = resolvePenetrationMap(this.tags, player);
+
     // --- Expand arcs and zap enemies ---
     for (const arc of this._arcs) {
       arc.radius += this.config.expandSpeed * dt;
@@ -40,8 +46,8 @@ export class VoltaicArc extends Weapon {
         const dist = Math.sqrt(dx * dx + dy * dy);
         // Hit if any part of the enemy circle intersects the ring band.
         if (dist + enemy.radius >= rimInner && dist - enemy.radius <= rimOuter) {
-          engine.onEnemyHit(enemy, this.damage);
-          enemy.takeDamage(this.damage);
+          engine.onEnemyHit(enemy, hitDamage);
+          enemy.takeDamage(hitBreakdown ?? hitDamage, this.tags, penMap);
           arc.hitEnemies.add(enemy);
           if (!enemy.active) engine.onEnemyKilled(enemy);
         }

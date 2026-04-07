@@ -11,11 +11,12 @@
 
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import { resolvePenetrationMap } from '../data/skillTags.js';
 
 export class SacredRite extends Weapon {
   constructor() {
     super(WEAPONS.SACRED_RITE);
-    this.tags = ['Spell', 'AoE', 'Fire', 'Duration'];
+    this.tags = ['Spell', 'AoE', 'Blaze', 'Duration'];
     /** @type {{ x, y, vx, vy, age } | null} */
     this._flask = null;
     /** @type {Array<{ x, y, age, damageTimer }>} */
@@ -26,6 +27,11 @@ export class SacredRite extends Weapon {
    * Fully overrides base update — manages flask flight, zone ticking, and cooldown.
    */
   update(dt, player, entities, engine) {
+    const stats = this.computedStats(player);
+    const hitDamage = stats.damage;
+    const hitBreakdown = stats.damageBreakdown;
+    const penMap = resolvePenetrationMap(this.tags, player);
+
     // --- Advance flask ---
     if (this._flask) {
       const f = this._flask;
@@ -51,8 +57,8 @@ export class SacredRite extends Weapon {
           const dx = enemy.x - zone.x;
           const dy = enemy.y - zone.y;
           if (dx * dx + dy * dy <= rSq) {
-            if (engine) engine.onEnemyHit(enemy, this.damage);
-            enemy.takeDamage(this.damage);
+            if (engine) engine.onEnemyHit(enemy, hitDamage);
+            enemy.takeDamage(hitBreakdown ?? hitDamage, this.tags, penMap);
             if (!enemy.active) engine.onEnemyKilled(enemy);
           }
         }

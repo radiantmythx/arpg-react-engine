@@ -97,6 +97,15 @@ export class ActiveSkillSystem {
     }
   }
 
+  /** Draw transient skill visuals for equipped active skills. */
+  draw(renderer, player) {
+    for (const slot of this.slots) {
+      if (slot && typeof slot.draw === 'function') {
+        slot.draw(renderer, player);
+      }
+    }
+  }
+
   // ── Activation ───────────────────────────────────────────────────────────
 
   /**
@@ -210,11 +219,12 @@ export class ActiveSkillSystem {
    * `ready` is false while the cooldown is running OR while casting.
    * @returns {Array<{id, name, icon, cooldown, remaining, ready, casting} | null>}
    */
-  serialize() {
+  serialize(player = null) {
     return this.slots.map((s, i) => {
       if (!s) return null;
       const remaining = Math.max(0, s.cooldown - s._timer);
       const ct = this._castingTimers[i];
+      const computed = typeof s.computedStats === 'function' ? (s.computedStats(player) ?? {}) : {};
       const supportSlots = (s.supportSlots ?? []).map((sup) =>
         sup ? { id: sup.id, name: sup.name, icon: sup.icon ?? '◆' } : null
       );
@@ -239,6 +249,10 @@ export class ActiveSkillSystem {
                         : 0,
         isMaxLevel:   (s.level ?? 1) >= (s.maxLevel ?? 20),
         maxLevelBonus: s.maxLevelBonus ?? null,
+        castTime:     s.castTime ?? 0,
+        computedDamage: Number.isFinite(computed.damage) ? computed.damage : null,
+        damageBreakdown: computed.damageBreakdown ?? null,
+        damageRange: computed.damageRange ?? null,
       };
     });
   }

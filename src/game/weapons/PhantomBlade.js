@@ -15,6 +15,7 @@ export class PhantomBlade extends Weapon {
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len === 0) return;
 
+    const stats = this.computedStats(player);
     const speed = this.config.projectileSpeed;
     const total = 1 + (player.projectileCountBonus ?? 0);
     const spread = 0.20; // radians between projectiles
@@ -26,13 +27,13 @@ export class PhantomBlade extends Weapon {
       entities.acquireProjectile(
         player.x, player.y, Math.cos(a) * speed, Math.sin(a) * speed,
         {
-          damage: this.damage,
-          radius: this.config.projectileRadius,
-          color: this.config.color,
-          lifetime: this.config.projectileLifetime,
-          piercing: this.config.piercing ?? false,
-          sourceTags: this.tags,
-          sourceTags: this.tags,
+          damage:          stats.damage,
+          damageBreakdown: stats.damageBreakdown,
+          radius:          this.config.projectileRadius,
+          color:           this.config.color,
+          lifetime:        this.config.projectileLifetime,
+          piercing:        this.config.piercing ?? false,
+          sourceTags:      this.tags,
         },
       );
     }

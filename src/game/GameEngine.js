@@ -14,7 +14,6 @@ import { ChaosShardGem } from './entities/ChaosShardGem.js';
 import { GoldGem } from './entities/GoldGem.js';
 import { ItemDrop } from './entities/ItemDrop.js';
 import { PassiveItem } from './PassiveItem.js';
-import { UNIQUE_ITEM_DEFS, GENERIC_ITEM_DEFS } from './data/items.js';
 import { rollRarity, generateItem } from './data/itemGenerator.js';
 import { applyStats, TREE_NODE_MAP } from './data/passiveTree.js';
 import { CHARACTER_MAP } from './data/characters.js';
@@ -23,17 +22,26 @@ import { MetaProgression } from './MetaProgression.js';
 import { MAP_THEMES, BOSS_DEFS, BOSS_SCHEDULE, SPAWN_RADIUS, LEVEL_XP_TABLE, ENEMY_AI } from './config.js';
 import { makeSupportInstance } from './data/supports.js';
 import { SUPPORT_POOL, createSupportGemItem } from './data/supports.js';
-import { createSkillGemItem, getAvailableSkillOffers, getSkillOfferById } from './data/skills.js';
-import { SKILL_OFFER_POOL } from './data/skills.js';
+import {
+  createSkillGemItem,
+  getAvailableSkillOffers,
+  getSkillOfferById,
+  getPureSkillCtorById,
+  listSkillOffers,
+} from './content/registries/skillRegistry.js';
+import { listUniqueItemDefs, listGenericItemDefs } from './content/registries/itemRegistry.js';
 import { createMapItemDrop, isMapItem, mapItemToMapDef } from './data/mapItems.js';
 import { CharacterSave } from './CharacterSave.js';
 import { MapInstance } from './MapInstance.js';
 import { HubWorld } from './HubWorld.js';
 import { MapGenerator } from './MapGenerator.js';
 import { Navigation } from './Navigation.js';
+import { calcSellPrice } from './ItemPricing.js';
 
 /** World-space radius within which hovering the mouse highlights an ItemDrop. */
 const HOVER_RADIUS = 70;
+const UNIQUE_ITEM_DEFS = listUniqueItemDefs();
+const GENERIC_ITEM_DEFS = listGenericItemDefs();
 
 /**
  * GameEngine
@@ -282,14 +290,13 @@ export class GameEngine {
     const charDef  = CHARACTER_MAP[classId] ?? CHARACTER_MAP['sage'];
 
     this.player = new Player(0, 0, charDef);
+    const savedHealth = saveData?.health;
 
     if (saveData) {
       // ── Restore base combat stats ───────────────────────────────────────
       this.player.level        = saveData.level    ?? 1;
       this.player.xp           = saveData.xp       ?? 0;
       this.player.xpToNext     = LEVEL_XP_TABLE[this.player.level] ?? this.player.xpToNext;
-      this.player.maxHealth    = saveData.maxHealth ?? this.player.maxHealth;
-      this.player.health       = Math.min(saveData.health ?? this.player.maxHealth, this.player.maxHealth);
       this.player.maxEnergyShield = saveData.maxEnergyShield ?? 0;
       this.player.energyShield    = saveData.energyShield    ?? 0;
       this.player.skillPoints  = saveData.skillPoints ?? Math.max(0, this.player.level - 1);
@@ -327,15 +334,7 @@ export class GameEngine {
         this.player.inventory.place(item, item.gridX, item.gridY);
       }
 
-      // Restore primary skill support sockets (default attack links).
-      const savedPrimary = saveData.primarySkill;
-      if (savedPrimary?.id === this.player.primarySkill?.id && Array.isArray(savedPrimary.supportSlots)) {
-        const slots = this.player.primarySkill.supportSlots ?? [];
-        for (let i = 0; i < slots.length; i++) {
-          const supDef = savedPrimary.supportSlots[i];
-          slots[i] = supDef ? makeSupportInstance(supDef) : null;
-        }
-      }
+      this._restorePrimarySkillFromSave(saveData);
     }
 
     // Apply permanent meta-tree bonuses (shard gain mult, etc.).
@@ -343,8 +342,10 @@ export class GameEngine {
     const metaBonus = MetaProgression.getRunBonuses(metaNodes);
     this._shardGainMult = metaBonus.shardGainMult ?? 1;
 
-    // Reset active skill system.
+    this._normalizePlayerVitals(savedHealth, { revive: true });
+
     this.activeSkillSystem = new ActiveSkillSystem();
+    if (saveData) this._restoreActiveSkillsFromSave(saveData);
 
     this.entities.add(this.player);
     this._clearMapPlayerModEffects();
@@ -363,6 +364,67 @@ export class GameEngine {
 
     // Tell React to show the hub screen.
     if (this.onEnterHub) this.onEnterHub();
+  }
+
+  _restorePrimarySkillFromSave(saveData) {
+    const savedPrimary = saveData?.primarySkill;
+    if (savedPrimary?.id !== this.player?.primarySkill?.id || !Array.isArray(savedPrimary?.supportSlots)) return;
+    const slots = this.player.primarySkill.supportSlots ?? [];
+    for (let i = 0; i < slots.length; i++) {
+      const supDef = savedPrimary.supportSlots[i];
+      slots[i] = supDef ? makeSupportInstance(supDef) : null;
+    }
+  }
+
+  _restoreActiveSkillsFromSave(saveData) {
+    const savedSkills = saveData?.activeSkills;
+    if (!Array.isArray(savedSkills)) return;
+
+    for (let i = 0; i < 3; i++) {
+      const saved = savedSkills[i];
+      if (!saved?.id) continue;
+
+      if (saved.type === 'weapon') {
+        const offer = getSkillOfferById(saved.id);
+        if (!offer?.isWeaponSkill || typeof offer.create !== 'function') continue;
+
+        let weapon = this.player.autoSkills.find((w) => w.id === saved.id);
+        if (!weapon) {
+          weapon = offer.create();
+          this.player.autoSkills.push(weapon);
+        }
+        this.activeSkillSystem.equip(weapon, i);
+        continue;
+      }
+
+      if (saved.type === 'pure_skill') {
+        const Ctor = getPureSkillCtorById(saved.id);
+        if (!Ctor) continue;
+        const skill = new Ctor();
+        skill.level = Math.max(1, saved.level ?? 1);
+        skill._xp = saved.xp ?? 0;
+        while ((skill.supportSlots?.length ?? 0) < skill.constructor.slotsForLevel(skill.level)) {
+          skill.supportSlots.push(null);
+        }
+        if (typeof skill._applyLevelStats === 'function') {
+          for (let level = 2; level <= skill.level; level++) {
+            skill.level = level;
+            skill._applyLevelStats();
+          }
+          if (skill.level >= (skill.maxLevel ?? 20) && typeof skill._applyMaxLevelEffect === 'function') {
+            skill._applyMaxLevelEffect();
+          }
+        }
+        if (Array.isArray(saved.supportSlots)) {
+          for (let slotIdx = 0; slotIdx < skill.supportSlots.length; slotIdx++) {
+            const supDef = saved.supportSlots[slotIdx];
+            skill.supportSlots[slotIdx] = supDef ? makeSupportInstance(supDef) : null;
+          }
+        }
+        this.player.pureSkills.push(skill);
+        this.activeSkillSystem.equip(skill, i);
+      }
+    }
   }
 
   /**
@@ -697,6 +759,9 @@ export class GameEngine {
     const { player } = this;
     if (!player) return null;
 
+    const safeMaxHealth = Math.max(1, player.maxHealth ?? 1);
+    const safeHealth = Math.max(0, Math.min(player.health ?? safeMaxHealth, safeMaxHealth));
+
     // Serialize equipment — use raw itemDef (includes `stats`) not HUD-safe form.
     const equipment = {};
     for (const [slot, entry] of Object.entries(player.equipment)) {
@@ -716,8 +781,8 @@ export class GameEngine {
       ...existing,
       level:           player.level,
       xp:              player.xp,
-      health:          player.health,
-      maxHealth:       player.maxHealth,
+      health:          safeHealth,
+      maxHealth:       safeMaxHealth,
       energyShield:    player.energyShield,
       maxEnergyShield: player.maxEnergyShield,
       skillPoints:     player.skillPoints,
@@ -743,6 +808,19 @@ export class GameEngine {
       autoSkills:   player.autoSkills.map((w) => w.id),
       gold:         player.gold ?? 0,
     };
+  }
+
+  /**
+   * Clamp potentially invalid life values from older saves or repeated stat application.
+   * @param {number|undefined|null} preferredHealth
+   * @param {{revive?: boolean}} [opts]
+   */
+  _normalizePlayerVitals(preferredHealth, opts = {}) {
+    if (!this.player) return;
+    this.player.maxHealth = Math.max(1, this.player.maxHealth ?? 1);
+    const targetHealth = Number.isFinite(preferredHealth) ? preferredHealth : this.player.health;
+    const clamped = Math.max(0, Math.min(targetHealth ?? this.player.maxHealth, this.player.maxHealth));
+    this.player.health = opts.revive ? Math.max(1, clamped) : clamped;
   }
 
   _loop(now) {
@@ -828,26 +906,31 @@ export class GameEngine {
 
     // Projectiles
     for (const proj of this.entities.projectiles) {
+      if (!proj.active) continue;
       proj.update(dt);
     }
 
     // XP gems
     for (const gem of this.entities.gems) {
+      if (!gem.active) continue;
       gem.update(dt, this.player);
     }
 
     // Chaos Shard gems
     for (const shard of this.entities.shardGems) {
+      if (!shard.active) continue;
       shard.update(dt, this.player);
     }
 
     // Gold gems
     for (const gold of this.entities.goldGems) {
+      if (!gold.active) continue;
       gold.update(dt, this.player);
     }
 
     // Item drops (just animation + hover detection)
     for (const drop of this.entities.itemDrops) {
+      if (!drop.active) continue;
       drop.update(dt);
     }
     this._updateHoveredDrop();
@@ -855,6 +938,7 @@ export class GameEngine {
 
     // Collision
     this.collision.buildGrids(this.entities);
+    this.collision.checkProjectilesVsWalls(this.entities, this.mapLayout);
     this.collision.checkProjectilesVsEnemies(this.entities, this);
     this.collision.checkPlayerVsEnemies(this.player, this.entities, this);
     this.collision.checkPlayerVsGems(this.player, this.entities, this.xpSystem);
@@ -924,7 +1008,7 @@ export class GameEngine {
         mapTier: this.mapInstance?.mapDef?.tier ?? 0,
         mapMods: this.mapInstance?.mods ?? [],
         primarySkill:    this._serializePrimarySkill(),
-        activeSkills:    this.activeSkillSystem.serialize(),
+        activeSkills:    this.activeSkillSystem.serialize(this.player),
         equipment: this._serializeEquipment(),
         inventory: this.player.inventory.serialize(),
       });
@@ -975,15 +1059,22 @@ export class GameEngine {
     const s = this.player?.primarySkill;
     if (!s) return null;
     const remaining = Math.max(0, s.cooldown - s._timer);
+    const computed = typeof s.computedStats === 'function' ? (s.computedStats(this.player) ?? {}) : {};
     return {
       id: s.id,
       name: s.name,
       icon: s.icon ?? '␣',
+      description: s.description ?? '',
+      tags: s.tags ?? [],
+      castTime: s.castTime ?? 0,
       cooldown: s.cooldown,
       remaining: parseFloat(remaining.toFixed(1)),
       ready: remaining <= 0,
       casting: 0,
       isPrimary: true,
+      computedDamage: Number.isFinite(computed.damage) ? computed.damage : null,
+      damageBreakdown: computed.damageBreakdown ?? null,
+      damageRange: computed.damageRange ?? null,
     };
   }
 
@@ -1094,12 +1185,24 @@ export class GameEngine {
     }
 
     // Draw order: gems → item drops → AoE zones → projectiles → enemies → bosses → player
-    for (const gem    of this.entities.gems)        gem.draw(this.renderer);
-    for (const shard  of this.entities.shardGems)   shard.draw(this.renderer);
-    for (const gold   of this.entities.goldGems)    gold.draw(this.renderer);
-    for (const drop   of this.entities.itemDrops)   drop.draw(this.renderer);
+    for (const gem of this.entities.gems) {
+      if (!gem.active) continue;
+      gem.draw(this.renderer);
+    }
+    for (const shard of this.entities.shardGems) {
+      if (!shard.active) continue;
+      shard.draw(this.renderer);
+    }
+    for (const gold of this.entities.goldGems) {
+      if (!gold.active) continue;
+      gold.draw(this.renderer);
+    }
+    for (const drop of this.entities.itemDrops) {
+      if (!drop.active) continue;
+      drop.draw(this.renderer);
+    }
     for (const zone   of this.entities.aoeZones)    zone.draw(this.renderer);
-    for (const proj   of this.entities.projectiles) proj.draw(this.renderer);
+    for (const proj   of this.entities.projectiles) if (proj.active) proj.draw(this.renderer);
     for (const enemy  of this.entities.enemies)     enemy.draw(this.renderer);
     for (const boss   of this.entities.bosses)      boss.draw(this.renderer);
     if (this._isLockTargetValid(this._lockedTarget)) {
@@ -1123,6 +1226,7 @@ export class GameEngine {
       for (const weapon of this.player.autoSkills) {
         weapon.draw(this.renderer, this.player);
       }
+      this.activeSkillSystem?.draw?.(this.renderer, this.player);
     }
 
     // Particles draw above all game entities.
@@ -1573,7 +1677,7 @@ export class GameEngine {
       equipment: this._serializeEquipment(),
       inventory: this.player.inventory.serialize(),
       primarySkill:    this._serializePrimarySkill(),
-      activeSkills:    this.activeSkillSystem.serialize(),
+      activeSkills:    this.activeSkillSystem.serialize(this.player),
       lockedTarget: this._isLockTargetValid(this._lockedTarget)
         ? {
             name: this._lockedTarget.bossName ?? this._lockedTarget.name ?? 'Target',
@@ -1827,7 +1931,7 @@ export class GameEngine {
    * Gems are infinite-stock; equipment/maps are cached rolls (reset on reroll).
    */
   getVendorStock() {
-    const skillRows = SKILL_OFFER_POOL.map((offer) => ({
+    const skillRows = listSkillOffers().map((offer) => ({
       id:    `skill:${offer.id}`,
       tab:   'skill',
       kind:  'skill_gem',
@@ -1925,6 +2029,32 @@ export class GameEngine {
     this._flushHudUpdate();
     this.checkpoint();
     return { ok: true, price, itemName: listing.name };
+  }
+
+  /**
+   * Sell an inventory item back to the vendor.
+   * Gold value = base item price + sum of affix prices.
+   * Item is removed from inventory.
+   * @param {string} itemUid
+   * @returns {{ ok: boolean, reason?: string, itemName?: string, goldReceived?: number }}
+   */
+  sellItem(itemUid) {
+    if (!this.player?.inventory) return { ok: false, reason: 'no_player' };
+
+    // Remove item from inventory
+    const itemDef = this.player.inventory.remove(itemUid);
+    if (!itemDef) return { ok: false, reason: 'not_found' };
+
+    // Calculate sell price
+    const goldValue = Math.max(1, Math.round(calcSellPrice(itemDef)));
+
+    // Add gold to player
+    this.player.gold = (this.player.gold ?? 0) + goldValue;
+
+    this.audio.play('xp_collect');
+    this._flushHudUpdate();
+    this.checkpoint();
+    return { ok: true, itemName: itemDef.name, goldReceived: goldValue };
   }
 
   pause() {

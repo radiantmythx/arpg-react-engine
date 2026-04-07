@@ -5,6 +5,7 @@ import { WEAPONS } from '../config.js';
 export class MagicWand extends Weapon {
   constructor() {
     super(WEAPONS.MAGIC_WAND);
+    this.tags = ['Spell', 'Projectile', 'Thunder'];
     // Start half-charged so the first shot fires quickly
     this._timer = this.cooldown * 0.5;
   }
@@ -18,13 +19,16 @@ export class MagicWand extends Weapon {
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist === 0) return;
 
+    const stats = this.computedStats(player);
     const speed = this.config.projectileSpeed;
     entities.add(
       new Projectile(player.x, player.y, (dx / dist) * speed, (dy / dist) * speed, {
-        damage: this.damage,
+        damage: stats.damage,
+        damageBreakdown: stats.damageBreakdown,
         radius: this.config.projectileRadius,
         color: this.config.color,
         lifetime: this.config.projectileLifetime,
+        sourceTags: this.tags,
       }),
     );
   }

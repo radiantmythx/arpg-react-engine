@@ -10,6 +10,8 @@
  *   hint      — optional gray hint line at the bottom (e.g. "Click to pick up")
  */
 
+import { highlightElementalText } from './ElementalText.jsx';
+
 const RARITY_COLORS = {
   normal: '#9e9e9e',
   magic:  '#6b9cd4',
@@ -125,7 +127,7 @@ export function ItemTooltip({ itemData, mousePos, hint }) {
           <div className="itt-divider" />
           <div className="itt-section">
             {statLines.map((line, i) => (
-              <div key={i} className="itt-stat">{line}</div>
+              <div key={i} className="itt-stat">{highlightElementalText(line)}</div>
             ))}
           </div>
         </>
@@ -137,7 +139,7 @@ export function ItemTooltip({ itemData, mousePos, hint }) {
           <div className="itt-divider" />
           <div className="itt-section">
             {affixes.map((a) => (
-              <div key={a.id} className={`itt-stat itt-${a.type}`}>{a.label}</div>
+              <div key={a.id} className={`itt-stat itt-${a.type}`}>{highlightElementalText(a.label)}</div>
             ))}
           </div>
         </>
@@ -148,7 +150,7 @@ export function ItemTooltip({ itemData, mousePos, hint }) {
         <>
           <div className="itt-divider" />
           <div className="itt-section">
-            <div className="itt-flavor">&ldquo;{flavorText}&rdquo;</div>
+            <div className="itt-flavor">&ldquo;{highlightElementalText(flavorText)}&rdquo;</div>
           </div>
         </>
       )}

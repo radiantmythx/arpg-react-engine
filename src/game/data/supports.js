@@ -198,37 +198,37 @@ export const SUPPORT_POOL = [
 
   // ── Damage Addition Supports ────────────────────────────────────────────
   {
-    id:               'added_fire',
-    name:             'Added Fire Damage',
+    id:               'added_blaze',
+    name:             'Added Blaze Damage',
     icon:             '🔥',
-    description:      '+14 added fire damage per hit. Skill gains Fire tag.',
+    description:      '+14 added Blaze damage per hit. Skill gains Blaze tag.',
     color:            '#e17055',
     requiredTags:     [],
     incompatibleTags: [],
     modify(stats, skill) {
       stats.damage = (stats.damage ?? 0) + 14;
-      if (!skill.tags.includes('Fire')) skill._tempTags = [...(skill._tempTags ?? []), 'Fire'];
+      if (!skill.tags.includes('Blaze')) skill._tempTags = [...(skill._tempTags ?? []), 'Blaze'];
     },
   },
   {
-    id:               'added_cold',
-    name:             'Added Cold Damage',
+    id:               'added_frost',
+    name:             'Added Frost Damage',
     icon:             '❄️',
-    description:      '+11 added cold damage. +10% base Chill chance. Skill gains Cold tag.',
+    description:      '+11 added Frost damage. +10% base Chill chance. Skill gains Frost tag.',
     color:            '#74b9ff',
     requiredTags:     [],
     incompatibleTags: [],
     modify(stats, skill) {
       stats.damage = (stats.damage ?? 0) + 11;
       stats._extraChillChance = (stats._extraChillChance ?? 0) + 0.10;
-      if (!skill.tags.includes('Cold')) skill._tempTags = [...(skill._tempTags ?? []), 'Cold'];
+      if (!skill.tags.includes('Frost')) skill._tempTags = [...(skill._tempTags ?? []), 'Frost'];
     },
   },
   {
-    id:               'added_lightning',
-    name:             'Added Lightning Damage',
+    id:               'added_thunder',
+    name:             'Added Thunder Damage',
     icon:             '⚡',
-    description:      '+14 added lightning damage (high variance). +5% Shock chance. Skill gains Lightning tag.',
+    description:      '+14 added Thunder damage (high variance). +5% Shock chance. Skill gains Thunder tag.',
     color:            '#fdcb6e',
     requiredTags:     [],
     incompatibleTags: [],
@@ -236,20 +236,20 @@ export const SUPPORT_POOL = [
       const variance = Math.round((Math.random() - 0.5) * 16);
       stats.damage = (stats.damage ?? 0) + 14 + variance;
       stats._extraShockChance = (stats._extraShockChance ?? 0) + 0.05;
-      if (!skill.tags.includes('Lightning')) skill._tempTags = [...(skill._tempTags ?? []), 'Lightning'];
+      if (!skill.tags.includes('Thunder')) skill._tempTags = [...(skill._tempTags ?? []), 'Thunder'];
     },
   },
   {
-    id:               'added_chaos',
-    name:             'Added Chaos Damage',
+    id:               'added_unholy',
+    name:             'Added Unholy Damage',
     icon:             '☠',
-    description:      '+14 added chaos damage. Skill gains Chaos tag.',
+    description:      '+14 added Unholy damage. Skill gains Unholy tag.',
     color:            '#6c5ce7',
     requiredTags:     [],
     incompatibleTags: [],
     modify(stats, skill) {
       stats.damage = (stats.damage ?? 0) + 14;
-      if (!skill.tags.includes('Chaos')) skill._tempTags = [...(skill._tempTags ?? []), 'Chaos'];
+      if (!skill.tags.includes('Unholy')) skill._tempTags = [...(skill._tempTags ?? []), 'Unholy'];
     },
   },
   {
@@ -315,7 +315,7 @@ export const SUPPORT_POOL = [
     icon:             '🧪',
     description:      '+8% more damage per Poison stack on enemy (max ×8).',
     color:            '#55efc4',
-    requiredTags:     ['Chaos'],
+    requiredTags:     ['Unholy'],
     incompatibleTags: [],
     modify(stats) {
       stats._vileStacks = 8; // runtime code in CollisionSystem reads this
@@ -327,7 +327,7 @@ export const SUPPORT_POOL = [
     icon:             '🔥',
     description:      '+30% more Burning (Ignite DoT) damage.',
     color:            '#e17055',
-    requiredTags:     ['Fire'],
+    requiredTags:     ['Blaze'],
     incompatibleTags: [],
     modify(stats) {
       stats._burningMult = (stats._burningMult ?? 1) * 1.30;

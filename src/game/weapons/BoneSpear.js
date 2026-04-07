@@ -41,20 +41,21 @@ export class BoneSpear extends Weapon {
     const dx = tx - player.x;
     const dy = ty - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const stats = this.computedStats(player);
     const speed = this.config.projectileSpeed;
 
     const proj = entities.acquireProjectile(
       player.x, player.y,
       (dx / dist) * speed, (dy / dist) * speed,
       {
-        damage:   this.damage,
-        radius:   this.config.projectileRadius,
-        color:    this.config.color,
-        lifetime: this.config.projectileLifetime,
-        piercing: true,
-        onExpire: (proj) => this._cracks.push({ x: proj.x, y: proj.y, age: 0 }),
-        sourceTags: this.tags,
-        sourceTags: this.tags,
+        damage:          stats.damage,
+        damageBreakdown: stats.damageBreakdown,
+        radius:          this.config.projectileRadius,
+        color:           this.config.color,
+        lifetime:        this.config.projectileLifetime,
+        piercing:        true,
+        onExpire:        (proj) => this._cracks.push({ x: proj.x, y: proj.y, age: 0 }),
+        sourceTags:      this.tags,
       },
     );
     if (proj) this._tracked.set(proj, true);

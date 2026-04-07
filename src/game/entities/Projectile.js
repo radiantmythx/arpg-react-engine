@@ -13,6 +13,8 @@ export class Projectile extends Entity {
     this.vx = vx;
     this.vy = vy;
     this.damage = config.damage;
+    /** Per-element damage map { Physical: N, Frost: N, ... }. null when untyped. */
+    this.damageBreakdown = config.damageBreakdown ?? null;
     this.radius = config.radius;
     this.color = config.color;
     this.lifetime = config.lifetime;
@@ -42,6 +44,7 @@ export class Projectile extends Entity {
     this.vx = vx;
     this.vy = vy;
     this.damage = config.damage;
+    this.damageBreakdown = config.damageBreakdown ?? null;
     this.radius = config.radius;
     this.color = config.color;
     this.lifetime = config.lifetime;

@@ -4,8 +4,21 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run content:validate",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "content:validate": "node scripts/content-validate.mjs",
+    "make:skill": "node scripts/make-content.mjs skill",
+    "make:enemy": "node scripts/make-content.mjs enemy",
+    "make:map": "node scripts/make-content.mjs map",
+    "make:item": "node scripts/make-content.mjs item",
+    "snapshot:content": "node scripts/verify-content-snapshots.mjs",
+    "sim:skills": "node scripts/sim-skills.mjs",
+    "sim:encounters": "node scripts/sim-encounters.mjs",
+    "sim:drops": "node scripts/sim-drops.mjs",
+    "sim:itemgen": "node scripts/sim-itemgen-sanity.mjs",
+    "smoke:phase0": "node scripts/smoke-phase0.mjs",
+    "phase0:check": "npm run smoke:phase0 ; npm run build"
   },
   "dependencies": {
     "react": "^18.3.1",

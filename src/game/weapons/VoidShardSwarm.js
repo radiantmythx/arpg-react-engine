@@ -22,7 +22,7 @@ const HOME_TURN_RATE = Math.PI * 3.5;
 export class VoidShardSwarm extends Weapon {
   constructor() {
     super(WEAPONS.VOID_SHARD_SWARM);
-    this.tags = ['Spell', 'Projectile', 'Chaos'];
+    this.tags = ['Spell', 'Projectile', 'Unholy'];
     this.isActive = true;  // hotbar skill — fires only on key press
     this._timer = this.cooldown; // start ready
     /** Track live shards we own so we can steer them. */
@@ -30,6 +30,7 @@ export class VoidShardSwarm extends Weapon {
   }
 
   fire(player, entities, engine) {
+    const stats = this.computedStats(player);
     const facing = Math.atan2(player.facingY ?? 1, player.facingX ?? 0);
     const spreadAngles = [-0.20, 0, 0.20]; // radians
     const speed = this.config.projectileSpeed;
@@ -40,16 +41,16 @@ export class VoidShardSwarm extends Weapon {
         player.x, player.y,
         Math.cos(angle) * speed, Math.sin(angle) * speed,
         {
-          damage:   this.damage,
-          radius:   this.config.projectileRadius,
-          color:    this.config.color,
-          lifetime: this.config.projectileLifetime,
-          piercing: false,
-          // Store spawn origin so we know how far it has orbited.
-          _spawnX: player.x,
-          _spawnY: player.y,
-          _homing: false,
-          sourceTags: this.tags,
+          damage:          stats.damage,
+          damageBreakdown: stats.damageBreakdown,
+          radius:          this.config.projectileRadius,
+          color:           this.config.color,
+          lifetime:        this.config.projectileLifetime,
+          piercing:        false,
+          _spawnX:         player.x,
+          _spawnY:         player.y,
+          _homing:         false,
+          sourceTags:      this.tags,
         },
       );
       if (proj) this._shards.add(proj);

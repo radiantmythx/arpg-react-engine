@@ -1,5 +1,5 @@
 import { SpatialGrid } from './SpatialGrid.js';
-import { applyAilmentsOnHit } from './data/skillTags.js';
+import { applyAilmentsOnHit, resolvePenetrationMap } from './data/skillTags.js';
 
 /** Returns true if two circle entities overlap. */
 function circlesOverlap(a, b) {
@@ -64,11 +64,12 @@ export class CollisionSystem {
         if (proj.hitEnemies && proj.hitEnemies.has(enemy)) continue;
         if (circlesOverlap(proj, enemy)) {
           engine.onEnemyHit(enemy, proj.damage);
-          enemy.takeDamage(proj.damage);
+          const penetrationMap = resolvePenetrationMap(proj.sourceTags, engine.player);
+          enemy.takeDamage(proj.damageBreakdown ?? proj.damage, proj.sourceTags, penetrationMap);
 
           // Elemental ailments from projectile source tags
           if (proj.sourceTags.length && engine.player) {
-            applyAilmentsOnHit(proj.sourceTags, proj.damage, enemy, engine.player);
+            applyAilmentsOnHit(proj.sourceTags, proj.damageBreakdown ?? proj.damage, enemy, engine.player);
           }
 
           // onHit burst (e.g. Fireball AoE detonation)
@@ -92,6 +93,52 @@ export class CollisionSystem {
           if (!proj.active) break;
         }
       }
+    }
+  }
+
+  /**
+   * Projectiles vs Walls.
+   * Non-persistent projectiles are destroyed as soon as their circle overlaps a wall tile
+   * or exits the generated map bounds.
+   */
+  checkProjectilesVsWalls(entities, mapLayout) {
+    if (!mapLayout) return;
+
+    const tile = mapLayout.tileSize;
+    for (const proj of entities.projectiles) {
+      if (!proj.active) continue;
+
+      const left = proj.x - proj.radius;
+      const right = proj.x + proj.radius;
+      const top = proj.y - proj.radius;
+      const bottom = proj.y + proj.radius;
+
+      if (
+        left < mapLayout.worldLeft ||
+        right > mapLayout.worldLeft + mapLayout.widthPx ||
+        top < mapLayout.worldTop ||
+        bottom > mapLayout.worldTop + mapLayout.heightPx
+      ) {
+        proj.active = false;
+        continue;
+      }
+
+      const minTx = Math.floor((left - mapLayout.worldLeft) / tile);
+      const maxTx = Math.floor((right - mapLayout.worldLeft) / tile);
+      const minTy = Math.floor((top - mapLayout.worldTop) / tile);
+      const maxTy = Math.floor((bottom - mapLayout.worldTop) / tile);
+
+      let hitWall = false;
+      for (let ty = minTy; ty <= maxTy && !hitWall; ty++) {
+        for (let tx = minTx; tx <= maxTx; tx++) {
+          if (mapLayout.isWall(tx, ty)) {
+            hitWall = true;
+            break;
+          }
+        }
+      }
+
+      if (hitWall) proj.active = false;
     }
   }
 

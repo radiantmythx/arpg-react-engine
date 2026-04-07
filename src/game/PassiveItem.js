@@ -92,6 +92,36 @@ export class PassiveItem {
       snapshot.energyShieldFlat = stats.energyShieldFlat;
     }
 
+    // ── Elemental damage bonuses (flat / increased / more per type) ──────────
+    const ELEM_TYPES = ['Physical', 'Blaze', 'Thunder', 'Frost', 'Holy', 'Unholy'];
+    for (const elem of ELEM_TYPES) {
+      for (const layer of ['flat', 'increased', 'more']) {
+        const key = `${layer}${elem}Damage`;
+        if (stats[key] !== undefined) {
+          player[key] = (player[key] ?? 0) + stats[key];
+          snapshot[key] = stats[key];
+        }
+      }
+    }
+
+    // ── Elemental resistances ─────────────────────────────────────────────────
+    for (const elem of ['blaze', 'thunder', 'frost', 'holy', 'unholy']) {
+      const key = `${elem}Resistance`;
+      if (stats[key] !== undefined) {
+        player[key] = (player[key] ?? 0) + stats[key];
+        snapshot[key] = stats[key];
+      }
+    }
+
+    // ── Damage type penetration ──────────────────────────────────────────────
+    for (const elem of ['physical', 'blaze', 'thunder', 'frost', 'holy', 'unholy']) {
+      const key = `${elem}Penetration`;
+      if (stats[key] !== undefined) {
+        player[key] = (player[key] ?? 0) + stats[key];
+        snapshot[key] = stats[key];
+      }
+    }
+
     return snapshot;
   }
 
@@ -136,6 +166,33 @@ export class PassiveItem {
     if (snapshot.energyShieldFlat !== undefined) {
       player.maxEnergyShield = Math.max(0, (player.maxEnergyShield ?? 0) - snapshot.energyShieldFlat);
       player.energyShield = Math.min(player.energyShield, player.maxEnergyShield);
+    }
+
+    // ── Elemental damage bonuses ───────────────────────────────────────────
+    const ELEM_TYPES = ['Physical', 'Blaze', 'Thunder', 'Frost', 'Holy', 'Unholy'];
+    for (const elem of ELEM_TYPES) {
+      for (const layer of ['flat', 'increased', 'more']) {
+        const key = `${layer}${elem}Damage`;
+        if (snapshot[key] !== undefined) {
+          player[key] = (player[key] ?? 0) - snapshot[key];
+        }
+      }
+    }
+
+    // ── Elemental resistances ────────────────────────────────────────────────
+    for (const elem of ['blaze', 'thunder', 'frost', 'holy', 'unholy']) {
+      const key = `${elem}Resistance`;
+      if (snapshot[key] !== undefined) {
+        player[key] = Math.max(0, (player[key] ?? 0) - snapshot[key]);
+      }
+    }
+
+    // ── Damage type penetration ──────────────────────────────────────────────
+    for (const elem of ['physical', 'blaze', 'thunder', 'frost', 'holy', 'unholy']) {
+      const key = `${elem}Penetration`;
+      if (snapshot[key] !== undefined) {
+        player[key] = (player[key] ?? 0) - snapshot[key];
+      }
     }
   }
 }

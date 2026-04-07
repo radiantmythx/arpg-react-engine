@@ -1,5 +1,6 @@
 import { Entity } from './Entity.js';
 import { ENEMY_AI } from '../config.js';
+import { firstTaggedElement, makeDamageRange, rollDamageEntry } from '../damageUtils.js';
 
 export class Enemy extends Entity {
   constructor(x, y, config) {
@@ -31,8 +32,11 @@ export class Enemy extends Entity {
     /** Incoming damage multiplier while shocked (1.0 = normal, 1.4 = shocked). */
     this.shockedMult = 1.0;
 
-    // ── C11.1 aggro state ────────────────────────────────────────────────
-    this.aiState = config.aiState ?? 'idle';
+    // ── Resistance map ───────────────────────────────────────────────────────
+    // Keys are lowercase elemental tag names: physical, blaze, thunder, frost, holy, unholy.
+    // Values are fractional: 0.20 = 20% less damage; -0.15 = 15% more damage (weakness).
+    // Sourced from config; defaults to empty object (no resistances).
+    this.resistances = config.resistances ?? {};
     this.aggroRadius = config.aggroRadius ?? ENEMY_AI.baseAggroRadius;
     this.propagationRadius = config.propagationRadius ?? ENEMY_AI.propagationRadius;
     this.packId = config.packId ?? null;
@@ -117,9 +121,49 @@ export class Enemy extends Entity {
     }
   }
 
-  takeDamage(amount) {
+  takeDamage(amountOrMap, sourceTags = null, sourcePenetration = null) {
     this.setAggro('damaged');
-    this.health -= amount * this.shockedMult;
+
+    let mitigated = 0;
+
+    // Typed map path: apply each resistance to its own damage bucket.
+    // Example: { Physical: 20, Frost: 30 } checks physical and frost independently.
+    if (amountOrMap && typeof amountOrMap === 'object') {
+      for (const [type, rawAmount] of Object.entries(amountOrMap)) {
+        if (rawAmount == null) continue;
+        const rolledAmount = rollDamageEntry(rawAmount);
+        if (!Number.isFinite(rolledAmount)) continue;
+        const lower = String(type).toLowerCase();
+        const res = this.resistances?.[lower] ?? 0;
+        const pen = sourcePenetration?.[lower] ?? 0;
+        const effectiveRes = res - pen;
+        // Positive res = damage reduction; negative = weakness (more damage).
+        // Hard cap at 75% resistance; no cap on weakness.
+        mitigated += rolledAmount * (1 - Math.min(effectiveRes, 0.75));
+      }
+    } else {
+      // Backward-compatible numeric path used by DoT ticks and non-projectile hits.
+      let amount = Number(amountOrMap) || 0;
+      const taggedElem = firstTaggedElement(sourceTags);
+      if (taggedElem && amount > 0) {
+        amount = rollDamageEntry(makeDamageRange(amount, taggedElem));
+      }
+      mitigated = amount;
+      if (sourceTags && sourceTags.length > 0 && this.resistances) {
+        for (const tag of sourceTags) {
+          const lower = tag.toLowerCase();
+          const res = this.resistances[lower];
+          if (res != null) {
+            const pen = sourcePenetration?.[lower] ?? 0;
+            const effectiveRes = res - pen;
+            mitigated = amount * (1 - Math.min(effectiveRes, 0.75));
+            break;
+          }
+        }
+      }
+    }
+
+    this.health -= mitigated * this.shockedMult;
     if (this.health <= 0) {
       this.active = false;
     }

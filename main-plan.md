@@ -3,7 +3,7 @@
 This is the canonical roadmap for the project. It merges the original survivor-style roadmap and the ARPG conversion roadmap into one checklist-oriented execution plan.
 
 - Primary reference for implementation order: this document
-- Focused conversion detail: [conversion-plan.md](conversion-plan.md)
+- Legacy planning docs have been consolidated into this file.
 
 ---
 
@@ -13,6 +13,7 @@ This is the canonical roadmap for the project. It merges the original survivor-s
 - UI: React overlays/screens
 - Build: Vite
 - Current direction: mini-ARPG with persistent characters, hub, maps, map device, and progression systems
+- Content architecture status: registry-backed content domains are live for maps/enemies/skills/items with validation and simulation tooling in place
 
 ---
 
@@ -31,11 +32,13 @@ This is the canonical roadmap for the project. It merges the original survivor-s
 - [x] Active skill system baseline
 - [x] Skill-gem and support foundations (majority of Phase 12 delivered)
 - [x] ARPG conversion C1-C11.3 (hub/maps/portals/map mods/AI upgrades)
+- [x] Content authoring migration cutover (maps/enemies/skills/items ownership moved to content layer)
+- [x] Validation/tooling baseline for content safety (`content:validate`, snapshots, sim commands)
 
 ### In Progress / Next Up
 
-- [~] Top Priority: Mobile Addition rollout (Phase 1 done, Phases 2-5 queued) - see [mobile-addition.md](mobile-addition.md)
-- [ ] Deep skill-gem completion and tooling polish
+- [~] Top Priority: Mobile rollout finalization (feature delivery complete through Phase 4; Phase 5 device QA/perf sweep pending)
+- [ ] Skill-gem long-tail polish and authoring DX follow-ups
 - [ ] Advanced item economy + crafting + influences
 - [ ] Encounter depth and monster ecosystem expansion
 - [ ] Endgame systems (atlas-style progression, mode variants, daily seeds)
@@ -61,6 +64,65 @@ Legend:
 - `[x]` complete
 - `[~]` partially complete
 - `[ ]` not started
+
+---
+
+## Cross-Cutting Program - Content Authoring Refactor [x]
+
+This runs alongside P0-P8 and captures the architecture migration from legacy mixed data/runtime paths into content-domain ownership.
+
+### Objectives
+
+- [x] Data-first content model with explicit contracts
+- [x] Registry-driven runtime lookups by id
+- [x] Migration-safe cutover with compatibility seams retired after parity
+- [x] Validation and simulation loop for balance/content regression checks
+
+### Current Status (Phase 9 Complete)
+
+- [x] Maps: live definitions and map-mod rolling cut over to `src/game/content/maps/`
+- [x] Enemies: live archetype ownership cut over to `src/game/content/enemies/`
+- [x] Skills: offers/constructors/gems/class implementations cut over to `src/game/content/skills/`
+- [x] Items: live catalog ownership cut over to `src/game/content/items/` via `src/game/content/registries/itemRegistry.js`
+
+### Remaining Legacy Runtime Surface
+
+- [~] `src/game/config.js` still serves wave schedule ids (`WAVE_SCHEDULE`) for current runtime wiring
+
+### Runtime Ownership Paths (Current)
+
+- [x] Items: `src/game/content/items/itemCatalog.js` + `src/game/content/registries/itemRegistry.js`
+- [x] Skills: `src/game/content/skills/skillClasses.js` and neighboring content-layer skill modules
+
+### Validation Commands in Active Use
+
+- [x] `npm run snapshot:content`
+- [x] `npm run content:validate`
+- [x] `npm run smoke:phase0`
+- [x] `npm run sim:itemgen`
+- [x] `npm run sim:skills`
+- [x] `npm run sim:encounters`
+- [x] `npm run sim:drops`
+
+---
+
+## Cross-Cutting Program - Mobile Addition [~]
+
+This program tracks mobile/touch delivery while preserving desktop-first controls.
+
+### Current Status
+
+- [x] Phase 1: mobile mode entry + persisted preference
+- [x] Phase 2: touch input layer, virtual controls, haptics/layout toggles, lock-on targeting
+- [x] Phase 3: mobile HUD preset, safe-area support, larger tap targets
+- [x] Phase 4: mobile UX for inventory/menus, drag/tap workflows, auto-pickup assist
+- [~] Phase 5: performance/ship readiness in progress
+
+### Remaining Work
+
+- [ ] Device QA sweep across iOS Safari, Chrome Android, and Samsung Internet
+- [ ] Confirm stable 30-60 FPS on representative mobile devices
+- [ ] Close blocker-level issues for complete mobile sessions
 
 ---
 
@@ -120,9 +182,9 @@ Exit criteria:
 
 ### Goals
 
-- [ ] Full PoE-like socket/support dynamics
-- [ ] Predictable stat computation and cast model
-- [ ] Complete UI support for gem/sockets/workflows
+- [x] Full PoE-like socket/support dynamics
+- [x] Predictable stat computation and cast model
+- [x] Complete UI support for gem/sockets/workflows
 
 ### Completed
 
@@ -151,7 +213,7 @@ Exit criteria:
 
 ## P3 - ARPG World Conversion [x]
 
-This phase is fully delivered in implementation and tracked in detail in [conversion-plan.md](conversion-plan.md).
+This phase is fully delivered in implementation.
 
 ### Conversion Checklist
 
@@ -176,6 +238,34 @@ This phase is fully delivered in implementation and tracked in detail in [conver
 - [x] Death without character deletion (portal economy)
 - [x] Character journal/sheet and map completion UX
 - [x] Enemy AI upgrade path (aggro + local propagation + pathing)
+
+### System State Snapshot (from Conversion Track)
+
+#### Stable Core Systems (Preserved)
+
+- [x] Combat foundations (items, skills, gems, ailments, collision, weapons)
+- [x] Core entity classes (`Player`, `Enemy`, `BossEnemy`) remain primary runtime anchors
+- [x] Rendering/input/audio baseline retained, with map/hub-aware extensions
+
+#### Conversion-Driven Changes
+
+- [x] `GameEngine` state machine expanded with hub/map lifecycle states
+- [x] Time-wave spawning replaced by map-seeded `ClusterSpawner`
+- [x] Character progression shifted to persistent save-backed flow
+- [x] Main menu/start flow replaced by character create/select into hub
+
+#### Net-New ARPG Modules
+
+- [x] Character persistence module (`CharacterSave`)
+- [x] Map generation/runtime instance modules (`MapGenerator`, `MapInstance`)
+- [x] Hub and portal modules (`HubWorld`, `PortalEntity`)
+- [x] ARPG-specific screens (hub/map-select/map-complete/death/character-create/select/journal/sheet)
+
+#### ARPG Follow-Up Notes (Post-Conversion)
+
+- [ ] Decide whether aggro should include full leash/de-aggro policy beyond current behavior
+- [ ] Decide long-term map progression UX shape (atlas board vs list/device)
+- [ ] Evaluate optional hardcore ruleset timing after economy/encounter systems stabilize
 
 Exit criteria:
 
@@ -203,6 +293,43 @@ Exit criteria:
 - [ ] Unique item expansion pass and drop logic
 - [ ] Divination card collection + turn-in flow
 - [ ] Expanded stash model (currency/crafting tabs)
+
+### Elemental Damage System (foundation complete)
+
+The six damage types are now defined and wired. Remaining work:
+
+- [x] Damage type tags: Physical, Blaze (Fire), Thunder (Lightning), Frost (Cold), Holy (new), Unholy (replaces Chaos)
+- [x] Flat / increased / more affixes added to affix pool for all six types
+- [x] Elemental resistance affixes added (Blaze/Thunder/Frost/Holy/Unholy)
+- [x] `Player` stat fields for all 18 damage bonuses + 5 resistances
+- [x] `SkillDef.computedStats()` reads flat/increased/more per tag at fire time
+- [x] `PassiveItem` apply/remove handles all elemental stat keys
+- [x] Apply resistance mitigation in damage delivery code (CollisionSystem/Enemy)
+- [x] Enemy resistance values per archetype (integration with P5 monster classes)
+- [ ] Penetration affixes (ignore X% of enemy elemental resistance)
+- [ ] Holy ailment design and implementation
+- [ ] Tooltip display of elemental damage breakdown on items and skills
+
+### Typed Damage Map (split damage delivery) — 3 chunks
+
+**Chunk A — Typed damage map in `computedStats` and hit delivery**
+- `computedStats()` returns `{ damageBreakdown: { Frost: N, Physical: N, ... } }` instead of a single pooled `damage` scalar
+- Each element in the skill's tag list contributes its own `flat + increased + more` calculation independently
+- Base damage is split evenly across elemental tags (e.g. a `['Physical', 'Frost']` skill splits base 50/50 before applying per-type bonuses)
+- All weapon classes and skill fire sites pass `damageBreakdown` instead of `damage` scalar; projectile and AoE zone carry the map
+- `CollisionSystem` extracts the map from the projectile and passes it forward
+
+**Chunk B — Per-type resistance application in `Enemy.takeDamage`**
+- Signature becomes `takeDamage(damageMap, sourceTags = null)` where `damageMap` is `{ Physical: N, Frost: N, ... }` (plain number still accepted for backward-compat DoT ticks)
+- For each `[type, amount]` entry, look up `this.resistances[type.toLowerCase()]`; apply `amount * (1 - clamp(res, -Infinity, 0.75))` independently
+- Remove the `break` — all matching resistances now apply to their respective portion
+- Total mitigated = sum of all per-type mitigated values, then multiply by `this.shockedMult`
+- DoT tick calls (`_tickAilments`) remain plain-number — backward-compat path handles this silently
+
+**Chunk C — Ailment scaling and penetration off the typed map**
+- `applyAilmentsOnHit` receives the full `damageMap` instead of a flat `damage` number; ailment magnitude (ignite dps, bleed dps, etc.) scales off the matching elemental portion (Blaze for ignite, Physical for bleed, etc.)
+- Penetration affixes (`player.blazePenetration`, etc.) read in Chunk B's per-type loop: effective resistance = `res - player[type.toLowerCase() + 'Penetration']` before clamping
+- After Chunk C the full elemental loop is: flat+inc+more per type → base split → resistance mitigated per type → ailment scaled per type → penetration reduces effective resistance
 
 Exit criteria:
 
@@ -317,6 +444,7 @@ Exit criteria:
 1. [ ] Start P4 currency + crafting vertical slice (single orb family + bench MVP)
 2. [ ] Begin P5 elite modifier MVP with 6 high-impact modifiers
 3. [ ] Add P6 run modifiers MVP tied to reward multiplier
+4. [ ] Resolve remaining legacy wave schedule ownership (`WAVE_SCHEDULE`) into content-layer contract
 
 ---
 

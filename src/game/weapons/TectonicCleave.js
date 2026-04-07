@@ -42,20 +42,21 @@ export class TectonicCleave extends Weapon {
     }
 
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const stats = this.computedStats(player);
     const speed = this.config.projectileSpeed;
 
     entities.acquireProjectile(
       player.x, player.y,
       (dx / dist) * speed, (dy / dist) * speed,
       {
-        damage:   this.damage,
-        radius:   this.config.projectileRadius,
-        color:    this.config.color,
-        lifetime: this.config.projectileLifetime,
-        piercing: true,
-        gravity:  this.config.gravity,
-        sourceTags: this.tags,
-        sourceTags: this.tags,
+        damage:          stats.damage,
+        damageBreakdown: stats.damageBreakdown,
+        radius:          this.config.projectileRadius,
+        color:           this.config.color,
+        lifetime:        this.config.projectileLifetime,
+        piercing:        true,
+        gravity:         this.config.gravity,
+        sourceTags:      this.tags,
       },
     );
   }

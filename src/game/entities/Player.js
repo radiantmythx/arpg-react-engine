@@ -92,6 +92,52 @@ export class Player extends Entity {
     /** Countdown for ArcaneSurge's +30% castSpeed buff; reverts on expiry. */
     this._arcaneCastSpeedTimer = 0;
 
+    // ── Elemental damage bonuses ────────────────────────────────────────────
+    // Three-layer model per damage type:
+    //   flat     — raw damage added to the hit before scaling  (e.g. +15 flat Blaze)
+    //   increased — additive % pool summed with other increases (e.g. +20% increased Blaze → 0.20)
+    //   more     — multiplicative after the increased pool     (e.g. +10% more Blaze → 0.10)
+    //
+    // Physical
+    this.flatPhysicalDamage      = 0;
+    this.increasedPhysicalDamage = 0;
+    this.morePhysicalDamage      = 0;
+    this.physicalPenetration     = 0;
+    // Blaze (fire)
+    this.flatBlazeDamage         = 0;
+    this.increasedBlazeDamage    = 0;
+    this.moreBlazeDamage         = 0;
+    this.blazePenetration        = 0;
+    // Thunder (lightning)
+    this.flatThunderDamage       = 0;
+    this.increasedThunderDamage  = 0;
+    this.moreThunderDamage       = 0;
+    this.thunderPenetration      = 0;
+    // Frost (cold)
+    this.flatFrostDamage         = 0;
+    this.increasedFrostDamage    = 0;
+    this.moreFrostDamage         = 0;
+    this.frostPenetration        = 0;
+    // Holy
+    this.flatHolyDamage          = 0;
+    this.increasedHolyDamage     = 0;
+    this.moreHolyDamage          = 0;
+    this.holyPenetration         = 0;
+    // Unholy (chaos)
+    this.flatUnholyDamage        = 0;
+    this.increasedUnholyDamage   = 0;
+    this.moreUnholyDamage        = 0;
+    this.unholyPenetration       = 0;
+
+    // ── Elemental resistances ───────────────────────────────────────────────
+    // Fractional damage reduction per type (0.20 = 20% less damage from that element).
+    // Capped at 0.75 (75%) by the damage application code.
+    this.blazeResistance   = 0;
+    this.thunderResistance = 0;
+    this.frostResistance   = 0;
+    this.holyResistance    = 0;
+    this.unholyResistance  = 0;
+
     // ── Passive skill tree (Phase 6) ──────────────────────────────────────
     this.skillPoints    = 0;
     // Start from character's tree position, or the universal root if no character.

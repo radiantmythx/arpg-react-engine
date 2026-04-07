@@ -15,7 +15,43 @@
  * Additive stats: speedFlat, maxHealthFlat, healthRegenPerS, pickupRadiusFlat
  *   value is a flat addend
  */
-export const AFFIX_POOL = [
+function inferAffixTier(id = '') {
+  if (id.includes('_minor')) return 'minor';
+  if (id.includes('_major')) return 'major';
+  if (id.includes('_epic')) return 'epic';
+  if (id.startsWith('more_')) return 'epic';
+  return 'major';
+}
+
+function inferGoldValue(id = '', tier = 'major') {
+  if (id.includes('_resist_')) {
+    if (tier === 'minor') return 3;
+    if (tier === 'major') return 6;
+    return 8;
+  }
+  if (tier === 'minor') return 2;
+  if (tier === 'major') return 5;
+  return 8;
+}
+
+function inferWeight(tier = 'major') {
+  if (tier === 'minor') return 100;
+  if (tier === 'major') return 65;
+  return 35;
+}
+
+function enrichAffix(def) {
+  const tier = def.tier ?? inferAffixTier(def.id);
+  return {
+    ...def,
+    tier,
+    goldValue: def.goldValue ?? inferGoldValue(def.id, tier),
+    weight: def.weight ?? inferWeight(tier),
+    tags: def.tags ?? [def.type, tier],
+  };
+}
+
+const RAW_AFFIX_POOL = [
   // ─── Weapon Prefixes ──────────────────────────────────────────────────────
   {
     id: 'wpn_dmg_minor',
@@ -697,4 +733,70 @@ export const AFFIX_POOL = [
     value: 18,
     label: '+18 energy shield',
   },
+
+  // ── Elemental Damage Affixes ───────────────────────────────────────────────
+  //
+  // Three-layer model (PoE-style):
+  //   flat     stat: flatXxxDamage      — prefix on weapon/jewelry; adds raw damage per hit
+  //   increased stat: increasedXxxDamage — prefix on weapon/armor/jewelry/offhand; additive % pool
+  //   more      stat: moreXxxDamage      — suffix on weapon; multiplicative after increased
+  //
+  // Elemental types: Physical, Blaze, Thunder, Frost, Holy, Unholy
+  //
+  // Also includes elemental resistance suffixes (reducedDamageTaken from that element).
+
+  // ─── Physical ────────────────────────────────────────────────────────────
+  { id: 'flat_physical_minor',     type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatPhysicalDamage',      value: 8,    label: '+8 flat Physical Damage' },
+  { id: 'flat_physical_major',     type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatPhysicalDamage',      value: 18,   label: '+18 flat Physical Damage' },
+  { id: 'inc_physical_minor',      type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedPhysicalDamage', value: 0.12, label: '+12% increased Physical Damage' },
+  { id: 'inc_physical_major',      type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedPhysicalDamage', value: 0.22, label: '+22% increased Physical Damage' },
+  { id: 'more_physical',           type: 'suffix', slots: ['weapon'],            stat: 'morePhysicalDamage',      value: 0.10, label: '+10% more Physical Damage' },
+
+  // ─── Blaze ────────────────────────────────────────────────────────────────
+  { id: 'flat_blaze_minor',        type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatBlazeDamage',         value: 10,   label: '+10 flat Blaze Damage' },
+  { id: 'flat_blaze_major',        type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatBlazeDamage',         value: 20,   label: '+20 flat Blaze Damage' },
+  { id: 'inc_blaze_minor',         type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedBlazeDamage',    value: 0.12, label: '+12% increased Blaze Damage' },
+  { id: 'inc_blaze_major',         type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedBlazeDamage',    value: 0.22, label: '+22% increased Blaze Damage' },
+  { id: 'more_blaze',              type: 'suffix', slots: ['weapon'],            stat: 'moreBlazeDamage',         value: 0.10, label: '+10% more Blaze Damage' },
+  { id: 'of_blaze_resist_minor',   type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'blazeResistance', value: 0.12, label: '+12% Blaze Resistance' },
+  { id: 'of_blaze_resist_major',   type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'blazeResistance', value: 0.22, label: '+22% Blaze Resistance' },
+
+  // ─── Thunder ──────────────────────────────────────────────────────────────
+  { id: 'flat_thunder_minor',      type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatThunderDamage',       value: 6,    label: '+6 flat Thunder Damage' },
+  { id: 'flat_thunder_major',      type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatThunderDamage',       value: 16,   label: '+16 flat Thunder Damage' },
+  { id: 'inc_thunder_minor',       type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedThunderDamage',  value: 0.12, label: '+12% increased Thunder Damage' },
+  { id: 'inc_thunder_major',       type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedThunderDamage',  value: 0.22, label: '+22% increased Thunder Damage' },
+  { id: 'more_thunder',            type: 'suffix', slots: ['weapon'],            stat: 'moreThunderDamage',       value: 0.10, label: '+10% more Thunder Damage' },
+  { id: 'of_thunder_resist_minor', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'thunderResistance', value: 0.12, label: '+12% Thunder Resistance' },
+  { id: 'of_thunder_resist_major', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'thunderResistance', value: 0.22, label: '+22% Thunder Resistance' },
+
+  // ─── Frost ────────────────────────────────────────────────────────────────
+  { id: 'flat_frost_minor',        type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatFrostDamage',         value: 9,    label: '+9 flat Frost Damage' },
+  { id: 'flat_frost_major',        type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatFrostDamage',         value: 18,   label: '+18 flat Frost Damage' },
+  { id: 'inc_frost_minor',         type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedFrostDamage',    value: 0.12, label: '+12% increased Frost Damage' },
+  { id: 'inc_frost_major',         type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedFrostDamage',    value: 0.22, label: '+22% increased Frost Damage' },
+  { id: 'more_frost',              type: 'suffix', slots: ['weapon'],            stat: 'moreFrostDamage',         value: 0.10, label: '+10% more Frost Damage' },
+  { id: 'of_frost_resist_minor',   type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'frostResistance', value: 0.12, label: '+12% Frost Resistance' },
+  { id: 'of_frost_resist_major',   type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'frostResistance', value: 0.22, label: '+22% Frost Resistance' },
+
+  // ─── Holy ─────────────────────────────────────────────────────────────────
+  { id: 'flat_holy_minor',         type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatHolyDamage',          value: 10,   label: '+10 flat Holy Damage' },
+  { id: 'flat_holy_major',         type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatHolyDamage',          value: 22,   label: '+22 flat Holy Damage' },
+  { id: 'inc_holy_minor',          type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedHolyDamage',     value: 0.12, label: '+12% increased Holy Damage' },
+  { id: 'inc_holy_major',          type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedHolyDamage',     value: 0.22, label: '+22% increased Holy Damage' },
+  { id: 'more_holy',               type: 'suffix', slots: ['weapon'],            stat: 'moreHolyDamage',          value: 0.10, label: '+10% more Holy Damage' },
+  { id: 'of_holy_resist_minor',    type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'holyResistance', value: 0.12, label: '+12% Holy Resistance' },
+  { id: 'of_holy_resist_major',    type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'holyResistance', value: 0.22, label: '+22% Holy Resistance' },
+
+  // ─── Unholy ───────────────────────────────────────────────────────────────
+  { id: 'flat_unholy_minor',       type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatUnholyDamage',        value: 10,   label: '+10 flat Unholy Damage' },
+  { id: 'flat_unholy_major',       type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatUnholyDamage',        value: 20,   label: '+20 flat Unholy Damage' },
+  { id: 'inc_unholy_minor',        type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedUnholyDamage',   value: 0.12, label: '+12% increased Unholy Damage' },
+  { id: 'inc_unholy_major',        type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedUnholyDamage',   value: 0.22, label: '+22% increased Unholy Damage' },
+  { id: 'more_unholy',             type: 'suffix', slots: ['weapon'],            stat: 'moreUnholyDamage',        value: 0.10, label: '+10% more Unholy Damage' },
+  { id: 'of_unholy_resist_minor',  type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'unholyResistance', value: 0.12, label: '+12% Unholy Resistance' },
+  { id: 'of_unholy_resist_major',  type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'unholyResistance', value: 0.22, label: '+22% Unholy Resistance' },
 ];
+
+export const AFFIX_POOL = RAW_AFFIX_POOL.map(enrichAffix);
+export const AFFIX_BY_ID = Object.fromEntries(AFFIX_POOL.map((a) => [a.id, a]));

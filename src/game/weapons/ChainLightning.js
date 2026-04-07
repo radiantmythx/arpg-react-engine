@@ -22,7 +22,7 @@ const FLASH_LIFETIME = 0.12;
 export class ChainLightning extends Weapon {
   constructor() {
     super(WEAPONS.CHAIN_LIGHTNING);
-    this.tags = ['Spell', 'Projectile', 'Lightning'];
+    this.tags = ['Spell', 'Projectile', 'Thunder'];
     this.isActive = true;  // hotbar skill — fires only on key press
     this._timer = this.cooldown; // start ready
     /** @type {Array<{x1,y1,x2,y2,age}>} ephemeral arc visuals */
@@ -46,20 +46,21 @@ export class ChainLightning extends Weapon {
     const dx = tx - player.x;
     const dy = ty - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const stats = this.computedStats(player);
     const speed = this.config.projectileSpeed;
 
     entities.acquireProjectile(
       player.x, player.y,
       (dx / dist) * speed, (dy / dist) * speed,
       {
-        damage:   this.damage,
-        radius:   this.config.projectileRadius,
-        color:    this.config.color,
-        lifetime: this.config.projectileLifetime,
-        piercing: false,
-        chainWeapon: this, // payload reference so CollisionSystem can call processChain
-        sourceTags: this.tags,
-        sourceTags: this.tags,
+        damage:          stats.damage,
+        damageBreakdown: stats.damageBreakdown,
+        radius:          this.config.projectileRadius,
+        color:           this.config.color,
+        lifetime:        this.config.projectileLifetime,
+        piercing:        false,
+        chainWeapon:     this,
+        sourceTags:      this.tags,
       },
     );
     if (engine) engine.onSkillFire();
@@ -101,7 +102,7 @@ export class ChainLightning extends Weapon {
     for (const target of targets) {
       alreadyHit.add(target);
       this._flashes.push({ x1: sourceEnemy.x, y1: sourceEnemy.y, x2: target.x, y2: target.y, age: 0 });
-      target.takeDamage(Math.round(hopDamage));
+      target.takeDamage(Math.round(hopDamage), this.tags);
       // Recurse (chain continues from this target with reduced damage).
       this.processChain(target, allEnemies, Math.round(hopDamage * (1 - decay)), hopsLeft - 1, alreadyHit);
     }

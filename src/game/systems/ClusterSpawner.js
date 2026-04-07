@@ -1,9 +1,13 @@
 import { Enemy } from '../entities/Enemy.js';
 import { BossEnemy } from '../entities/BossEnemy.js';
 import { ItemDrop } from '../entities/ItemDrop.js';
-import { ENEMY_TYPES, WAVE_SCHEDULE, SPAWN_RADIUS, DESPAWN_RADIUS, BOSS_DEFS, ENEMY_AI } from '../config.js';
-import { GENERIC_ITEM_DEFS, UNIQUE_ITEM_DEFS } from '../data/items.js';
+import { WAVE_SCHEDULE, SPAWN_RADIUS, DESPAWN_RADIUS, BOSS_DEFS, ENEMY_AI } from '../config.js';
 import { generateItem } from '../data/itemGenerator.js';
+import { getEnemyById, listEnemyIds } from '../content/registries/enemyRegistry.js';
+import { listGenericItemDefs, listUniqueItemDefs } from '../content/registries/itemRegistry.js';
+
+const GENERIC_ITEM_DEFS = listGenericItemDefs();
+const UNIQUE_ITEM_DEFS = listUniqueItemDefs();
 
 /**
  * ClusterSpawner (C5)
@@ -121,7 +125,7 @@ export class ClusterSpawner {
     this._continuousTimer += dt;
     if (this._continuousTimer >= this._continuousInterval) {
       this._continuousTimer -= this._continuousInterval;
-      const keys = Object.keys(ENEMY_TYPES);
+      const keys = listEnemyIds();
       const type = keys[Math.floor(Math.random() * keys.length)];
       const scale = Math.min(1 + elapsed / 120, 5);
       const count = Math.max(1, Math.floor(2 * scale));
@@ -132,7 +136,7 @@ export class ClusterSpawner {
   }
 
   placeSingleEnemy(typeId, room, mapLayout, entities = this.entities, difficulty = 1, forceChampion = false, modEffects = null, packId = null) {
-    const base = ENEMY_TYPES[typeId];
+    const base = getEnemyById(typeId);
     if (!base) return null;
 
     const mods = modEffects ?? {
@@ -196,7 +200,7 @@ export class ClusterSpawner {
   }
 
   _spawnLegacyGroup(typeId, count, player) {
-    const base = ENEMY_TYPES[typeId];
+    const base = getEnemyById(typeId);
     if (!base) return;
     const legacyPackId = `legacy:${this._waveIndex}:${Math.floor(this._continuousTimer * 1000)}`;
     for (let i = 0; i < count; i++) {

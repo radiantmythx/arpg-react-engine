@@ -14,7 +14,17 @@
  *   isActive = true
  */
 
-import { applyAilmentsOnHit } from './skillTags.js';
+import { applyAilmentsOnHit, resolvePenetrationMap } from '../../data/skillTags.js';
+import { ELEMENT_TYPES, makeDamageRange, scaleDamageMap, sumAverageDamageMap } from '../../damageUtils.js';
+import { SKILL_TUNING } from '../tuning/index.js';
+
+function tickVisuals(list, dt) {
+  if (!Array.isArray(list) || list.length === 0) return;
+  for (const fx of list) fx.age += dt;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].age >= list[i].duration) list.splice(i, 1);
+  }
+}
 
 class SkillDef {
   constructor(cfg) {
@@ -114,13 +124,34 @@ class SkillDef {
       if (support?.modify) support.modify(stats, this);
     }
 
-    // 3. Player tag-based "increased" multipliers (additive pool, applied once)
+    // 3. Player tag-based bonuses — domain (Spell/Attack/AoE) + per-element flat/increased/more
     if (stats.damage != null && player) {
-      let inc = 0;
-      if (this.tags.includes('Spell')   && (player.spellDamage  ?? 0) > 0) inc += player.spellDamage;
-      if (this.tags.includes('Attack')  && (player.attackDamage ?? 0) > 0) inc += player.attackDamage;
-      if (this.tags.includes('AoE')     && (player.aoeDamage    ?? 0) > 0) inc += player.aoeDamage;
-      if (inc > 0) stats.damage = Math.round(stats.damage * (1 + inc));
+      let domainInc = 0;
+      if (this.tags.includes('Spell')  && (player.spellDamage  ?? 0) > 0) domainInc += player.spellDamage;
+      if (this.tags.includes('Attack') && (player.attackDamage ?? 0) > 0) domainInc += player.attackDamage;
+      if (this.tags.includes('AoE')    && (player.aoeDamage    ?? 0) > 0) domainInc += player.aoeDamage;
+
+      const activeElems = ELEMENT_TYPES.filter((e) => this.tags.includes(e));
+      const typedElems = activeElems.length > 0 ? activeElems : ['Physical'];
+      const basePer = stats.damage / typedElems.length;
+      const breakdown = {};
+      for (const elem of typedElems) {
+        const flat = player[`flat${elem}Damage`] ?? 0;
+        const elemInc = player[`increased${elem}Damage`] ?? 0;
+        const more = player[`more${elem}Damage`] ?? 0;
+        const baseTyped = (basePer + flat) * (1 + domainInc + elemInc) * (1 + more);
+        breakdown[elem] = makeDamageRange(baseTyped, elem);
+      }
+      stats.damageBreakdown = breakdown;
+      stats.damage = Math.round(sumAverageDamageMap(breakdown));
+      const mins = Object.values(breakdown).map((r) => r.min ?? 0);
+      const maxs = Object.values(breakdown).map((r) => r.max ?? 0);
+      stats.damageRange = { min: mins.reduce((a, b) => a + b, 0), max: maxs.reduce((a, b) => a + b, 0) };
+    } else if (stats.damage != null) {
+      stats.damageBreakdown = { Physical: makeDamageRange(stats.damage, 'Physical') };
+      stats.damage = Math.round(sumAverageDamageMap(stats.damageBreakdown));
+      const one = stats.damageBreakdown.Physical;
+      stats.damageRange = { min: one.min, max: one.max };
     }
 
     return stats;
@@ -141,6 +172,8 @@ class SkillDef {
   }
 
   activate(_player, _entities, _engine) {}
+
+  draw(_renderer, _player) {}
 
   levelUp() {
     this.level++;
@@ -209,21 +242,24 @@ class ChaosBlink extends SkillDef {
 // ─── Frost Nova ─────────────────────────────────────────────────────────────
 class FrostNova extends SkillDef {
   constructor() {
+    const tuning = SKILL_TUNING.frostNova;
     super({
       id:          'frost_nova',
       name:        'Frost Nova',
       icon:        '❄',
       description: 'Release an ice ring that damages and freezes enemies within 250 px for 2 s.',
-      cooldown:    6,
+      cooldown:    tuning.baseCooldown,
       castTime:    0.65,
-      base:    { damage: 15, radius: 250, freeze: 2.0 },
+      base:    { damage: tuning.baseDamage, radius: 250, freeze: 2.0 },
       scaling: { damage: { flat: 7.5, pct: 0 }, radius: { flat: 35, pct: 0 }, freeze: { flat: 0.25, pct: 0 } },
     });
-    this.tags = ['Spell', 'AoE', 'Cold'];
+    this.tags = ['Spell', 'AoE', 'Frost'];
+    this._bursts = [];
   }
 
   activate(player, entities, engine) {
     const { damage, radius, freeze } = this.computedStats(player);
+    this._bursts.push({ x: player.x, y: player.y, radius, age: 0, duration: 0.42, color: '#74b9ff' });
     const rSq = radius * radius;
     for (const enemy of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
       if (!enemy.active) continue;
@@ -231,7 +267,7 @@ class FrostNova extends SkillDef {
       const dy = enemy.y - player.y;
       if (dx * dx + dy * dy <= rSq) {
         if (engine) engine.onEnemyHit(enemy, damage);
-        enemy.takeDamage(damage);
+        enemy.takeDamage(damage, this.tags);
         enemy.frozenTimer = Math.max(enemy.frozenTimer, freeze);
         if (!enemy.active && engine) engine.onEnemyKilled(enemy);
       }
@@ -248,13 +284,27 @@ class FrostNova extends SkillDef {
             const dx2 = e2.x - enemy.x, dy2 = e2.y - enemy.y;
             if (dx2 * dx2 + dy2 * dy2 <= sRq) {
               if (engine) engine.onEnemyHit(e2, shatterDmg);
-              e2.takeDamage(shatterDmg);
+              e2.takeDamage(shatterDmg, this.tags);
               if (!e2.active && engine) engine.onEnemyKilled(e2);
             }
           }
           if (engine) engine.particles.emit('death', enemy.x, enemy.y, { color: '#dfe6e9', count: 18 });
         }
       }
+    }
+  }
+
+  update(dt) {
+    tickVisuals(this._bursts, dt);
+  }
+
+  draw(renderer) {
+    for (const burst of this._bursts) {
+      const t = burst.age / burst.duration;
+      const radius = burst.radius * (0.3 + 0.7 * t);
+      renderer.drawCircle(burst.x, burst.y, radius, burst.color, 0.14 * (1 - t));
+      renderer.drawStrokeCircle(burst.x, burst.y, radius, '#dff3ff', 3, 0.9 * (1 - t));
+      renderer.drawStrokeCircle(burst.x, burst.y, radius * 0.66, burst.color, 2, 0.5 * (1 - t));
     }
   }
 
@@ -388,7 +438,8 @@ class WraithSummon extends SkillDef {
       base:    { damage: 200, burstRadius: 80 },
       scaling: { damage: { flat: 80, pct: 0 }, burstRadius: { flat: 20, pct: 0 } },
     });
-    this.tags = ['Spell', 'Minion', 'Duration'];
+    this.tags = ['Spell', 'Minion', 'Duration', 'Unholy'];
+    this._bursts = [];
   }
 
   activate(player, entities, engine) {
@@ -415,7 +466,7 @@ class WraithSummon extends SkillDef {
         entities.acquireProjectile(
           player.x, player.y,
           Math.cos(a) * 320, Math.sin(a) * 320,
-          { damage: Math.round(damage * 0.4), radius: 5, color: '#a29bfe', lifetime: 1.2, sourceTags: this.tags },
+          { damage: Math.round(damage * 0.4), damageBreakdown: null, radius: 5, color: '#a29bfe', lifetime: 1.2, sourceTags: this.tags },
         );
       }
     }
@@ -428,11 +479,26 @@ class WraithSummon extends SkillDef {
       const dy = e.y - ty;
       if (dx * dx + dy * dy <= rSq) {
         if (engine) engine.onEnemyHit(e, damage);
-        e.takeDamage(damage);
-        if (!e.active && engine) engine.onEnemyKilled(e);
+          e.takeDamage(damage, this.tags);
+          if (!e.active && engine) engine.onEnemyKilled(e);
       }
     }
     if (engine) engine.particles.emit('death', tx, ty, { color: '#a29bfe', count: 30 });
+    this._bursts.push({ x: tx, y: ty, radius: burstRadius, age: 0, duration: 0.46, color: '#a29bfe' });
+  }
+
+  update(dt) {
+    tickVisuals(this._bursts, dt);
+  }
+
+  draw(renderer) {
+    for (const burst of this._bursts) {
+      const t = burst.age / burst.duration;
+      const radius = burst.radius * (0.25 + 0.75 * t);
+      renderer.drawCircle(burst.x, burst.y, radius, burst.color, 0.16 * (1 - t));
+      renderer.drawStrokeCircle(burst.x, burst.y, radius, '#f0e6ff', 3, 0.85 * (1 - t));
+      renderer.drawStrokeCircle(burst.x, burst.y, radius * 0.5, '#6c5ce7', 2, 0.55 * (1 - t));
+    }
   }
 
   _applyLevelStats() {
@@ -587,22 +653,25 @@ class ArcaneSurge extends SkillDef {
 // ─── Fireball ────────────────────────────────────────────────────────────────
 class Fireball extends SkillDef {
   constructor() {
+    const tuning = SKILL_TUNING.fireball;
     super({
       id:          'fireball',
       name:        'Fireball',
       icon:        '🔥',
       description: 'Launch an arcing fireball that detonates on impact, dealing fire damage to all enemies within 60 px and igniting them.',
-      cooldown:    4.0,
+      cooldown:    tuning.baseCooldown,
       castTime:    0.75,
-      base:    { damage: 55, radius: 60 },
+      base:    { damage: tuning.baseDamage, radius: 60 },
       scaling: { damage: { flat: 18, pct: 0 }, radius: { flat: 10, pct: 0 } },
     });
-    this.tags = ['Spell', 'Projectile', 'Fire', 'AoE'];
+    this.tags = ['Spell', 'Projectile', 'Blaze', 'AoE'];
+    this._bursts = [];
   }
 
   activate(player, entities, engine) {
-    const { damage, radius } = this.computedStats(player);
+    const { damage, radius, damageBreakdown } = this.computedStats(player);
     const tags = this.tags;
+    const penMap = resolvePenetrationMap(tags, player);
 
     // Aim toward nearest enemy, fallback to facing direction
     let tx = player.x + (player.facingX ?? 0) * 300;
@@ -619,14 +688,15 @@ class Fireball extends SkillDef {
 
     // AoE burst helper — detonates at world position (bx, by)
     const burst = (bx, by) => {
+      this._bursts.push({ x: bx, y: by, radius, age: 0, duration: 0.38, color: '#ff7f50' });
       const rSq = radius * radius;
       for (const e of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
         if (!e.active) continue;
         const ex = e.x - bx, ey = e.y - by;
         if (ex * ex + ey * ey <= rSq) {
           if (engine) engine.onEnemyHit(e, damage);
-          e.takeDamage(damage);
-          applyAilmentsOnHit(tags, damage, e, player);
+          e.takeDamage(damageBreakdown ?? damage, tags, penMap);
+          applyAilmentsOnHit(tags, damageBreakdown ?? damage, e, player);
           // Level 20: guaranteed ignite
           if (this._maxLevel20GuaranteedIgnite && e.active) {
             e.ignitedTimer = Math.max(e.ignitedTimer ?? 0, 3.0);
@@ -642,16 +712,31 @@ class Fireball extends SkillDef {
       player.x, player.y,
       (dx / dist) * 380, (dy / dist) * 380,
       {
-        damage:     1,    // minimal trigger; real damage handled by burst
-        radius:     8,
-        color:      '#e17055',
-        lifetime:   2.0,
-        sourceTags: [],   // no per-hit ailments; burst applies them internally
-        onHit:      (proj) => burst(proj.x, proj.y),
-        onExpire:   (proj) => burst(proj.x, proj.y),
+        damage:          1,    // minimal trigger; real damage handled by burst
+        damageBreakdown: null,
+        radius:          8,
+        color:           '#e17055',
+        lifetime:        2.0,
+        sourceTags:      [],   // no per-hit ailments; burst applies them internally
+        onHit:           (proj) => burst(proj.x, proj.y),
+        onExpire:        (proj) => burst(proj.x, proj.y),
       },
     );
     if (engine) engine.onSkillFire();
+  }
+
+  update(dt) {
+    tickVisuals(this._bursts, dt);
+  }
+
+  draw(renderer) {
+    for (const burst of this._bursts) {
+      const t = burst.age / burst.duration;
+      const ringRadius = burst.radius * (0.25 + 0.75 * t);
+      renderer.drawCircle(burst.x, burst.y, ringRadius, '#ff8d5b', 0.18 * (1 - t));
+      renderer.drawStrokeCircle(burst.x, burst.y, ringRadius, '#ffe0b2', 3, 0.95 * (1 - t));
+      renderer.drawStrokeCircle(burst.x, burst.y, ringRadius * 0.58, '#e17055', 2, 0.6 * (1 - t));
+    }
   }
 
   _applyLevelStats() {
@@ -681,12 +766,14 @@ class GlacialCascade extends SkillDef {
       base:    { damage: 30, pillarRadius: 36 },
       scaling: { damage: { flat: 12, pct: 0 }, pillarRadius: { flat: 5, pct: 0 } },
     });
-    this.tags = ['Spell', 'AoE', 'Cold', 'Duration'];
+    this.tags = ['Spell', 'AoE', 'Frost', 'Duration'];
+    this._pillars = [];
   }
 
   activate(player, entities, engine) {
-    const { damage, pillarRadius } = this.computedStats(player);
+    const { damage, pillarRadius, damageBreakdown } = this.computedStats(player);
     const tags = this.tags;
+    const penMap = resolvePenetrationMap(tags, player);
 
     // Direction toward nearest enemy, fallback to player facing
     let dirX = player.facingX ?? 0;
@@ -707,19 +794,36 @@ class GlacialCascade extends SkillDef {
     for (let i = 1; i <= pillarCount; i++) {
       const px = player.x + dirX * step * i;
       const py = player.y + dirY * step * i;
+      this._pillars.push({ x: px, y: py, radius: pillarRadius, age: 0, duration: 0.5 });
       for (const e of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
         if (!e.active) continue;
         const dx = e.x - px, dy = e.y - py;
         if (dx * dx + dy * dy <= rSq) {
           if (engine) engine.onEnemyHit(e, damage);
-          e.takeDamage(damage);
-          applyAilmentsOnHit(tags, damage, e, player);
+          e.takeDamage(damageBreakdown ?? damage, tags, penMap);
+          applyAilmentsOnHit(tags, damageBreakdown ?? damage, e, player);
           if (!e.active && engine) engine.onEnemyKilled(e);
         }
       }
       if (engine) engine.particles.emit('death', px, py, { color: '#74b9ff', count: 12 });
     }
     if (engine) engine.onSkillFire();
+  }
+
+  update(dt) {
+    tickVisuals(this._pillars, dt);
+  }
+
+  draw(renderer) {
+    for (const pillar of this._pillars) {
+      const t = pillar.age / pillar.duration;
+      const heightPulse = 0.55 + (1 - t) * 0.85;
+      renderer.drawCircle(pillar.x, pillar.y, pillar.radius * 0.9, '#8fd3ff', 0.12 * (1 - t));
+      renderer.drawStrokeCircle(pillar.x, pillar.y, pillar.radius, '#e8f7ff', 2.5, 0.85 * (1 - t));
+      renderer.drawLine(pillar.x, pillar.y + pillar.radius * 0.2, pillar.x, pillar.y - pillar.radius * heightPulse, '#bfe7ff', 3, 0.75 * (1 - t));
+      renderer.drawLine(pillar.x - pillar.radius * 0.35, pillar.y + pillar.radius * 0.35, pillar.x, pillar.y - pillar.radius * 0.5, '#74b9ff', 2, 0.6 * (1 - t));
+      renderer.drawLine(pillar.x + pillar.radius * 0.35, pillar.y + pillar.radius * 0.35, pillar.x, pillar.y - pillar.radius * 0.5, '#74b9ff', 2, 0.6 * (1 - t));
+    }
   }
 
   _applyLevelStats() {
@@ -749,12 +853,15 @@ class LightningStrike extends SkillDef {
       base:    { damage: 35, meleeRadius: 80, boltDamage: 22 },
       scaling: { damage: { flat: 12, pct: 0 }, boltDamage: { flat: 8, pct: 0 } },
     });
-    this.tags = ['Attack', 'Projectile', 'Melee', 'Lightning'];
+    this.tags = ['Attack', 'Projectile', 'Melee', 'Thunder'];
+    this._bursts = [];
   }
 
   activate(player, entities, engine) {
-    const { damage, meleeRadius, boltDamage } = this.computedStats(player);
+    const { damage, meleeRadius, boltDamage, damageBreakdown } = this.computedStats(player);
     const tags = this.tags;
+    const penMap = resolvePenetrationMap(tags, player);
+    this._bursts.push({ x: player.x, y: player.y, radius: meleeRadius, age: 0, duration: 0.26, color: '#7fd7ff' });
 
     // Phase 1 — melee burst
     const rSq = meleeRadius * meleeRadius;
@@ -763,9 +870,10 @@ class LightningStrike extends SkillDef {
       const dx = e.x - player.x, dy = e.y - player.y;
       if (dx * dx + dy * dy <= rSq) {
         const mDmg = Math.round(damage * 1.5);
+        const meleeBreakdown = scaleDamageMap(damageBreakdown, 1.5);
         if (engine) engine.onEnemyHit(e, mDmg);
-        e.takeDamage(mDmg);
-        applyAilmentsOnHit(tags, mDmg, e, player);
+        e.takeDamage(meleeBreakdown ?? mDmg, tags, penMap);
+        applyAilmentsOnHit(tags, meleeBreakdown ?? mDmg, e, player);
         if (!e.active && engine) engine.onEnemyKilled(e);
       }
     }
@@ -780,10 +888,26 @@ class LightningStrike extends SkillDef {
       entities.acquireProjectile(
         player.x, player.y,
         Math.cos(a) * 520, Math.sin(a) * 520,
-        { damage: boltDamage, radius: 5, color: '#74b9ff', lifetime: 1.0, sourceTags: tags },
+        { damage: boltDamage, damageBreakdown: null, radius: 5, color: '#74b9ff', lifetime: 1.0, sourceTags: tags },
       );
     }
     if (engine) engine.onSkillFire();
+  }
+
+  update(dt) {
+    tickVisuals(this._bursts, dt);
+  }
+
+  draw(renderer, player) {
+    for (const burst of this._bursts) {
+      const t = burst.age / burst.duration;
+      const radius = burst.radius * (0.45 + 0.55 * t);
+      renderer.drawStrokeCircle(burst.x, burst.y, radius, '#dff8ff', 3, 0.9 * (1 - t));
+      renderer.drawStrokeCircle(burst.x, burst.y, radius * 0.72, burst.color, 2, 0.7 * (1 - t));
+      if (player) {
+        renderer.drawLine(burst.x, burst.y, burst.x + (player.facingX ?? 0) * radius, burst.y + (player.facingY ?? 1) * radius, '#74b9ff', 3, 0.65 * (1 - t));
+      }
+    }
   }
 
   _applyLevelStats() {
@@ -816,6 +940,7 @@ class BladeFlurry extends SkillDef {
     this.tags = ['Attack', 'Channelling', 'Physical', 'AoE', 'Melee'];
     this._stages       = 0;
     this._releaseTimer = 0;
+    this._slashes      = [];
   }
 
   activate(player, entities, engine) {
@@ -832,6 +957,7 @@ class BladeFlurry extends SkillDef {
   }
 
   update(dt, player, entities, engine) {
+    tickVisuals(this._slashes, dt);
     if (this._releaseTimer > 0 && this._stages > 0) {
       this._releaseTimer -= dt;
       if (this._releaseTimer <= 0) this._release(player, entities, engine);
@@ -840,11 +966,14 @@ class BladeFlurry extends SkillDef {
 
   _release(player, entities, engine) {
     if (!player || !entities) return;
-    const { damage, baseRadius } = this.computedStats(player);
+    const { damage, baseRadius, damageBreakdown } = this.computedStats(player);
     const stages        = this._stages;
     const releaseDmg    = Math.round(damage * (0.5 + stages * 0.25));
+    const releaseMult   = (0.5 + stages * 0.25);
+    const releaseBreakdown = scaleDamageMap(damageBreakdown, releaseMult);
     const releaseRadius = baseRadius + stages * 12;
     const tags          = this.tags;
+    const penMap = resolvePenetrationMap(tags, player);
     const rSq           = releaseRadius * releaseRadius;
 
     for (const e of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
@@ -852,8 +981,8 @@ class BladeFlurry extends SkillDef {
       const dx = e.x - player.x, dy = e.y - player.y;
       if (dx * dx + dy * dy <= rSq) {
         if (engine) engine.onEnemyHit(e, releaseDmg);
-        e.takeDamage(releaseDmg);
-        applyAilmentsOnHit(tags, releaseDmg, e, player);
+        e.takeDamage(releaseBreakdown ?? releaseDmg, tags, penMap);
+        applyAilmentsOnHit(tags, releaseBreakdown ?? releaseDmg, e, player);
         if (!e.active && engine) engine.onEnemyKilled(e);
       }
     }
@@ -861,9 +990,35 @@ class BladeFlurry extends SkillDef {
       engine.particles.emit('death', player.x, player.y, { color: '#ff7675', count: 10 + stages * 4 });
       engine.onSkillFire();
     }
+    this._slashes.push({ x: player.x, y: player.y, radius: releaseRadius, age: 0, duration: 0.34, stages });
     this._stages       = 0;
     this._releaseTimer = 0;
     this._timer        = 0; // restart cooldown from release
+  }
+
+  draw(renderer) {
+    for (const slash of this._slashes) {
+      const t = slash.age / slash.duration;
+      const radius = slash.radius * (0.35 + 0.65 * t);
+      const alpha = (1 - t);
+      renderer.drawStrokeCircle(slash.x, slash.y, radius, '#ffd0d0', 3, 0.8 * alpha);
+      renderer.drawStrokeCircle(slash.x, slash.y, radius * 0.78, '#ff7675', 2, 0.6 * alpha);
+      const spokeCount = Math.min(8, 2 + slash.stages);
+      for (let i = 0; i < spokeCount; i++) {
+        const angle = t * Math.PI * 3 + (i / spokeCount) * Math.PI * 2;
+        const inner = radius * 0.25;
+        const outer = radius;
+        renderer.drawLine(
+          slash.x + Math.cos(angle) * inner,
+          slash.y + Math.sin(angle) * inner,
+          slash.x + Math.cos(angle) * outer,
+          slash.y + Math.sin(angle) * outer,
+          '#ff9aa2',
+          2,
+          0.45 * alpha,
+        );
+      }
+    }
   }
 
   _applyLevelStats() {
@@ -897,21 +1052,25 @@ class Earthquake extends SkillDef {
     this._aftershockPending = false;
     this._aftershockTimer   = 0;
     this._aftershockCtx     = null;
+    this._shockwaves        = [];
   }
 
   activate(player, entities, engine) {
-    const { damage, impactRadius, afterRadius } = this.computedStats(player);
+    const { damage, impactRadius, afterRadius, damageBreakdown } = this.computedStats(player);
     const tags   = this.tags;
+    const penMap = resolvePenetrationMap(tags, player);
     const impDmg = Math.round(damage * 0.80);
+    const impBreakdown = scaleDamageMap(damageBreakdown, 0.80);
     const rSq    = impactRadius * impactRadius;
+    this._shockwaves.push({ x: player.x, y: player.y, radius: impactRadius, age: 0, duration: 0.4, color: '#fdcb6e' });
 
     for (const e of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
       if (!e.active) continue;
       const dx = e.x - player.x, dy = e.y - player.y;
       if (dx * dx + dy * dy <= rSq) {
         if (engine) engine.onEnemyHit(e, impDmg);
-        e.takeDamage(impDmg);
-        applyAilmentsOnHit(tags, impDmg, e, player);
+        e.takeDamage(impBreakdown ?? impDmg, tags, penMap);
+        applyAilmentsOnHit(tags, impBreakdown ?? impDmg, e, player);
         if (!e.active && engine) engine.onEnemyKilled(e);
       }
     }
@@ -919,7 +1078,7 @@ class Earthquake extends SkillDef {
 
     this._aftershockPending = true;
     this._aftershockTimer   = 1.5;
-    this._aftershockCtx     = { originX: player.x, originY: player.y, damage, afterRadius, entities, engine, player, tags };
+    this._aftershockCtx     = { originX: player.x, originY: player.y, damage, damageBreakdown, afterRadius, entities, engine, player, tags, penMap };
     // Level 20: queue a second aftershock 1.5 s after the first
     if (this._maxLevel20DoubleAfterShock) {
       this._aftershock2Pending = true;
@@ -928,6 +1087,7 @@ class Earthquake extends SkillDef {
   }
 
   update(dt) {
+    tickVisuals(this._shockwaves, dt);
     if (this._aftershockPending) {
       this._aftershockTimer -= dt;
       if (this._aftershockTimer <= 0) this._doAfterShock();
@@ -939,19 +1099,20 @@ class Earthquake extends SkillDef {
         // Re-fire aftershock from same origin
         const ctx = this._aftershockCtx;
         if (ctx) {
-          const { originX, originY, damage, afterRadius, entities, engine, player, tags } = ctx;
+          const { originX, originY, damage, damageBreakdown, afterRadius, entities, engine, player, tags, penMap } = ctx;
           const rSq = afterRadius * afterRadius;
           for (const e of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
             if (!e.active) continue;
             const dx = e.x - originX, dy = e.y - originY;
             if (dx * dx + dy * dy <= rSq) {
               if (engine) engine.onEnemyHit(e, damage);
-              e.takeDamage(damage);
-              applyAilmentsOnHit(tags, damage, e, player);
+              e.takeDamage(damageBreakdown ?? damage, tags, penMap);
+              applyAilmentsOnHit(tags, damageBreakdown ?? damage, e, player);
               if (!e.active && engine) engine.onEnemyKilled(e);
             }
           }
           if (engine) engine.particles.emit('death', originX, originY, { color: '#fdcb6e', count: 40 });
+          this._shockwaves.push({ x: originX, y: originY, radius: afterRadius, age: 0, duration: 0.55, color: '#ffe08a' });
         }
       }
     }
@@ -960,21 +1121,33 @@ class Earthquake extends SkillDef {
   _doAfterShock() {
     const ctx = this._aftershockCtx;
     if (!ctx) return;
-    const { originX, originY, damage, afterRadius, entities, engine, player, tags } = ctx;
+    const { originX, originY, damage, damageBreakdown, afterRadius, entities, engine, player, tags, penMap } = ctx;
     const rSq = afterRadius * afterRadius;
     for (const e of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
       if (!e.active) continue;
       const dx = e.x - originX, dy = e.y - originY;
       if (dx * dx + dy * dy <= rSq) {
         if (engine) engine.onEnemyHit(e, damage);
-        e.takeDamage(damage);
-        applyAilmentsOnHit(tags, damage, e, player);
+        e.takeDamage(damageBreakdown ?? damage, tags, penMap);
+        applyAilmentsOnHit(tags, damageBreakdown ?? damage, e, player);
         if (!e.active && engine) engine.onEnemyKilled(e);
       }
     }
     if (engine) engine.particles.emit('death', originX, originY, { color: '#fdcb6e', count: 40 });
+    this._shockwaves.push({ x: originX, y: originY, radius: afterRadius, age: 0, duration: 0.55, color: '#ffe08a' });
     this._aftershockPending = false;
     this._aftershockCtx     = null;
+  }
+
+  draw(renderer) {
+    for (const wave of this._shockwaves) {
+      const t = wave.age / wave.duration;
+      const radius = wave.radius * (0.2 + 0.8 * t);
+      const alpha = 1 - t;
+      renderer.drawCircle(wave.x, wave.y, radius, '#ffe29a', 0.12 * alpha);
+      renderer.drawStrokeCircle(wave.x, wave.y, radius, wave.color, 3, 0.9 * alpha);
+      renderer.drawStrokeCircle(wave.x, wave.y, radius * 0.68, '#c79b32', 2, 0.5 * alpha);
+    }
   }
 
   _applyLevelStats() {
@@ -1004,13 +1177,13 @@ class Vortex extends SkillDef {
       base:    { damage: 18, radius: 60, duration: 3.0 },
       scaling: { damage: { flat: 6, pct: 0 }, radius: { flat: 8, pct: 0 }, duration: { flat: 0.5, pct: 0 } },
     });
-    this.tags = ['Spell', 'AoE', 'Cold', 'Duration'];
+    this.tags = ['Spell', 'AoE', 'Frost', 'Duration'];
     /** @type {Array<{x,y,remaining,tickAccum,damage,radius,player,entities,engine}>} */
     this._vortices = [];
   }
 
   activate(player, entities, engine) {
-    const { damage, radius, duration } = this.computedStats(player);
+    const { damage, radius, duration, damageBreakdown } = this.computedStats(player);
 
     let tx = player.x + (player.facingX ?? 0) * 200;
     let ty = player.y + (player.facingY ?? 1) * 200;
@@ -1022,7 +1195,7 @@ class Vortex extends SkillDef {
       if (d < minSq) { minSq = d; tx = e.x; ty = e.y; }
     }
 
-    this._vortices.push({ x: tx, y: ty, remaining: duration, tickAccum: 0, damage, radius, player, entities, engine });
+    this._vortices.push({ x: tx, y: ty, remaining: duration, totalDuration: duration, tickAccum: 0, damage, damageBreakdown, radius, player, entities, engine });
     if (engine) engine.particles.emit('death', tx, ty, { color: '#74b9ff', count: 16 });
     if (engine) engine.onSkillFire();
   }
@@ -1030,6 +1203,7 @@ class Vortex extends SkillDef {
   update(dt) {
     const tags = this.tags;
     for (const v of this._vortices) {
+      const penMap = resolvePenetrationMap(tags, v.player);
       v.remaining -= dt;
       v.tickAccum  += dt;
       // Level 20: drift toward nearest enemy
@@ -1056,8 +1230,8 @@ class Vortex extends SkillDef {
           const dx = e.x - v.x, dy = e.y - v.y;
           if (dx * dx + dy * dy <= rSq) {
             if (v.engine) v.engine.onEnemyHit(e, v.damage);
-            e.takeDamage(v.damage);
-            applyAilmentsOnHit(tags, v.damage, e, v.player);
+            e.takeDamage(v.damageBreakdown ?? v.damage, tags, penMap);
+            applyAilmentsOnHit(tags, v.damageBreakdown ?? v.damage, e, v.player);
             if (!e.active && v.engine) v.engine.onEnemyKilled(e);
           }
         }
@@ -1065,6 +1239,16 @@ class Vortex extends SkillDef {
       }
     }
     this._vortices = this._vortices.filter((v) => v.remaining > 0);
+  }
+
+  draw(renderer) {
+    for (const vortex of this._vortices) {
+      const life = Math.max(0, vortex.remaining / (vortex.totalDuration || 1));
+      const pulse = 0.82 + Math.sin(vortex.tickAccum * Math.PI * 5) * 0.12;
+      renderer.drawCircle(vortex.x, vortex.y, vortex.radius * pulse, '#74b9ff', 0.12 + life * 0.06);
+      renderer.drawStrokeCircle(vortex.x, vortex.y, vortex.radius, '#d9f3ff', 2.5, 0.45 + life * 0.2);
+      renderer.drawStrokeCircle(vortex.x, vortex.y, vortex.radius * 0.68, '#5dade2', 2, 0.3 + life * 0.15);
+    }
   }
 
   _applyLevelStats() {
@@ -1081,236 +1265,22 @@ class Vortex extends SkillDef {
   get maxLevelBonus() { return 'Vortex slowly tracks the nearest enemy'; }
 }
 
-// ─── Exports ─────────────────────────────────────────────────────────────────
+// ─── Skill class exports ────────────────────────────────────────────────────
 
-/** All 14 constructors — 8 original + 6 new Phase 12.4 skills. */
-export const PURE_SKILL_CTORS = {
-  blink:             ChaosBlink,
-  frost_nova:        FrostNova,
-  gravity_well:      GravityWell,
-  blood_pact:        BloodPact,
-  wraith_summon:     WraithSummon,
-  time_warp:         TimeWarp,
-  bulwark:           IronBulwark,
-  arcane_surge:      ArcaneSurge,
-  fireball:          Fireball,
-  glacial_cascade:   GlacialCascade,
-  lightning_strike:  LightningStrike,
-  blade_flurry:      BladeFlurry,
-  earthquake:        Earthquake,
-  vortex:            Vortex,
+export {
+  ChaosBlink,
+  FrostNova,
+  GravityWell,
+  BloodPact,
+  WraithSummon,
+  TimeWarp,
+  IronBulwark,
+  ArcaneSurge,
+  Fireball,
+  GlacialCascade,
+  LightningStrike,
+  BladeFlurry,
+  Earthquake,
+  Vortex,
 };
-
-/**
- * SKILL_OFFER_POOL — entries shown at milestone levels (5 / 15 / 30).
- * Each entry:
- *   id, name, description
- *   isWeaponSkill: true  → create() returns a Weapon instance; add to player.autoSkills[]
- *   isWeaponSkill: false → createSkill() returns a SkillDef instance; add to player.pureSkills[]
- *   available(player, engine) → bool — filtered before shuffle
- */
-import { ArcaneLance }    from '../weapons/ArcaneLance.js';
-import { PhantomBlade }   from '../weapons/PhantomBlade.js';
-import { TectonicCleave } from '../weapons/TectonicCleave.js';
-import { BoneSpear }      from '../weapons/BoneSpear.js';
-import { ChainLightning } from '../weapons/ChainLightning.js';
-import { VoidShardSwarm } from '../weapons/VoidShardSwarm.js';
-
-export const SKILL_OFFER_POOL = [
-  // ── Weapon-based active skills ──────────────────────────────────────────
-  {
-    id:           'PHANTOM_BLADE',
-    name:         'Phantom Blade',
-    description:  'Hurl a spectral blade in your facing direction.',
-    isWeaponSkill: true,
-    available:    (player) => !player.autoSkills.some((w) => w.id === 'PHANTOM_BLADE'),
-    create:       () => new PhantomBlade(),
-  },
-  {
-    id:           'TECTONIC_CLEAVE',
-    name:         'Tectonic Cleave',
-    description:  'Launch a massive earth-rending projectile that pierces all enemies.',
-    isWeaponSkill: true,
-    available:    (player) => !player.autoSkills.some((w) => w.id === 'TECTONIC_CLEAVE'),
-    create:       () => new TectonicCleave(),
-  },
-  {
-    id:           'BONE_SPEAR',
-    name:         'Bone Spear',
-    description:  'Impale enemies with a slow, devastating piercing bone shard.',
-    isWeaponSkill: true,
-    available:    (player) => !player.autoSkills.some((w) => w.id === 'BONE_SPEAR'),
-    create:       () => new BoneSpear(),
-  },
-  {
-    id:           'CHAIN_LIGHTNING',
-    name:         'Chain Lightning',
-    description:  'Discharge a bolt that arcs to up to 4 additional nearby enemies.',
-    isWeaponSkill: true,
-    available:    (player) => !player.autoSkills.some((w) => w.id === 'CHAIN_LIGHTNING'),
-    create:       () => new ChainLightning(),
-  },
-  {
-    id:           'VOID_SHARD_SWARM',
-    name:         'Void Shard Swarm',
-    description:  'Fire 3 spiraling shards that home in on the nearest enemy.',
-    isWeaponSkill: true,
-    available:    (player) => !player.autoSkills.some((w) => w.id === 'VOID_SHARD_SWARM'),
-    create:       () => new VoidShardSwarm(),
-  },
-  {
-    id:           'ARCANE_LANCE',
-    name:         'Arcane Lance',
-    description:  'Fire a precise magical bolt at the nearest enemy.',
-    isWeaponSkill: true,
-    available:    (player) => !player.autoSkills.some((w) => w.id === 'ARCANE_LANCE'),
-    create:       () => new ArcaneLance(),
-  },
-  // ── Pure SkillDef skills ─────────────────────────────────────────────────
-  {
-    id:            'blink',
-    name:          'Chaos Blink',
-    description:   'Teleport 200 px forward and gain brief invulnerability.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('blink'),
-    createSkill:   () => new ChaosBlink(),
-  },
-  {
-    id:            'frost_nova',
-    name:          'Frost Nova',
-    description:   'Freeze all enemies within 250 px for 2 s and deal 15 damage.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('frost_nova'),
-    createSkill:   () => new FrostNova(),
-  },
-  {
-    id:            'gravity_well',
-    name:          'Gravity Well',
-    description:   'Pull all enemies within 350 px violently toward you.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('gravity_well'),
-    createSkill:   () => new GravityWell(),
-  },
-  {
-    id:            'blood_pact',
-    name:          'Blood Pact',
-    description:   'Sacrifice 25% HP for +80% weapon damage for 4 s.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('blood_pact'),
-    createSkill:   () => new BloodPact(),
-  },
-  {
-    id:            'wraith_summon',
-    name:          'Summon Wraith',
-    description:   'Send a wraith to the nearest enemy; it explodes on arrival for 200 damage.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('wraith_summon'),
-    createSkill:   () => new WraithSummon(),
-  },
-  {
-    id:            'time_warp',
-    name:          'Time Warp',
-    description:   'Slow all enemies to 20% speed for 3 s.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('time_warp'),
-    createSkill:   () => new TimeWarp(),
-  },
-  {
-    id:            'bulwark',
-    name:          'Iron Bulwark',
-    description:   'Erect a shield that absorbs the next 80 damage for 3 s.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('bulwark'),
-    createSkill:   () => new IronBulwark(),
-  },
-  {
-    id:            'arcane_surge',
-    name:          'Arcane Surge',
-    description:   'Reset all cooldowns and fire weapons at near-zero cost for 2 s. +30% cast speed for 6 s.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('arcane_surge'),
-    createSkill:   () => new ArcaneSurge(),
-  },
-  // ── Phase 12.4 skills ────────────────────────────────────────────────────
-  {
-    id:            'fireball',
-    name:          'Fireball',
-    description:   'Arcing fireball detonates in 60 px AoE on impact; ignites enemies.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('fireball'),
-    createSkill:   () => new Fireball(),
-  },
-  {
-    id:            'glacial_cascade',
-    name:          'Glacial Cascade',
-    description:   '5 ice pillars along a line; each damages and chills enemies.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('glacial_cascade'),
-    createSkill:   () => new GlacialCascade(),
-  },
-  {
-    id:            'lightning_strike',
-    name:          'Lightning Strike',
-    description:   'Melee burst + 3 lightning bolts forward; applies Shock.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('lightning_strike'),
-    createSkill:   () => new LightningStrike(),
-  },
-  {
-    id:            'blade_flurry',
-    name:          'Blade Flurry',
-    description:   'Build up to 6 stages then unleash a scaling melee AoE burst.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('blade_flurry'),
-    createSkill:   () => new BladeFlurry(),
-  },
-  {
-    id:            'earthquake',
-    name:          'Earthquake',
-    description:   'Instant ground slam + aftershock 1.5 s later at origin.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('earthquake'),
-    createSkill:   () => new Earthquake(),
-  },
-  {
-    id:            'vortex',
-    name:          'Vortex',
-    description:   'Chilling cold vortex at target; pulses damage/tick for 3 s; applies Chill.',
-    isWeaponSkill: false,
-    available:     (_player, engine) => !engine.activeSkillSystem.hasPureSkill('vortex'),
-    createSkill:   () => new Vortex(),
-  },
-];
-
-/** Return all skill offers that are currently learnable by the player. */
-export function getAvailableSkillOffers(player, engine) {
-  return SKILL_OFFER_POOL.filter((offer) => offer.available(player, engine));
-}
-
-/** Find a skill offer entry by id. */
-export function getSkillOfferById(offerId) {
-  return SKILL_OFFER_POOL.find((offer) => offer.id === offerId) ?? null;
-}
-
-/** Build a 1x1 inventory item that can be consumed to learn a skill offer. */
-export function createSkillGemItem(offer) {
-  const uid = (typeof crypto !== 'undefined' && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : `skill_gem_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
-
-  return {
-    uid,
-    id: `skill_gem_${String(offer.id).toLowerCase()}`,
-    type: 'skill_gem',
-    skillOfferId: offer.id,
-    name: `${offer.name} Gem`,
-    rarity: 'magic',
-    slot: 'gem',
-    gridW: 1,
-    gridH: 1,
-    gemIcon: offer.isWeaponSkill ? '✦' : '◇',
-    description: `Learn ${offer.name}. ${offer.description}`,
-    affixes: [],
-  };
-}
 

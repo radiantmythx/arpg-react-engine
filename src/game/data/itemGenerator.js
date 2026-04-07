@@ -11,6 +11,8 @@
  * are pre-merged so PassiveItem.apply() / remove() work with one snapshot.
  */
 import { AFFIX_POOL } from './affixes.js';
+import { getAffixCountForRarity } from './rarityProfiles.js';
+import { ITEM_GENERATION_TUNING } from '../content/tuning/index.js';
 
 // Rarity display colors — mirrors PoE naming tiers
 export const RARITY_COLORS = {
@@ -32,9 +34,6 @@ export const UNIQUE_COLOR = '#c86400';
 
 /** Stats that stack multiplicatively; all others stack additively. */
 const MULT_STATS = new Set(['damageMult', 'cooldownMult', 'xpMultiplier']);
-
-/** Affix count per rarity: Normal=0, Magic=1, Rare=2 */
-const AFFIX_COUNTS = { normal: 0, magic: 1, rare: 2 };
 
 /**
  * Merge an additional set of affix stats on top of base stats.
@@ -69,8 +68,8 @@ export function rollRarity(difficulty, isChampion = false) {
 
   // Rare:  5% at difficulty 1 → 25% at difficulty 5
   // Magic: 25% at difficulty 1 → 45% at difficulty 5
-  const rareChance  = 0.05 + t * 0.20;
-  const magicChance = 0.25 + t * 0.20;
+  const rareChance  = ITEM_GENERATION_TUNING.rareChanceBase + t * 0.20;
+  const magicChance = ITEM_GENERATION_TUNING.magicChanceBase + t * 0.20;
 
   const roll = Math.random();
   let rarity;
@@ -109,7 +108,7 @@ export function generateItem(baseDef, rarity) {
     };
   }
 
-  const count = AFFIX_COUNTS[rarity] ?? 0;
+  const count = getAffixCountForRarity(rarity);
 
   // Filter eligible affixes by slot, then by defenseType if the affix requires it
   const baseDefenseTypes = baseDef.defenseType ? baseDef.defenseType.split('/') : [];
@@ -152,7 +151,17 @@ export function generateItem(baseDef, rarity) {
     color:     RARITY_COLORS[rarity],
     // Preserve original item color for possible future icon use
     baseColor: baseDef.color,
-    affixes:   chosen.map((a) => ({ id: a.id, type: a.type, label: a.label })),
+    affixes:   chosen.map((a) => ({
+      id: a.id,
+      type: a.type,
+      label: a.label,
+      stat: a.stat,
+      value: a.value,
+      tier: a.tier,
+      goldValue: a.goldValue,
+      weight: a.weight,
+      tags: a.tags,
+    })),
     stats:     mergeStats(baseDef.stats, affixStats),
     baseStats: baseDef.stats,
   };
