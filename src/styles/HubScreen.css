@@ -1,0 +1,112 @@
+.hub-topbar {
+  position: fixed;
+  bottom: 24px;
+  left: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 16;
+}
+
+.hub-topbar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: linear-gradient(180deg, rgba(14, 23, 38, 0.84), rgba(9, 15, 27, 0.9));
+  border: 1px solid rgba(173, 198, 236, 0.3);
+  border-radius: 10px;
+  padding: 8px 13px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.32);
+}
+
+.hub-topbar-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8da0b6;
+  font-weight: 700;
+}
+
+.hub-topbar-char {
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  color: #edf4ff;
+}
+
+.hub-switch-btn {
+  pointer-events: auto;
+  border: 1px solid rgba(173, 198, 236, 0.32);
+  background: linear-gradient(180deg, rgba(19, 31, 48, 0.8), rgba(11, 19, 32, 0.88));
+  color: #d6e5fb;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.hub-switch-btn:hover {
+  border-color: rgba(216, 228, 242, 0.55);
+  color: #ffffff;
+}
+
+.hub-help-strip {
+  position: fixed;
+  left: 50%;
+  top: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+  background: linear-gradient(180deg, rgba(14, 23, 38, 0.84), rgba(9, 15, 27, 0.9));
+  border: 1px solid rgba(173, 198, 236, 0.28);
+  border-radius: 999px;
+  padding: 8px 16px;
+  color: #94a6bb;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  z-index: 16;
+}
+
+.hub-interact-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(180deg, rgba(15, 25, 40, 0.92), rgba(9, 15, 27, 0.94));
+  border: 1px solid rgba(176, 204, 246, 0.36);
+  border-radius: 11px;
+  padding: 10px 16px;
+  color: #edf4ff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  z-index: 17;
+}
+
+.hub-interact-key {
+  color: #f1c40f;
+  font-weight: 700;
+  font-size: 0.84rem;
+  letter-spacing: 0.06em;
+}
+
+.hub-interact-label {
+  font-size: 0.84rem;
+  letter-spacing: 0.03em;
+}
+
+@media (max-width: 780px) {
+  .hub-help-strip {
+    display: none;
+  }
+
+  .hub-topbar {
+    bottom: 12px;
+    left: 10px;
+  }
+}

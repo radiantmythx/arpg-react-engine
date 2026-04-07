@@ -1,0 +1,91 @@
+.options-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.options-box {
+  background: #1a1a2e;
+  border: 2px solid #4a4a8a;
+  border-radius: 8px;
+  padding: 36px 44px;
+  min-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  font-family: 'Courier New', Courier, monospace;
+  color: #e0e0e0;
+}
+
+.options-title {
+  font-size: 1.4rem;
+  letter-spacing: 0.15em;
+  color: #a0a0ff;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.options-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.options-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: #888;
+}
+
+.options-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.options-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: #3a3a6a;
+  outline: none;
+  cursor: pointer;
+}
+
+.options-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #a0a0ff;
+  cursor: pointer;
+  border: 2px solid #6060cc;
+}
+
+.options-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #a0a0ff;
+  cursor: pointer;
+  border: 2px solid #6060cc;
+}
+
+.options-vol-pct {
+  font-size: 0.85rem;
+  color: #a0a0ff;
+  min-width: 40px;
+  text-align: right;
+}
+
+.options-close-btn {
+  align-self: center;
+  margin-top: 4px;
+}

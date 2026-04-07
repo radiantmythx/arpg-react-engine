@@ -1,0 +1,233 @@
+/* ── CharacterSelectScreen styles ─────────────────────────────────────────── */
+
+.cs-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-box {
+  width: min(560px, 96vw);
+  max-height: 88vh;
+  background: linear-gradient(180deg, rgba(12, 19, 33, 0.96), rgba(8, 14, 27, 0.98));
+  border: 1px solid rgba(169, 194, 235, 0.34);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  padding: 28px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.cs-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cs-back-btn {
+  font-size: 0.72rem;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.5);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cs-back-btn:hover {
+  color: #fff;
+  border-color: rgba(255,255,255,0.35);
+}
+.cs-title {
+  flex: 1;
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+.cs-new-btn {
+  font-size: 0.72rem;
+  padding: 6px 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Character list ── */
+.cs-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px;
+}
+
+.cs-list > .cs-card {
+  opacity: 0;
+  animation: csCardIn 320ms var(--ui-ease-smooth, ease) forwards;
+}
+
+.cs-list > .cs-card:nth-child(1) { animation-delay: 30ms; }
+.cs-list > .cs-card:nth-child(2) { animation-delay: 60ms; }
+.cs-list > .cs-card:nth-child(3) { animation-delay: 90ms; }
+.cs-list > .cs-card:nth-child(4) { animation-delay: 120ms; }
+.cs-list > .cs-card:nth-child(5) { animation-delay: 150ms; }
+
+/* ── Empty state ── */
+.cs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 40px 20px;
+  color: rgba(255,255,255,0.3);
+  font-size: 0.85rem;
+}
+
+/* ── Character card ── */
+.cs-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background 180ms, border-color 180ms, transform 100ms;
+  position: relative;
+}
+.cs-card:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--char-color, rgba(255,255,255,0.25));
+  transform: translateY(-2px);
+}
+.cs-card:focus-visible {
+  outline: 2px solid var(--char-color, #f9ca24);
+  outline-offset: 2px;
+}
+
+/* Class badge */
+.cs-class-badge {
+  font-size: 1.8rem;
+  line-height: 1;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  flex-shrink: 0;
+}
+
+/* Card text */
+.cs-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.cs-card-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-card-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+}
+.cs-card-class {
+  font-size: 0.65rem;
+  color: var(--char-color, rgba(255,255,255,0.5));
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.cs-card-sep {
+  font-size: 0.55rem;
+  color: rgba(255,255,255,0.2);
+}
+.cs-card-level {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.45);
+}
+.cs-card-date {
+  font-size: 0.58rem;
+  color: rgba(255,255,255,0.25);
+  margin-top: 3px;
+}
+
+/* ── Card actions ── */
+.cs-card-actions {
+  flex-shrink: 0;
+}
+.cs-delete-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.3);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 0.65rem;
+  cursor: pointer;
+  transition: background 150ms, color 150ms, border-color 150ms;
+}
+.cs-delete-btn:hover {
+  background: rgba(255, 80, 80, 0.15);
+  border-color: rgba(255, 80, 80, 0.5);
+  color: #ff6b6b;
+}
+
+/* Delete confirmation */
+.cs-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cs-delete-confirm-text {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.5);
+}
+.cs-confirm-yes {
+  padding: 4px 10px;
+  font-size: 0.65rem;
+  background: rgba(255, 80, 80, 0.2);
+  border: 1px solid rgba(255, 80, 80, 0.5);
+  color: #ff6b6b;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.cs-confirm-yes:hover {
+  background: rgba(255, 80, 80, 0.35);
+}
+.cs-confirm-no {
+  padding: 4px 10px;
+  font-size: 0.65rem;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.5);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.cs-confirm-no:hover {
+  border-color: rgba(255,255,255,0.3);
+  color: #fff;
+}
+
+@keyframes csCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

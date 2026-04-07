@@ -1,0 +1,61 @@
+import { Weapon } from './Weapon.js';
+import { Projectile } from '../entities/Projectile.js';
+import { WEAPONS } from '../config.js';
+
+export class MagicWand extends Weapon {
+  constructor() {
+    super(WEAPONS.MAGIC_WAND);
+    // Start half-charged so the first shot fires quickly
+    this._timer = this.cooldown * 0.5;
+  }
+
+  fire(player, entities) {
+    const target = this._findNearest(player, entities.getHostiles());
+    if (!target) return;
+
+    const dx = target.x - player.x;
+    const dy = target.y - player.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist === 0) return;
+
+    const speed = this.config.projectileSpeed;
+    entities.add(
+      new Projectile(player.x, player.y, (dx / dist) * speed, (dy / dist) * speed, {
+        damage: this.damage,
+        radius: this.config.projectileRadius,
+        color: this.config.color,
+        lifetime: this.config.projectileLifetime,
+      }),
+    );
+  }
+
+  _findNearest(player, enemies) {
+    let nearest = null;
+    let minDistSq = Infinity;
+    for (const enemy of enemies) {
+      const dx = enemy.x - player.x;
+      const dy = enemy.y - player.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < minDistSq) {
+        minDistSq = distSq;
+        nearest = enemy;
+      }
+    }
+    return nearest;
+  }
+
+  _applyLevelStats() {
+    // Progressive improvements per level
+    const table = {
+      2: { damage: 30, cooldown: 0.85 },
+      3: { damage: 40, cooldown: 0.70 },
+      4: { damage: 55, cooldown: 0.60 },
+      5: { damage: 70, cooldown: 0.50, piercing: true },
+    };
+    const stats = table[this.level];
+    if (!stats) return;
+    if (stats.damage !== undefined) this.damage = stats.damage;
+    if (stats.cooldown !== undefined) this.cooldown = stats.cooldown;
+    if (stats.piercing) this.config = { ...this.config, piercing: true };
+  }
+}

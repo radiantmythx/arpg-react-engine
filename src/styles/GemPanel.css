@@ -1,0 +1,443 @@
+/* ============================================================
+   Gem Panel — Phase 12.5
+   ============================================================ */
+
+.gem-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6100;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gem-panel {
+  background: rgba(6, 6, 18, 0.98);
+  border: 1px solid rgba(78, 205, 196, 0.3);
+  border-radius: 10px;
+  padding: 1.2rem 1.4rem;
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(78, 205, 196, 0.08);
+  color: #e0e0e0;
+  font-family: inherit;
+  width: min(94vw, 920px);
+  max-height: 92vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.gem-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.1rem;
+  flex-shrink: 0;
+}
+
+.gem-panel-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: #4ecdc4;
+}
+
+.gem-panel-hint {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.5px;
+}
+
+.gem-panel-hint kbd {
+  display: inline-block;
+  padding: 0 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.6rem;
+}
+
+/* ── Body: 3-column layout ───────────────────────────── */
+/* When hosted inside InventoryScreen (no overlay) the body fills available space */
+.gem-panel-body {
+  display: grid;
+  grid-template-columns: 200px 1fr 200px;
+  gap: 1.2rem;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  /* Standalone overlay mode: fixed height */
+  max-height: 530px;
+}
+
+/* ── Section label ───────────────────────────────────── */
+.gem-section-label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+  margin-bottom: 0.6rem;
+}
+
+.gem-empty-hint {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.22);
+  font-style: italic;
+}
+
+/* ── Skill list (left) ───────────────────────────────── */
+.gem-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.gem-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 110ms, border-color 110ms;
+  user-select: none;
+}
+
+.gem-skill-row:hover {
+  background: rgba(78, 205, 196, 0.08);
+  border-color: rgba(78, 205, 196, 0.25);
+}
+
+.gem-skill-row--selected {
+  background: rgba(78, 205, 196, 0.12) !important;
+  border-color: rgba(78, 205, 196, 0.5) !important;
+}
+
+.gem-skill-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.gem-skill-meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.gem-skill-name {
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #e0e0e0;
+}
+
+.gem-skill-level {
+  font-size: 0.55rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* XP bar */
+.gem-skill-xpbar-bg {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  margin-top: 2px;
+  overflow: hidden;
+}
+.gem-skill-xpbar-fill {
+  height: 100%;
+  background: #4ecdc4;
+  border-radius: 2px;
+  transition: width 300ms ease;
+}
+.gem-skill-maxbonus {
+  font-size: 0.48rem;
+  color: #f9ca24;
+  font-style: italic;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* MAX level: gold skill name */
+.gem-skill-row--maxlevel .gem-skill-name {
+  color: #f9ca24;
+}
+
+.gem-skill-sockets {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.gem-mini-socket {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(78, 205, 196, 0.4);
+  background: transparent;
+}
+
+.gem-mini-socket--filled {
+  background: #4ecdc4;
+  border-color: #4ecdc4;
+}
+
+/* ── Socket panel (center) ───────────────────────────── */
+.gem-socket-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  overflow-y: auto;
+}
+
+.gem-active-skill-header {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  background: rgba(78, 205, 196, 0.06);
+  border: 1px solid rgba(78, 205, 196, 0.18);
+  border-radius: 7px;
+  padding: 0.7rem;
+}
+
+.gem-active-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.gem-active-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 3px;
+}
+
+.gem-active-desc {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.4;
+  margin-bottom: 5px;
+}
+
+.gem-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.gem-tag-badge {
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 1px 5px;
+  opacity: 0.85;
+}
+
+/* Socket diamonds grid */
+.gem-socket-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gem-socket {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  border: 2px solid;
+  cursor: pointer;
+  transition: border-color 100ms, background 100ms;
+  text-align: center;
+  padding: 4px;
+  gap: 3px;
+  user-select: none;
+}
+
+.gem-socket--locked {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: default;
+  font-size: 1.2rem;
+  opacity: 0.4;
+}
+
+.gem-socket--empty {
+  border-color: rgba(78, 205, 196, 0.3);
+  background: rgba(78, 205, 196, 0.04);
+}
+
+.gem-socket--empty:hover,
+.gem-socket--target {
+  border-color: #4ecdc4 !important;
+  background: rgba(78, 205, 196, 0.12) !important;
+  box-shadow: 0 0 10px rgba(78, 205, 196, 0.35);
+}
+
+.gem-socket--incompatible {
+  border-color: rgba(255, 100, 100, 0.4) !important;
+  background: rgba(255, 50, 50, 0.05) !important;
+  cursor: not-allowed;
+}
+
+.gem-socket--filled {
+  border-color: #4ecdc4;
+  background: rgba(78, 205, 196, 0.12);
+}
+
+.gem-socket--filled:hover {
+  border-color: #d63031;
+  background: rgba(214, 48, 49, 0.12);
+  box-shadow: 0 0 8px rgba(214, 48, 49, 0.3);
+}
+
+.gem-socket-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.gem-socket-name {
+  font-size: 0.48rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #4ecdc4;
+  text-align: center;
+  word-break: break-word;
+}
+
+.gem-socket-empty-icon {
+  font-size: 1.6rem;
+  color: rgba(78, 205, 196, 0.3);
+  line-height: 1;
+}
+
+/* Selected gem preview bar */
+.gem-selected-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(78, 205, 196, 0.07);
+  border: 1px solid rgba(78, 205, 196, 0.25);
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.62rem;
+  flex-wrap: wrap;
+}
+
+.gem-selected-label {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.gem-selected-name {
+  font-weight: 700;
+}
+
+.gem-selected-hint {
+  color: rgba(255, 255, 255, 0.3);
+  font-style: italic;
+}
+
+.gem-deselect-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: inherit;
+  font-size: 0.55rem;
+  padding: 2px 6px;
+  cursor: pointer;
+  margin-left: auto;
+  transition: border-color 100ms, color 100ms;
+}
+
+.gem-deselect-btn:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+}
+
+/* ── Gem stash (right) ───────────────────────────────── */
+.gem-stash {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.gem-stash-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid rgba(78, 205, 196, 0.15);
+  background: rgba(78, 205, 196, 0.04);
+  cursor: pointer;
+  transition: background 110ms, border-color 110ms;
+  user-select: none;
+}
+
+.gem-stash-item:hover {
+  background: rgba(78, 205, 196, 0.10);
+  border-color: rgba(78, 205, 196, 0.35);
+}
+
+.gem-stash-item--selected {
+  background: rgba(78, 205, 196, 0.18) !important;
+  border-color: #4ecdc4 !important;
+  box-shadow: 0 0 8px rgba(78, 205, 196, 0.3);
+}
+
+.gem-stash-item--incompatible {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gem-stash-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #4ecdc4;
+}
+
+.gem-stash-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gem-stash-name {
+  font-size: 0.62rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gem-stash-desc {
+  font-size: 0.52rem;
+  color: rgba(255, 255, 255, 0.38);
+  line-height: 1.35;
+  word-break: break-word;
+}

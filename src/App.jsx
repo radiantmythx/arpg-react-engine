@@ -1,0 +1,1114 @@
+import { useRef, useState, useEffect, useCallback } from 'react';
+import { GameEngine } from './game/GameEngine.js';
+import { MainMenu } from './components/MainMenu.jsx';
+import { HUD } from './components/HUD.jsx';
+import { PauseScreen } from './components/PauseScreen.jsx';
+import { OptionsModal } from './components/OptionsModal.jsx';
+import { GameOver } from './components/GameOver.jsx';
+import { ItemTooltip } from './components/ItemTooltip.jsx';
+import { InventoryScreen } from './components/InventoryScreen.jsx';
+import { PassiveTreeScreen } from './components/PassiveTreeScreen.jsx';
+import { MetaTreeScreen } from './components/MetaTreeScreen.jsx';
+import { CharacterSelect, AchievementSystem } from './components/CharacterSelect.jsx';
+import { CharacterCreateScreen } from './components/CharacterCreateScreen.jsx';
+import { CharacterSelectScreen } from './components/CharacterSelectScreen.jsx';
+import { DeathScreen } from './components/DeathScreen.jsx';
+import { HubScreen } from './components/HubScreen.jsx';
+import { MapSelectScreen } from './components/MapSelectScreen.jsx';
+import { MapCompleteScreen } from './components/MapCompleteScreen.jsx';
+import { CharacterSheet } from './components/CharacterSheet.jsx';
+import { VendorScreen } from './components/VendorScreen.jsx';
+import { BossAnnouncement } from './components/BossAnnouncement.jsx';
+import { PortalConfirmDialog } from './components/PortalConfirmDialog.jsx';
+import { MobileControls } from './components/MobileControls.jsx';
+import { CHARACTER_MAP } from './game/data/characters.js';
+import { MetaProgression } from './game/MetaProgression.js';
+import { CharacterSave } from './game/CharacterSave.js';
+import './styles/App.css';
+
+const INITIAL_HUD = {
+  health: 100,
+  maxHealth: 100,
+  xp: 0,
+  xpToNext: 10,
+  level: 1,
+  elapsed: 0,
+  kills: 0,
+  gold: 0,
+  skillPoints:    0,
+  allocatedNodes: ['start'],
+  shardsThisRun:  0,
+  portalsRemaining: 0,
+  mapEnemiesKilled: 0,
+  mapEnemiesTotal: 0,
+  hasActiveMap: false,
+  mapContext: false,
+  mapName: '',
+  mapTier: 0,
+  mapMods: [],
+  equipment: {
+    mainhand:  null,
+    offhand:   null,
+    bodyarmor: null,
+    helmet:    null,
+    boots:     null,
+    belt:      null,
+    ring1:     null,
+    ring2:     null,
+    amulet:    null,
+    gloves:    null,
+  },
+  inventory: { cols: 12, rows: 6, items: [] },
+  primarySkill: null,
+  activeSkills: [],
+};
+
+const MOBILE_PREF_KEY = 'survivor_mobile_mode';
+const MOBILE_UI_PREF_KEY = 'survivor_mobile_ui';
+
+function detectMobileByDefault() {
+  if (typeof window === 'undefined') return false;
+  return (
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0 ||
+    window.matchMedia?.('(pointer: coarse)')?.matches
+  );
+}
+
+function loadMobileUiPrefs() {
+  if (typeof window === 'undefined') {
+    return { leftHanded: false, largeButtons: false, haptics: true };
+  }
+  try {
+    const raw = window.localStorage.getItem(MOBILE_UI_PREF_KEY);
+    if (!raw) return { leftHanded: false, largeButtons: false, haptics: true };
+    const parsed = JSON.parse(raw);
+    return {
+      leftHanded: !!parsed.leftHanded,
+      largeButtons: !!parsed.largeButtons,
+      haptics: parsed.haptics !== false,
+    };
+  } catch {
+    return { leftHanded: false, largeButtons: false, haptics: true };
+  }
+}
+
+// Screen names:
+// 'MENU' | 'CHARACTER_SELECT' | 'CHARACTER_CREATE' | 'HUB' | 'DIED' |
+// 'MAP_SELECT' | 'MAP_COMPLETE' | 'RUNNING' | 'PAUSED' | 'TREE' | 'INVENTORY' | 'SHEET' | 'VENDOR' | 'PORTAL_CONFIRM' | 'GAME_OVER' | 'META'
+
+export default function App() {
+  const canvasRef = useRef(null);
+  const engineRef = useRef(null);
+
+  // Determine initial screen: skip MENU entirely and go straight to character flow.
+  const [screen, setScreen] = useState(() =>
+    CharacterSave.list().length > 0 ? 'CHARACTER_SELECT' : 'CHARACTER_CREATE',
+  );
+  const [hud, setHud]                 = useState(INITIAL_HUD);
+  const [finalStats, setFinalStats]   = useState(null);
+  // D2/PoE inventory state
+  const [cursorItem, setCursorItem]   = useState(null);
+  const [hoveredDrop, setHoveredDrop] = useState(null);
+  const [mousePos, setMousePos]       = useState({ x: 0, y: 0 });
+  // Character selection
+  const [unlockedChars, setUnlockedChars] = useState(() => AchievementSystem.loadUnlocks());
+  // Meta-tree state
+  const [metaNodes, setMetaNodes] = useState(() => MetaProgression.loadMetaNodes());
+  const [totalShards, setTotalShards] = useState(() => MetaProgression.loadShards());
+  // Achievement unlock toast: { id, name, color } | null
+  const [unlockToast, setUnlockToast] = useState(null);
+  const _toastTimer = useRef(null);
+  // Boss announcement: boss name string | null
+  const [bossAnnouncement, setBossAnnouncement] = useState(null);
+  // C2 death overlay info: { portalsLeft, elapsed, kills, level } | null
+  const [deathInfo, setDeathInfo] = useState(null);
+  // C3 hub overlay info
+  const [nearbyHubInteractable, setNearbyHubInteractable] = useState(null);
+  const [activeCharacterName, setActiveCharacterName] = useState('');
+  const [activeMapInfo, setActiveMapInfo] = useState(null);
+  const [mapCompleteInfo, setMapCompleteInfo] = useState(null);
+  const [vendorStock, setVendorStock] = useState([]);
+  const [vendorFeedback, setVendorFeedback] = useState('');
+  const [actsCleared, setActsCleared] = useState([]);
+  const [primedMapPortal, setPrimedMapPortal] = useState(null);
+  // Options overlay: visible from main menu or pause screen
+  const [showOptions, setShowOptions] = useState(false);
+  // Inventory tab: 'equipment' | 'gems'
+  const [invTab, setInvTab] = useState('equipment');
+  const [mobileMode, setMobileMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = window.localStorage.getItem(MOBILE_PREF_KEY);
+    if (saved === '1') return true;
+    if (saved === '0') return false;
+    return detectMobileByDefault();
+  });
+  const [mobileUi, setMobileUi] = useState(() => loadMobileUiPrefs());
+
+  // ── Callbacks passed to GameEngine ──────────────────────────────
+
+  const handleHudUpdate = useCallback((data) => {
+    setHud((prev) => ({ ...prev, ...data }));
+  }, []);
+
+  const handleLevelUp = useCallback(() => {
+    // ExperienceSystem already called engine.pause(); we just switch the screen.
+    setScreen('TREE');
+  }, []);
+
+  const handleGameOver = useCallback((stats) => {
+    const charDef = CHARACTER_MAP[stats.characterId];
+    const record = {
+      characterId:    stats.characterId,
+      characterName:  charDef?.name ?? stats.characterId,
+      elapsed:        stats.elapsed,
+      kills:          stats.kills,
+      level:          stats.level,
+      bossesDefeated: stats.bossesDefeated?.length ?? 0,
+      shardsEarned:   stats.shardsThisRun ?? 0,
+      date:           new Date().toISOString(),
+    };
+    MetaProgression.addShards(record.shardsEarned);
+    MetaProgression.addRunRecord(record);
+    MetaProgression.addHighScore(record.characterId, record);
+    const newTotal = MetaProgression.loadShards();
+    setTotalShards(newTotal);
+    setFinalStats({ ...stats, totalShards: newTotal });
+    setScreen('GAME_OVER');
+  }, []);
+
+  const handleHoveredItemChange = useCallback((itemData) => {
+    setHoveredDrop(itemData ?? null);
+  }, []);
+
+  const handleBossAnnounce = useCallback((bossName) => {
+    setBossAnnouncement(bossName);
+  }, []);
+
+  const handleMapComplete = useCallback((stats) => {
+    setMapCompleteInfo(stats ?? null);
+    setScreen('MAP_COMPLETE');
+  }, []);
+
+  const handleAchievementUnlock = useCallback((characterId) => {
+    const char = CHARACTER_MAP[characterId];
+    if (!char) return;
+    // Refresh the unlocked set so CharacterSelect re-renders immediately
+    setUnlockedChars(AchievementSystem.loadUnlocks());
+    // Show toast
+    if (_toastTimer.current) clearTimeout(_toastTimer.current);
+    setUnlockToast({ id: char.id, name: char.name, color: char.color, icon: char.icon });
+    _toastTimer.current = setTimeout(() => setUnlockToast(null), 4500);
+  }, []);
+
+  /** C2 callback from engine.enterHub(). */
+  const handleEnterHub = useCallback(() => {
+    setDeathInfo(null);
+    const activeId = activeCharIdRef.current;
+    if (activeId) {
+      const save = CharacterSave.load(activeId);
+      setActsCleared(save?.actsCleared ?? []);
+    } else {
+      setActsCleared([]);
+    }
+    setActiveMapInfo(engineRef.current?.getReenterableMapInfo?.() ?? null);
+    setPrimedMapPortal(engineRef.current?.getPrimedMapPortalInfo?.() ?? null);
+    setMapCompleteInfo(null);
+    setScreen('HUB');
+  }, []);
+
+  /** C2 callback when dying in a map while portals remain. */
+  const handlePlayerDied = useCallback((portalsLeft, stats = {}) => {
+    setDeathInfo({
+      portalsLeft,
+      elapsed: stats.elapsed ?? 0,
+      kills:   stats.kills ?? 0,
+      level:   stats.level ?? 1,
+      characterName: stats.characterName ?? activeCharacterName,
+      characterClass: stats.characterClass ?? '',
+    });
+    setScreen('DIED');
+  }, [activeCharacterName]);
+
+  /** C3 callback when the nearest hub interactable changes. */
+  const handleHubInteractableChange = useCallback((interactable) => {
+    setNearbyHubInteractable(interactable ?? null);
+  }, []);
+
+  // ── Game control ────────────────────────────────────────────────
+
+  /** C1: id of the active character save (set before each run; used by C2 engine integration). */
+  const activeCharIdRef = useRef(null);
+
+  const bootEngine = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    if (engineRef.current) engineRef.current.destroy();
+
+    const engine = new GameEngine(
+      canvas,
+      handleHudUpdate,
+      handleLevelUp,
+      handleGameOver,
+      handleHoveredItemChange,
+      handleAchievementUnlock,
+      handleBossAnnounce,
+      handleEnterHub,
+      handlePlayerDied,
+      handleHubInteractableChange,
+      handleMapComplete,
+    );
+    engineRef.current = engine;
+
+    setHud(INITIAL_HUD);
+    setFinalStats(null);
+    setCursorItem(null);
+    setHoveredDrop(null);
+    setDeathInfo(null);
+    setNearbyHubInteractable(null);
+    setActiveMapInfo(null);
+    setMapCompleteInfo(null);
+    setVendorStock([]);
+    setVendorFeedback('');
+    setPrimedMapPortal(null);
+
+    return engine;
+  }, [
+    handleHudUpdate,
+    handleLevelUp,
+    handleGameOver,
+    handleHoveredItemChange,
+    handleAchievementUnlock,
+    handleBossAnnounce,
+    handleEnterHub,
+    handlePlayerDied,
+    handleHubInteractableChange,
+    handleMapComplete,
+  ]);
+
+  const startGame = useCallback((classId = 'sage', characterId = null) => {
+    const engine = bootEngine();
+    if (!engine) return;
+    activeCharIdRef.current = characterId;
+    setScreen('RUNNING');
+    engine.start(classId);
+  }, [bootEngine]);
+
+  // ── C2 character flow ───────────────────────────────────────────────────
+
+  const enterHubForCharacter = useCallback((characterId) => {
+    const engine = bootEngine();
+    if (!engine) return;
+    activeCharIdRef.current = characterId;
+    const save = CharacterSave.load(characterId);
+    setActiveCharacterName(save?.name ?? characterId);
+    setActsCleared(save?.actsCleared ?? []);
+    engine.enterHub(characterId);
+  }, [bootEngine]);
+
+  /**
+   * Called by CharacterCreateScreen after the save is written.
+   * C2: enters hub for that persistent character.
+   */
+  const handleCreateCharacter = useCallback((characterId) => {
+    enterHubForCharacter(characterId);
+  }, [enterHubForCharacter]);
+
+  /**
+   * Called by CharacterSelectScreen when the player clicks a saved character.
+   * C2: enters hub for that saved character.
+   */
+  const handleSelectCharacter = useCallback((characterId) => {
+    enterHubForCharacter(characterId);
+  }, [enterHubForCharacter]);
+
+  /** C3 map-device action: enter selected map. */
+  const handleStartMapFromHub = useCallback((mapDef) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    engine.enterMap(mapDef);
+    setPrimedMapPortal(engine.getPrimedMapPortalInfo?.() ?? null);
+    setActiveMapInfo(engine.getReenterableMapInfo?.() ?? null);
+    setDeathInfo(null);
+    setScreen('RUNNING');
+  }, []);
+
+  const handleResumeMapFromHub = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || !engine.hasReenterableMap?.()) return;
+    engine.reenterMapInstance();
+    setPrimedMapPortal(engine.getPrimedMapPortalInfo?.() ?? null);
+    setActiveMapInfo(engine.getReenterableMapInfo?.() ?? null);
+    setDeathInfo(null);
+    setMapCompleteInfo(null);
+    setScreen('RUNNING');
+  }, []);
+
+  const handleOpenMapSelect = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    engine.pause();
+    setActiveMapInfo(engine.getReenterableMapInfo?.() ?? null);
+    setPrimedMapPortal(engine.getPrimedMapPortalInfo?.() ?? null);
+    setScreen('MAP_SELECT');
+  }, []);
+
+  const handleCloseMapSelect = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'MAP_SELECT') return;
+    setActiveMapInfo(engine.getReenterableMapInfo?.() ?? null);
+    setPrimedMapPortal(engine.getPrimedMapPortalInfo?.() ?? null);
+    engine.resume();
+    setScreen('HUB');
+  }, [screen]);
+
+  const handleOpenMapPortalFromItem = useCallback((itemUid) => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'MAP_SELECT') return;
+    const opened = engine.openMapDevicePortal?.(itemUid);
+    if (!opened) return;
+    setPrimedMapPortal(engine.getPrimedMapPortalInfo?.() ?? null);
+    setActiveMapInfo(engine.getReenterableMapInfo?.() ?? null);
+    engine.resume();
+    setScreen('HUB');
+  }, [screen]);
+
+  const handleEnterPrimedMapPortal = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const entered = engine.enterPrimedMapPortal?.();
+    if (!entered) return;
+    setPrimedMapPortal(null);
+    setActiveMapInfo(engine.getReenterableMapInfo?.() ?? null);
+    setDeathInfo(null);
+    setMapCompleteInfo(null);
+    setScreen('RUNNING');
+  }, []);
+
+  const handleHubInteract = useCallback((interactableId) => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'HUB') return;
+
+    if (interactableId === 'stash') {
+      setInvTab('equipment');
+      engine.pause();
+      setScreen('INVENTORY');
+      return;
+    }
+    if (interactableId === 'passive_tree') {
+      engine.pause();
+      setScreen('TREE');
+      return;
+    }
+    if (interactableId === 'map_device') {
+      handleOpenMapSelect();
+      return;
+    }
+    if (interactableId === 'crafting') {
+      engine.pause();
+      setScreen('SHEET');
+      return;
+    }
+    if (interactableId === 'vendor') {
+      engine.pause();
+      setVendorStock(engine.getVendorStock?.() ?? []);
+      setVendorFeedback('Tip: right-click a skill gem in inventory to learn it.');
+      setScreen('VENDOR');
+      return;
+    }
+    if (interactableId === 'map_portal') {
+      handleEnterPrimedMapPortal();
+    }
+  }, [screen, handleOpenMapSelect, handleEnterPrimedMapPortal]);
+
+  const closeVendor = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'VENDOR') return;
+    engine.resume();
+    setScreen('HUB');
+  }, [screen]);
+
+  const handleVendorBuy = useCallback((listingId) => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'VENDOR') return;
+    const result = engine.purchaseVendorItem?.(listingId);
+    if (!result?.ok) {
+      if (result?.reason === 'not_enough_gold') {
+        setVendorFeedback(`Not enough gold for ${result.itemName}.`);
+      } else if (result?.reason === 'inventory_full') {
+        setVendorFeedback('Inventory is full. Free some space and try again.');
+      } else {
+        setVendorFeedback('Purchase failed.');
+      }
+      return;
+    }
+    setVendorFeedback(`Purchased ${result.itemName} for ${result.price}g.`);
+    // Refresh stock to reflect the sold item being removed
+    setVendorStock(engine.getVendorStock?.() ?? []);
+  }, [screen]);
+
+  const handleVendorReroll = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'VENDOR') return;
+    const result = engine.rerollVendorEquipment?.();
+    if (!result?.ok) {
+      if (result?.reason === 'not_enough_gold') {
+        setVendorFeedback(`Need ${result.price}g to reroll the shop.`);
+      }
+      return;
+    }
+    setVendorStock(engine.getVendorStock?.() ?? []);
+    setVendorFeedback(`Shop rerolled for ${result.price}g.`);
+  }, [screen]);
+
+  const handleSwitchCharacterFromHub = useCallback(() => {
+    const engine = engineRef.current;
+    if (engine) engine.destroy();
+    engineRef.current = null;
+    activeCharIdRef.current = null;
+    setActiveCharacterName('');
+    setNearbyHubInteractable(null);
+    setActiveMapInfo(null);
+    setMapCompleteInfo(null);
+    setPrimedMapPortal(null);
+    setActsCleared([]);
+    setScreen('CHARACTER_SELECT');
+  }, []);
+
+  /** Return to hub after a portal death. */
+  const handleReturnToHubFromDeath = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    setDeathInfo(null);
+    engine.exitMap(false);
+  }, []);
+
+  const handleReturnToHubAfterClear = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    setMapCompleteInfo(null);
+    engine.exitMap(true);
+  }, []);
+
+  const handleStayInMapAfterClear = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    setMapCompleteInfo(null);
+    engine.stayInClearedMap?.();
+    setScreen('RUNNING');
+  }, []);
+
+  const handleUpgradeChoice = useCallback(() => {
+    // Kept for backward compat; not called in Phase 6.
+  }, []);
+
+  const togglePause = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (screen === 'RUNNING') {
+      engine.pause();
+      setScreen('PAUSED');
+    } else if (screen === 'PAUSED') {
+      engine.resume();
+      setScreen(engine.state === 'HUB' ? 'HUB' : 'RUNNING');
+    }
+  }, [screen]);
+
+  const handleAbandonRun = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    // Build final stats based on current HUD so the game-over screen is meaningful
+    const stats = {
+      ...hud,
+      characterId: engine.player?.characterId ?? 'sage',
+      bossesDefeated: engine.bossesDefeated ?? [],
+      shardsThisRun: engine.shardsThisRun ?? 0,
+    };
+    engine.destroy();
+    engineRef.current = null;
+    handleGameOver(stats);
+  }, [hud, handleGameOver]);
+
+  // ── Passive tree interactions ───────────────────────────────────────
+
+  const openTree = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || (screen !== 'RUNNING' && screen !== 'HUB')) return;
+    engine.pause();
+    setScreen('TREE');
+  }, [screen]);
+
+  const closeTree = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'TREE') return;
+    engine.resume();
+    setScreen(engine.state === 'HUB' ? 'HUB' : 'RUNNING');
+  }, [screen]);
+
+  const openCharacterSheet = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'HUB') return;
+    engine.pause();
+    setScreen('SHEET');
+  }, [screen]);
+
+  const closeCharacterSheet = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'SHEET') return;
+    engine.resume();
+    setScreen('HUB');
+  }, [screen]);
+
+  const openPortalConfirm = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'RUNNING') return;
+    if (!engine.canSpendPortalToHub?.()) return;
+    engine.pause();
+    setScreen('PORTAL_CONFIRM');
+  }, [screen]);
+
+  const closePortalConfirm = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'PORTAL_CONFIRM') return;
+    engine.resume();
+    setScreen('RUNNING');
+  }, [screen]);
+
+  const confirmPortalToHub = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'PORTAL_CONFIRM') return;
+    const used = engine.spendPortalToHub?.();
+    if (!used) {
+      engine.resume();
+      setScreen('RUNNING');
+    }
+  }, [screen]);
+
+  const handleAllocateNode = useCallback((nodeId) => {
+    engineRef.current?.allocateNode(nodeId);
+    // HUD will update via _flushHudUpdate — no local state change needed
+  }, []);
+
+  const handleMetaAllocate = useCallback((nodeId) => {
+    const success = MetaProgression.allocateMetaNode(nodeId);
+    if (success) {
+      setMetaNodes(MetaProgression.loadMetaNodes());
+      setTotalShards(MetaProgression.loadShards());
+    }
+  }, []);
+
+  // ── Inventory interactions ───────────────────────────────────────
+
+  const openInventory = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || (screen !== 'RUNNING' && screen !== 'HUB')) return;
+    engine.pause();
+    setScreen('INVENTORY');
+  }, [screen]);
+
+  const closeInventory = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'INVENTORY') return;
+    // If cursor item is held, drop it back into the world
+    if (cursorItem) {
+      engine.dropItemToWorld(cursorItem);
+      setCursorItem(null);
+    }
+    engine.resume();
+    setScreen(engine.state === 'HUB' ? 'HUB' : 'RUNNING');
+  }, [screen, cursorItem]);
+
+  // Left-click item in grid → to cursor (swap if cursor held)
+  const handleInventoryItemClick = useCallback((uid) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (cursorItem) {
+      // Swap: place cursor item, pick up clicked item
+      const placed = engine.addToInventory(cursorItem);
+      if (placed) {
+        // Remove the clicked item from inventory and put on cursor
+        const def = engine.player.inventory.remove(uid);
+        if (def) {
+          engine._flushHudUpdate();
+          setCursorItem(def);
+        }
+      }
+    } else {
+      // Pick up to cursor
+      const def = engine.player.inventory.remove(uid);
+      if (def) {
+        engine._flushHudUpdate();
+        setCursorItem(def);
+      }
+    }
+  }, [cursorItem]);
+
+  // Right-click item in grid → auto-equip (displaced item goes to cursor)
+  const handleInventoryItemRightClick = useCallback((uid) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const invItem = hud.inventory.items.find((item) => item.uid === uid);
+    if (invItem?.type === 'skill_gem') {
+      engine.consumeSkillGem(uid);
+      return;
+    }
+    const equippable = ['weapon', 'armor', 'jewelry', 'helmet', 'boots', 'offhand', 'ring', 'amulet', 'mainhand', 'bodyarmor', 'gloves', 'belt'];
+    if (!invItem || !equippable.includes(invItem.slot)) return;
+    const displaced = engine.equipFromInventory(uid);
+    if (displaced) setCursorItem(displaced);
+  }, [hud.inventory.items]);
+
+  // Click empty grid cell with cursor item → place it there
+  const handleInventoryCellClick = useCallback((col, row) => {
+    const engine = engineRef.current;
+    if (!engine || !cursorItem) return;
+    const placed = engine.placeInInventory(cursorItem, col, row);
+    if (placed) setCursorItem(null);
+  }, [cursorItem]);
+
+  // Click equip slot:
+  //   no cursor  → unequip to cursor (if occupied)
+  //   cursor fits slot → equip cursor item (displaced goes to cursor)
+  const handleEquipSlotClick = useCallback((slot) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (cursorItem) {
+      // Accept rings in ring1/ring2, and support backward-compat slot aliases
+      const itemSlot = cursorItem.slot;
+      const isRingSlot = (slot === 'ring1' || slot === 'ring2') && itemSlot === 'ring';
+      const isAlias = (
+        (slot === 'mainhand'  && itemSlot === 'weapon') ||
+        (slot === 'bodyarmor' && itemSlot === 'armor')  ||
+        (slot === 'amulet'    && itemSlot === 'jewelry')
+      );
+      if (!isRingSlot && !isAlias && itemSlot !== slot) return;
+      const displaced = engine.player.equip(cursorItem, slot);
+      engine._flushHudUpdate();
+      setCursorItem(displaced ?? null);
+    } else {
+      const displaced = engine.unequipToInventory(slot);
+      if (displaced) setCursorItem(displaced);
+    }
+  }, [cursorItem]);
+
+  // ── Gem socket callbacks (passed to InventoryScreen) ─────────────
+
+  const handleSocketGem = useCallback((skillId, slotIndex, gemUid) => {
+    engineRef.current?.socketGem(skillId, slotIndex, gemUid);
+  }, []);
+
+  const handleUnsocketGem = useCallback((skillId, slotIndex) => {
+    engineRef.current?.unsocketGem(skillId, slotIndex);
+  }, []);
+
+  // ── Canvas mouse events ──────────────────────────────────────────
+
+  const handleCanvasMouseMove = useCallback((e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    engineRef.current?.updateMousePosition(sx, sy);
+    setMousePos({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleCanvasClick = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    if (screen === 'HUB') {
+      const nearby = engine.getNearbyHubInteractable?.() ?? null;
+      if (nearby?.id) handleHubInteract(nearby.id);
+      return;
+    }
+
+    if (screen !== 'RUNNING') return;
+    const itemDef = engine.pickupHoveredItem();
+    if (!itemDef) return;
+    // Inventory closed → auto-place; inventory open → cursor (can't happen here since
+    // picking up from canvas only works when screen === 'RUNNING', not 'INVENTORY')
+    const placed = engine.addToInventory(itemDef);
+    if (!placed) {
+      // Inventory full — open inventory and give item to cursor
+      engine.pause();
+      setScreen('INVENTORY');
+      setCursorItem(itemDef);
+    }
+  }, [screen, handleHubInteract]);
+
+  const handleMobileMove = useCallback((dx, dy) => {
+    const engine = engineRef.current;
+    if (!engine?.input) return;
+    engine.input.setVirtualMovement(dx, dy);
+    engine.input.setVirtualAim(dx, dy);
+  }, []);
+
+  const handleMobilePrimaryHold = useCallback((held) => {
+    const input = engineRef.current?.input;
+    if (!input) return;
+    input.setVirtualPrimaryHeld(held);
+  }, []);
+
+  const handleMobileSkillTap = useCallback((slot) => {
+    const input = engineRef.current?.input;
+    if (!input) return;
+    if (slot === 'q') input.pressVirtualSkill('KeyQ');
+    else if (slot === 'e') input.pressVirtualSkill('KeyE');
+    else if (slot === 'r') input.pressVirtualSkill('KeyR');
+  }, []);
+
+  const handleMobileOpenInventory = useCallback(() => {
+    if (screen !== 'RUNNING' && screen !== 'HUB') return;
+    setInvTab('equipment');
+    openInventory();
+  }, [screen, openInventory]);
+
+  const handleMobileOpenGems = useCallback(() => {
+    if (screen !== 'RUNNING' && screen !== 'HUB') return;
+    setInvTab('gems');
+    openInventory();
+  }, [screen, openInventory]);
+
+  const handleMobileOpenTree = useCallback(() => {
+    if (screen !== 'RUNNING' && screen !== 'HUB') return;
+    openTree();
+  }, [screen, openTree]);
+
+  const handleMobileOpenSheet = useCallback(() => {
+    if (screen !== 'HUB') return;
+    openCharacterSheet();
+  }, [screen, openCharacterSheet]);
+
+  const handleMobilePause = useCallback(() => {
+    if (screen === 'RUNNING' || screen === 'PAUSED') togglePause();
+  }, [screen, togglePause]);
+
+  const handleMobileToggleLock = useCallback(() => {
+    if (screen !== 'RUNNING') return;
+    engineRef.current?.toggleTargetLock?.();
+  }, [screen]);
+
+  // ── Global effects ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(MOBILE_PREF_KEY, mobileMode ? '1' : '0');
+  }, [mobileMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(MOBILE_UI_PREF_KEY, JSON.stringify(mobileUi));
+  }, [mobileUi]);
+
+  // Resize canvas
+  useEffect(() => {
+    const resize = () => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  // Track mouse position globally (needed when cursor item leaves canvas)
+  useEffect(() => {
+    const onMove = (e) => setMousePos({ x: e.clientX, y: e.clientY });
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, []);
+
+  // Key handlers: Escape = close/back, V = inventory, G = gems, T = portal prompt, P = passive tree
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.code === 'KeyP') {
+        if (screen === 'RUNNING' || screen === 'HUB') openTree();
+        else if (screen === 'TREE') closeTree();
+      }
+      if (e.code === 'KeyT') {
+        if (screen === 'RUNNING') openPortalConfirm();
+      }
+      if (e.code === 'KeyG') {
+        if (screen === 'RUNNING' || screen === 'HUB') { setInvTab('gems'); openInventory(); }
+        else if (screen === 'INVENTORY') { setInvTab((t) => t === 'gems' ? 'equipment' : 'gems'); }
+      }
+      if (e.code === 'KeyV') {
+        if (screen === 'RUNNING' || screen === 'HUB') { setInvTab('equipment'); openInventory(); }
+        else if (screen === 'INVENTORY') closeInventory();
+      }
+      if (e.code === 'KeyC') {
+        if (screen === 'HUB') openCharacterSheet();
+        else if (screen === 'SHEET') closeCharacterSheet();
+      }
+      if (e.code === 'Escape') {
+        if (screen === 'TREE')                       closeTree();
+        else if (screen === 'INVENTORY')             closeInventory();
+        else if (screen === 'SHEET')                 closeCharacterSheet();
+        else if (screen === 'VENDOR')                closeVendor();
+        else if (screen === 'PORTAL_CONFIRM')        closePortalConfirm();
+        else if (screen === 'MAP_SELECT')            handleCloseMapSelect();
+        else if (screen === 'RUNNING' || screen === 'PAUSED') togglePause();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [screen, openTree, closeTree, openInventory, closeInventory, openCharacterSheet, closeCharacterSheet, closeVendor, togglePause, setInvTab, handleHubInteract, handleCloseMapSelect, openPortalConfirm, closePortalConfirm]);
+
+  // Destroy engine on unmount
+  useEffect(() => {
+    return () => engineRef.current?.destroy();
+  }, []);
+
+  useEffect(() => {
+    const input = engineRef.current?.input;
+    if (!input) return;
+    const mobileActive = mobileMode && (screen === 'RUNNING' || screen === 'HUB');
+    if (mobileActive) return;
+    input.setVirtualMovement(0, 0);
+    input.setVirtualAim(0, 0);
+    input.setVirtualPrimaryHeld(false);
+  }, [mobileMode, screen]);
+
+  const showHud = screen === 'RUNNING'      || screen === 'HUB'    || screen === 'PAUSED' ||
+                  screen === 'MAP_SELECT'   ||
+                  screen === 'MAP_COMPLETE' ||
+                  screen === 'TREE'          || screen === 'INVENTORY' || screen === 'SHEET' || screen === 'VENDOR' ||
+                  screen === 'PORTAL_CONFIRM';
+
+  const hideHudTimer = screen === 'HUB';
+  const showMobileControls = mobileMode && (screen === 'RUNNING' || screen === 'HUB');
+
+  return (
+    <div className={`app${mobileMode ? ' mobile-mode' : ''}${mobileUi.leftHanded ? ' mobile-left-handed' : ''}${mobileUi.largeButtons ? ' mobile-large-controls' : ''}`}>
+      <canvas
+        ref={canvasRef}
+        className="game-canvas"
+        onMouseMove={handleCanvasMouseMove}
+        onClick={handleCanvasClick}
+      />
+
+      {screen === 'MENU' && (
+        <MainMenu
+          hasCharacters={CharacterSave.list().length > 0}
+          onNewCharacter={() => setScreen('CHARACTER_CREATE')}
+          onContinue={() => setScreen('CHARACTER_SELECT')}
+          onMeta={() => setScreen('META')}
+          onOptions={() => setShowOptions(true)}
+          mobileMode={mobileMode}
+          onToggleMobileMode={() => setMobileMode((prev) => !prev)}
+          history={MetaProgression.loadHistory()}
+        />
+      )}
+
+      {/* C1 — Saved character list */}
+      {screen === 'CHARACTER_SELECT' && (
+        <CharacterSelectScreen
+          onSelect={handleSelectCharacter}
+          onNew={() => setScreen('CHARACTER_CREATE')}
+          onBack={() => setScreen('MENU')}
+        />
+      )}
+
+      {/* C1 — New character creation */}
+      {screen === 'CHARACTER_CREATE' && (
+        <CharacterCreateScreen
+          onCreate={handleCreateCharacter}
+          onBack={() =>
+            CharacterSave.list().length > 0
+              ? setScreen('CHARACTER_SELECT')
+              : setScreen('MENU')
+          }
+        />
+      )}
+
+      {screen === 'HUB' && (
+        <HubScreen
+          characterName={activeCharacterName}
+          nearbyInteractable={nearbyHubInteractable}
+          onSwitchCharacter={handleSwitchCharacterFromHub}
+        />
+      )}
+
+      {screen === 'MAP_SELECT' && (
+        <MapSelectScreen
+          onSelectMap={handleStartMapFromHub}
+          activeMap={activeMapInfo}
+          onResumeMap={handleResumeMapFromHub}
+          actsCleared={actsCleared}
+          mapItems={hud.inventory.items.filter((item) => item.type === 'map_item')}
+          primedPortal={primedMapPortal}
+          onOpenMapPortal={handleOpenMapPortalFromItem}
+          onClose={handleCloseMapSelect}
+        />
+      )}
+
+      {screen === 'DIED' && (
+        <DeathScreen
+          portalsLeft={deathInfo?.portalsLeft ?? 0}
+          stats={deathInfo ?? {}}
+          onReturnHub={handleReturnToHubFromDeath}
+        />
+      )}
+
+      {screen === 'MAP_COMPLETE' && (
+        <MapCompleteScreen
+          stats={mapCompleteInfo ?? {}}
+          onReturnHub={handleReturnToHubAfterClear}
+          onStay={handleStayInMapAfterClear}
+        />
+      )}
+
+      {screen === 'SHEET' && (
+        <CharacterSheet
+          hud={hud}
+          characterName={activeCharacterName}
+          onClose={closeCharacterSheet}
+        />
+      )}
+
+      {screen === 'VENDOR' && (
+        <VendorScreen
+          stock={vendorStock}
+          gold={hud.gold ?? 0}
+          feedback={vendorFeedback}
+          onBuy={handleVendorBuy}
+          onClose={closeVendor}
+          onReroll={handleVendorReroll}
+          rerollCost={50}
+        />
+      )}
+
+      {/* Legacy class-select screen — kept for Achievement unlock flow */}
+      {screen === 'LEGACY_CHARACTER_SELECT' && (
+        <CharacterSelect
+          unlocked={unlockedChars}
+          highScores={MetaProgression.loadHighScores()}
+          onSelect={(id) => startGame(id)}
+          onBack={() => setScreen('MENU')}
+        />
+      )}
+
+      {showHud && <HUD hud={hud} hideTimer={hideHudTimer} mobileMode={mobileMode} />}
+
+      {showMobileControls && (
+        <MobileControls
+          onMove={handleMobileMove}
+          onPrimaryHold={handleMobilePrimaryHold}
+          onSkillTap={handleMobileSkillTap}
+          onOpenInventory={handleMobileOpenInventory}
+          onOpenGems={handleMobileOpenGems}
+          onOpenTree={handleMobileOpenTree}
+          onOpenSheet={handleMobileOpenSheet}
+          onPause={handleMobilePause}
+          onToggleLock={handleMobileToggleLock}
+          lockActive={!!hud.lockedTarget}
+          leftHanded={mobileUi.leftHanded}
+          largeButtons={mobileUi.largeButtons}
+          hapticsEnabled={mobileUi.haptics}
+          onToggleHandedness={() => setMobileUi((prev) => ({ ...prev, leftHanded: !prev.leftHanded }))}
+          onToggleButtonSize={() => setMobileUi((prev) => ({ ...prev, largeButtons: !prev.largeButtons }))}
+          onToggleHaptics={() => setMobileUi((prev) => ({ ...prev, haptics: !prev.haptics }))}
+          showCombatButtons={screen === 'RUNNING'}
+          showSheetButton={screen === 'HUB'}
+        />
+      )}
+
+      {screen === 'RUNNING' && hoveredDrop && (
+        <ItemTooltip itemData={hoveredDrop} mousePos={mousePos} hint="Click to pick up" />
+      )}
+
+      {screen === 'TREE' && (
+        <PassiveTreeScreen
+          allocatedIds={hud.allocatedNodes}
+          skillPoints={hud.skillPoints}
+          onAllocate={handleAllocateNode}
+          onClose={closeTree}
+        />
+      )}
+
+      {screen === 'INVENTORY' && (
+        <InventoryScreen
+          inventory={hud.inventory}
+          equipment={hud.equipment}
+          gold={hud.gold ?? 0}
+          cursorItem={cursorItem}
+          mousePos={mousePos}
+          onClose={closeInventory}
+          onItemClick={handleInventoryItemClick}
+          onItemRightClick={handleInventoryItemRightClick}
+          onCellClick={handleInventoryCellClick}
+          onSlotClick={handleEquipSlotClick}
+          activeTab={invTab}
+          onTabChange={setInvTab}
+          primarySkill={hud.primarySkill ?? null}
+          activeSkills={hud.activeSkills ?? []}
+          onSocketGem={handleSocketGem}
+          onUnsocketGem={handleUnsocketGem}
+        />
+      )}
+
+
+      {screen === 'PAUSED' && <PauseScreen
+        onResume={togglePause}
+        onOptions={() => setShowOptions(true)}
+        onAbandon={handleAbandonRun}
+      />}
+
+      {screen === 'PORTAL_CONFIRM' && (
+        <PortalConfirmDialog
+          portalsRemaining={hud.portalsRemaining ?? 0}
+          onConfirm={confirmPortalToHub}
+          onCancel={closePortalConfirm}
+        />
+      )}
+
+      {showOptions && (
+        <OptionsModal
+          engine={engineRef.current ?? undefined}
+          onClose={() => setShowOptions(false)}
+        />
+      )}
+
+      {bossAnnouncement && (
+        <BossAnnouncement
+          bossName={bossAnnouncement}
+          onDone={() => setBossAnnouncement(null)}
+        />
+      )}
+
+      {screen === 'GAME_OVER' && (
+        <GameOver
+          stats={finalStats ?? hud}
+          onRestart={() => setScreen('CHARACTER_SELECT')}
+        />
+      )}
+
+      {screen === 'META' && (
+        <MetaTreeScreen
+          allocatedNodes={metaNodes}
+          shards={totalShards}
+          onAllocate={handleMetaAllocate}
+          onClose={() => setScreen('MENU')}
+        />
+      )}
+
+      {/* Achievement unlock toast */}
+      {unlockToast && (
+        <div
+          className="achievement-toast"
+          style={{ '--toast-color': unlockToast.color }}
+        >
+          <span className="achievement-toast-icon">{unlockToast.icon}</span>
+          <div className="achievement-toast-text">
+            <div className="achievement-toast-label">CHARACTER UNLOCKED</div>
+            <div className="achievement-toast-name" style={{ color: unlockToast.color }}>
+              {unlockToast.name}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

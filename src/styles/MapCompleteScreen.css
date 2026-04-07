@@ -1,0 +1,104 @@
+.mcs-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 7, 16, 0.7);
+  z-index: 140;
+}
+
+.mcs-box {
+  width: min(480px, 92vw);
+  background: linear-gradient(180deg, rgba(10, 25, 42, 0.96), rgba(7, 18, 31, 0.98));
+  border: 1px solid rgba(143, 201, 255, 0.5);
+  border-radius: 13px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
+  padding: 30px 28px 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.mcs-mark {
+  font-size: 1.8rem;
+  color: #8ec1ff;
+}
+
+.mcs-title {
+  margin: 0;
+  font-size: 1.9rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #dcedff;
+}
+
+.mcs-name {
+  color: #95b8e3;
+  font-size: 0.82rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mcs-boss {
+  color: #d8e7ff;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+}
+
+.mcs-grid {
+  width: 100%;
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mcs-cell {
+  border: 1px solid rgba(173, 208, 250, 0.28);
+  border-radius: 10px;
+  background: rgba(18, 29, 48, 0.6);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.mcs-cell span {
+  color: rgba(175, 201, 234, 0.7);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.mcs-cell strong {
+  color: #f2f8ff;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.mcs-note {
+  margin: 8px 0 2px;
+  color: rgba(195, 215, 243, 0.74);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.mcs-btn {
+  width: 100%;
+}
+
+.mcs-actions {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 640px) {
+  .mcs-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,0 +1,477 @@
+/**
+ * supports.js — Phase 12.5, Support Gem System
+ *
+ * Each entry in SUPPORT_POOL describes one support gem.
+ *
+ * Shape:
+ *   id              — unique string key
+ *   name            — display name
+ *   icon            — emoji or short glyph
+ *   description     — single-line tooltip text
+ *   color           — gem colour used in the socket UI
+ *   requiredTags    — skill must have ALL of these tags to accept the gem
+ *   incompatibleTags— skill must have NONE of these tags
+ *   modify(stats, skill) — called by SkillDef.computedStats() — mutates stats in-place
+ *   onActivate(player, entities, engine, skill) — optional; called after the skill fires
+ */
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function _spellEchoActivate(player, entities, engine, skill) {
+  // Delay a second identical activation by 0.15 s at 90% damage
+  const originalCd  = skill.cooldown;
+  const originalBase = { ...skill.base };
+
+  setTimeout(() => {
+    if (!player || !entities || !engine) return;
+    const prevDmg = skill.base.damage;
+    skill.base.damage = Math.round((prevDmg ?? 0) * 0.9);
+    skill.activate(player, entities, engine);
+    skill.base.damage = prevDmg;
+    // Don't restart cooldown from the echo
+    skill._timer = originalCd;
+  }, 150);
+  void originalBase; // suppress lint
+}
+
+function _spellCascadeActivate(player, entities, engine, skill) {
+  // Fire two extra copies offset ±60 px perpendicular to facing
+  const px = player.facingY !== 0 ? player.facingY : 0;
+  const py = -player.facingX;
+  const offsets = [-60, 60];
+  for (const off of offsets) {
+    const ox = player.x + px * off;
+    const oy = player.y + py * off;
+    const savedX = player.x;
+    const savedY = player.y;
+    player.x = ox;
+    player.y = oy;
+    const prevDmg = skill.base.damage;
+    skill.base.damage = Math.round(prevDmg * 0.8);
+    skill.activate(player, entities, engine);
+    skill.base.damage = prevDmg;
+    skill._timer = skill.cooldown; // suppress the cascade's own cooldown restart
+    player.x = savedX;
+    player.y = savedY;
+  }
+}
+
+// ─── Support Pool ─────────────────────────────────────────────────────────────
+export const SUPPORT_POOL = [
+
+  // ── Projectile Supports ─────────────────────────────────────────────────
+  {
+    id:               'pierce',
+    name:             'Pierce',
+    icon:             '→',
+    description:      'Supported skills pierce 2 additional enemies.',
+    color:            '#74b9ff',
+    requiredTags:     ['Projectile'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._pierce = (stats._pierce ?? 0) + 2;
+    },
+  },
+  {
+    id:               'fork',
+    name:             'Fork',
+    icon:             'Y',
+    description:      'Projectiles fork into 2 on first hit. -20% damage.',
+    color:            '#55efc4',
+    requiredTags:     ['Projectile'],
+    incompatibleTags: ['Chain'],
+    modify(stats) {
+      stats._forks   = (stats._forks ?? 0) + 1;
+      stats.damage   = Math.round((stats.damage ?? 1) * 0.80);
+    },
+  },
+  {
+    id:               'chain',
+    name:             'Chain',
+    icon:             '⛓',
+    description:      'Projectiles chain to 2 additional enemies. -25% damage per hop.',
+    color:            '#a29bfe',
+    requiredTags:     ['Projectile'],
+    incompatibleTags: ['Fork'],
+    modify(stats) {
+      stats._chains  = (stats._chains ?? 0) + 2;
+      stats.damage   = Math.round((stats.damage ?? 1) * 0.75);
+    },
+  },
+  {
+    id:               'gmp',
+    name:             'Greater Multiple Projectiles',
+    icon:             '≡',
+    description:      '+4 extra projectiles in a spread. -30% damage each.',
+    color:            '#fd79a8',
+    requiredTags:     ['Projectile'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._extraProjectiles = (stats._extraProjectiles ?? 0) + 4;
+      stats.damage = Math.round((stats.damage ?? 1) * 0.70);
+    },
+  },
+  {
+    id:               'faster_projectiles',
+    name:             'Faster Projectiles',
+    icon:             '»',
+    description:      'Projectiles travel 80% faster and 40% further.',
+    color:            '#74b9ff',
+    requiredTags:     ['Projectile'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._speedMult   = (stats._speedMult ?? 1) * 1.80;
+      stats._rangeMult   = (stats._rangeMult ?? 1) * 1.40;
+    },
+  },
+
+  // ── Spell Supports ──────────────────────────────────────────────────────
+  {
+    id:               'spell_echo',
+    name:             'Spell Echo',
+    icon:             '↻',
+    description:      'Spell fires twice; the second cast is delayed 0.15 s at 90% damage.',
+    color:            '#a29bfe',
+    requiredTags:     ['Spell'],
+    incompatibleTags: ['Channelling'],
+    modify(stats) {
+      stats.damage = Math.round((stats.damage ?? 1) * 0.90);
+    },
+    onActivate: _spellEchoActivate,
+  },
+  {
+    id:               'spell_cascade',
+    name:             'Spell Cascade',
+    icon:             '⫶',
+    description:      'Fires in 3 locations: target and ±60 px offsets. -20% each.',
+    color:            '#55efc4',
+    requiredTags:     ['Spell', 'AoE'],
+    incompatibleTags: ['Channelling'],
+    modify(stats) {
+      stats.damage = Math.round((stats.damage ?? 1) * 0.80);
+    },
+    onActivate: _spellCascadeActivate,
+  },
+  {
+    id:               'controlled_destruction',
+    name:             'Controlled Destruction',
+    icon:             '💥',
+    description:      '+40% more Spell Damage. -100% crit chance.',
+    color:            '#e17055',
+    requiredTags:     ['Spell'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats.damage = Math.round((stats.damage ?? 1) * 1.40);
+    },
+  },
+
+  // ── AoE Supports ────────────────────────────────────────────────────────
+  {
+    id:               'concentrated_effect',
+    name:             'Concentrated Effect',
+    icon:             '◎',
+    description:      '+40% AoE damage. -35% AoE radius.',
+    color:            '#fdcb6e',
+    requiredTags:     ['AoE'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats.damage = Math.round((stats.damage ?? 1) * 1.40);
+      for (const key of ['radius', 'pillarRadius', 'meleeRadius', 'impactRadius', 'afterRadius']) {
+        if (stats[key] != null) stats[key] = Math.round(stats[key] * 0.65);
+      }
+    },
+  },
+  {
+    id:               'increased_aoe',
+    name:             'Increased Area of Effect',
+    icon:             '○',
+    description:      '+40% AoE radius. -15% damage.',
+    color:            '#74b9ff',
+    requiredTags:     ['AoE'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats.damage = Math.round((stats.damage ?? 1) * 0.85);
+      for (const key of ['radius', 'pillarRadius', 'meleeRadius', 'impactRadius', 'afterRadius']) {
+        if (stats[key] != null) stats[key] = Math.round(stats[key] * 1.40);
+      }
+    },
+  },
+
+  // ── Damage Addition Supports ────────────────────────────────────────────
+  {
+    id:               'added_fire',
+    name:             'Added Fire Damage',
+    icon:             '🔥',
+    description:      '+14 added fire damage per hit. Skill gains Fire tag.',
+    color:            '#e17055',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats, skill) {
+      stats.damage = (stats.damage ?? 0) + 14;
+      if (!skill.tags.includes('Fire')) skill._tempTags = [...(skill._tempTags ?? []), 'Fire'];
+    },
+  },
+  {
+    id:               'added_cold',
+    name:             'Added Cold Damage',
+    icon:             '❄️',
+    description:      '+11 added cold damage. +10% base Chill chance. Skill gains Cold tag.',
+    color:            '#74b9ff',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats, skill) {
+      stats.damage = (stats.damage ?? 0) + 11;
+      stats._extraChillChance = (stats._extraChillChance ?? 0) + 0.10;
+      if (!skill.tags.includes('Cold')) skill._tempTags = [...(skill._tempTags ?? []), 'Cold'];
+    },
+  },
+  {
+    id:               'added_lightning',
+    name:             'Added Lightning Damage',
+    icon:             '⚡',
+    description:      '+14 added lightning damage (high variance). +5% Shock chance. Skill gains Lightning tag.',
+    color:            '#fdcb6e',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats, skill) {
+      const variance = Math.round((Math.random() - 0.5) * 16);
+      stats.damage = (stats.damage ?? 0) + 14 + variance;
+      stats._extraShockChance = (stats._extraShockChance ?? 0) + 0.05;
+      if (!skill.tags.includes('Lightning')) skill._tempTags = [...(skill._tempTags ?? []), 'Lightning'];
+    },
+  },
+  {
+    id:               'added_chaos',
+    name:             'Added Chaos Damage',
+    icon:             '☠',
+    description:      '+14 added chaos damage. Skill gains Chaos tag.',
+    color:            '#6c5ce7',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats, skill) {
+      stats.damage = (stats.damage ?? 0) + 14;
+      if (!skill.tags.includes('Chaos')) skill._tempTags = [...(skill._tempTags ?? []), 'Chaos'];
+    },
+  },
+  {
+    id:               'life_tap',
+    name:             'Life Tap',
+    icon:             '💉',
+    description:      'Costs 10% max HP on activation. +25% more damage.',
+    color:            '#d63031',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats) {
+      stats.damage = Math.round((stats.damage ?? 1) * 1.25);
+    },
+    onActivate(player) {
+      if (player.health > player.maxHealth * 0.15) {
+        player.health -= player.maxHealth * 0.10;
+      }
+    },
+  },
+
+  // ── Ailment Supports ────────────────────────────────────────────────────
+  {
+    id:               'deadly_ailments',
+    name:             'Deadly Ailments',
+    icon:             '☣',
+    description:      '+60% ailment damage from supported skills. -10% hit damage.',
+    color:            '#55efc4',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats) {
+      stats.damage      = Math.round((stats.damage ?? 1) * 0.90);
+      stats._ailmentDmgMult = (stats._ailmentDmgMult ?? 1) * 1.60;
+    },
+  },
+  {
+    id:               'swift_affliction',
+    name:             'Swift Affliction',
+    icon:             '⏩',
+    description:      '+50% ailment damage; -30% ailment duration.',
+    color:            '#fd79a8',
+    requiredTags:     ['Duration'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._ailmentDmgMult  = (stats._ailmentDmgMult ?? 1) * 1.50;
+      stats._ailmentDurMult  = (stats._ailmentDurMult ?? 1) * 0.70;
+    },
+  },
+  {
+    id:               'hypothermia',
+    name:             'Hypothermia',
+    icon:             '🥶',
+    description:      '+30% more damage against Chilled or Frozen enemies.',
+    color:            '#74b9ff',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._vsChilledMult = (stats._vsChilledMult ?? 1) * 1.30;
+    },
+  },
+  {
+    id:               'vile_toxins',
+    name:             'Vile Toxins',
+    icon:             '🧪',
+    description:      '+8% more damage per Poison stack on enemy (max ×8).',
+    color:            '#55efc4',
+    requiredTags:     ['Chaos'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._vileStacks = 8; // runtime code in CollisionSystem reads this
+    },
+  },
+  {
+    id:               'burning_damage',
+    name:             'Burning Damage',
+    icon:             '🔥',
+    description:      '+30% more Burning (Ignite DoT) damage.',
+    color:            '#e17055',
+    requiredTags:     ['Fire'],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._burningMult = (stats._burningMult ?? 1) * 1.30;
+    },
+  },
+
+  // ── On-Hit Supports ─────────────────────────────────────────────────────
+  {
+    id:               'life_leech',
+    name:             'Life Leech',
+    icon:             '♥',
+    description:      'Recover HP equal to 2% of damage dealt per hit.',
+    color:            '#d63031',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._lifeLeech = (stats._lifeLeech ?? 0) + 0.02;
+    },
+  },
+  {
+    id:               'culling_strike',
+    name:             'Culling Strike',
+    icon:             '✂',
+    description:      'Instantly kill enemies at ≤10% HP.',
+    color:            '#b2bec3',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._cullingStrike = true;
+    },
+  },
+  {
+    id:               'momentum',
+    name:             'Momentum',
+    icon:             '▶',
+    description:      '+5% more damage per successive hit on the same enemy (max ×5).',
+    color:            '#fdcb6e',
+    requiredTags:     [],
+    incompatibleTags: [],
+    modify(stats) {
+      stats._momentum = true;
+    },
+  },
+
+  // ── Placement / Trigger Supports ────────────────────────────────────────
+  {
+    id:               'trap',
+    name:             'Trap',
+    icon:             '⚙',
+    description:      'Throws a trap that triggers on 60 px proximity after a 0.5 s arming delay.',
+    color:            '#636e72',
+    requiredTags:     [],
+    incompatibleTags: ['Movement', 'Minion', 'Channelling'],
+    modify(stats) {
+      stats._trapArmDelay = 0.5;
+      stats._trapRadius   = 60;
+    },
+  },
+
+  // ── Duration Supports ────────────────────────────────────────────────────
+  {
+    id:               'increased_duration',
+    name:             'Increased Duration',
+    icon:             '⏱',
+    description:      '+50% skill effect duration.',
+    color:            '#a29bfe',
+    requiredTags:     ['Duration'],
+    incompatibleTags: [],
+    modify(stats) {
+      if (stats.duration != null) stats.duration = stats.duration * 1.50;
+      // Buff timers handled by skills themselves reading this stat key
+    },
+  },
+  {
+    id:               'less_duration',
+    name:             'Less Duration',
+    icon:             '⏳',
+    description:      '-40% duration. +30% more damage.',
+    color:            '#e17055',
+    requiredTags:     ['Duration'],
+    incompatibleTags: [],
+    modify(stats) {
+      if (stats.duration != null) stats.duration = stats.duration * 0.60;
+      stats.damage = Math.round((stats.damage ?? 1) * 1.30);
+    },
+  },
+];
+
+/** Lookup map keyed by support id. */
+export const SUPPORT_MAP = Object.fromEntries(SUPPORT_POOL.map((s) => [s.id, s]));
+
+/**
+ * Build a live support instance from a plain support-gem itemDef.
+ * Returns a SkillSupport-compatible object: { id, name, modify, onActivate }.
+ * @param {object} gemItemDef — must have { gemId } field
+ * @returns {object|null}
+ */
+export function makeSupportInstance(gemItemDef) {
+  const def = SUPPORT_MAP[gemItemDef?.gemId];
+  if (!def) return null;
+  return {
+    id:           def.id,
+    name:         def.name,
+    modify:       def.modify?.bind(def) ?? (() => {}),
+    onActivate:   def.onActivate?.bind(def) ?? null,
+    requiredTags: def.requiredTags,
+    incompatibleTags: def.incompatibleTags,
+    _itemDef:     gemItemDef, // back-reference so we can retrieve it when unsocketing
+  };
+}
+
+/**
+ * Returns true if a support gem is compatible with a given skill.
+ * @param {object} supportDef — entry from SUPPORT_POOL
+ * @param {string[]} skillTags
+ */
+export function isSupportCompatible(supportDef, skillTags) {
+  for (const req of supportDef.requiredTags ?? []) {
+    if (!skillTags.includes(req)) return false;
+  }
+  for (const bad of supportDef.incompatibleTags ?? []) {
+    if (skillTags.includes(bad)) return false;
+  }
+  return true;
+}
+
+/** Build a 1x1 inventory support-gem item from a support definition. */
+export function createSupportGemItem(supportDef) {
+  const uid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `support_gem_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+
+  return {
+    uid,
+    id: `support_gem_${supportDef.id}`,
+    type: 'support_gem',
+    gemId: supportDef.id,
+    name: `${supportDef.name} Support`,
+    rarity: 'magic',
+    slot: 'gem',
+    gridW: 1,
+    gridH: 1,
+    gemIcon: supportDef.icon ?? '◆',
+    description: supportDef.description,
+    affixes: [],
+  };
+}

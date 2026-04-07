@@ -1,0 +1,140 @@
+/* ── DeathScreen — C2 ─────────────────────────────────────────────────────── */
+
+.ds-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  z-index: 120;
+  animation: ds-fade-in 0.4s ease;
+}
+
+@keyframes ds-fade-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.ds-box {
+  width: min(400px, 90vw);
+  background: linear-gradient(180deg, rgba(30, 9, 15, 0.96), rgba(17, 8, 15, 0.98));
+  border: 1px solid rgba(235, 96, 96, 0.44);
+  border-radius: 13px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.5);
+  padding: 36px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.ds-skull {
+  font-size: 2.6rem;
+  line-height: 1;
+}
+
+.ds-title {
+  font-size: 2rem;
+  font-weight: 900;
+  color: #e05555;
+  margin: 0;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 28px rgba(236, 87, 87, 0.62);
+}
+
+.ds-charline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: -2px;
+}
+
+.ds-charname {
+  color: #e7eef8;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.ds-charclass {
+  color: rgba(190, 206, 226, 0.62);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ── Portal pips ── */
+.ds-portals-label {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.ds-portals {
+  display: flex;
+  gap: 10px;
+}
+
+.ds-portal-pip {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.25);
+}
+
+.ds-portal-pip--active {
+  background: #6c63ff;
+  border-color: #9b94ff;
+  box-shadow: 0 0 10px rgba(108, 99, 255, 0.7);
+}
+
+.ds-portal-pip--used {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.1);
+}
+
+/* ── Stats row ── */
+.ds-stats {
+  display: flex;
+  gap: 24px;
+  margin: 4px 0;
+}
+
+.ds-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ds-stat-label {
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ds-stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* ── Hint text ── */
+.ds-hint {
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+  margin: 0;
+  padding: 0 8px;
+}
+
+.ds-btn {
+  margin-top: 6px;
+  width: 100%;
+}
