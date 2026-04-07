@@ -21,9 +21,11 @@ export function MobileControls({
   leftHanded = false,
   largeButtons = false,
   hapticsEnabled = true,
+  autoPickupEnabled = true,
   onToggleHandedness,
   onToggleButtonSize,
   onToggleHaptics,
+  onToggleAutoPickup,
   showCombatButtons = true,
   showSheetButton = false,
 }) {
@@ -163,6 +165,9 @@ export function MobileControls({
         <button type="button" className={`mobile-btn mobile-btn--tiny${leftHanded ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleHandedness, 8)} onMouseDown={invokeMouse(onToggleHandedness)}>Swap</button>
         <button type="button" className={`mobile-btn mobile-btn--tiny${largeButtons ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleButtonSize, 8)} onMouseDown={invokeMouse(onToggleButtonSize)}>Large</button>
         <button type="button" className={`mobile-btn mobile-btn--tiny${hapticsEnabled ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleHaptics, 8)} onMouseDown={invokeMouse(onToggleHaptics)}>Vibe</button>
+        {onToggleAutoPickup && (
+          <button type="button" className={`mobile-btn mobile-btn--tiny${autoPickupEnabled ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleAutoPickup, 8)} onMouseDown={invokeMouse(onToggleAutoPickup)}>Loot+</button>
+        )}
       </div>
     </div>
   );

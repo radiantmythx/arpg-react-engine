@@ -14,6 +14,7 @@ export function MapSelectScreen({
   mapItems = [],
   onOpenMapPortal,
   primedPortal = null,
+  mobileMode = false,
 }) {
   const [tab, setTab] = useState('acts');
   const [socketedUid, setSocketedUid] = useState(null);
@@ -56,7 +57,10 @@ export function MapSelectScreen({
           </button>
         </div>
 
-        <p className="mapsel-subtitle">{tab === 'acts' ? 'Choose a free act map' : 'Socket a map item and open a hub portal'}</p>
+        <p className="mapsel-subtitle">{tab === 'acts'
+          ? (mobileMode ? 'Tap a destination to travel there instantly.' : 'Choose a free act map')
+          : (mobileMode ? 'Tap a map item below, then press Open Portal.' : 'Socket a map item and open a hub portal')}
+        </p>
 
         {activeMap ? (
           <button className="mapsel-row mapsel-row--active" onClick={onResumeMap}>

@@ -29,32 +29,32 @@ Exit criteria:
 Exit criteria:
 - [x] Full combat loop playable on touch-only device with no keyboard.
 
-## Phase 3 - Mobile HUD, Layout, and Safe Areas [~]
+## Phase 3 - Mobile HUD, Layout, and Safe Areas [x]
 
 - [x] Add initial mobile HUD preset with repositioned hotbar and status widgets.
 - [x] Reposition bars/tooltips/paperdoll away from thumbs and notch areas.
 - [x] Add safe-area support (env(safe-area-inset-*)).
-- [ ] Increase tap targets and spacing for mobile overlays.
+- [x] Increase tap targets and spacing for mobile overlays.
 
 Exit criteria:
-- [ ] UI remains readable and tappable across common phone sizes.
+- [x] UI remains readable and tappable across common phone sizes.
 
-## Phase 4 - Mobile UX for Inventory and Menus [ ]
+## Phase 4 - Mobile UX for Inventory and Menus [x]
 
-- [ ] Add tap-to-pick/place and long-press interactions for inventory management.
-- [ ] Add drag ghost + haptic-friendly feedback pacing for socketing/equipment.
-- [ ] Add mobile-optimized modal controls for vendor, map device, passive tree.
-- [ ] Add optional auto-pickup assist for small item drops.
+- [x] Add tap-to-pick/place and long-press interactions for inventory management.
+- [x] Add drag ghost + haptic-friendly feedback pacing for socketing/equipment.
+- [x] Add mobile-optimized modal controls for vendor, map device, passive tree.
+- [x] Add optional auto-pickup assist for small item drops.
 
 Exit criteria:
-- [ ] Core non-combat workflows are usable on mobile without precision frustration.
+- [x] Core non-combat workflows are usable on mobile without precision frustration.
 
-## Phase 5 - Performance, QA, and Ship Readiness [ ]
+## Phase 5 - Performance, QA, and Ship Readiness [~]
 
-- [ ] Add mobile quality presets (particles, shadows, update frequency caps).
-- [ ] Add battery/perf mode toggle and automatic defaults for low-end devices.
+- [x] Add mobile quality presets (particles, shadows, update frequency caps).
+- [x] Add battery/perf mode toggle and automatic defaults for low-end devices.
 - [ ] Device QA sweep (iOS Safari, Chrome Android, Samsung Internet).
-- [ ] Final bug pass for touch edge cases (multi-touch conflicts, pause/resume, orientation).
+- [x] Final bug pass for touch edge cases (multi-touch conflicts, pause/resume, orientation).
 
 Exit criteria:
 - [ ] Stable 30-60 FPS target on representative mobile devices.

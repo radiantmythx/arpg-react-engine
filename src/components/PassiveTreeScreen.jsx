@@ -71,9 +71,10 @@ function NodeShape({ node, state }) {
   );
 }
 
-export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClose }) {
+export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClose, mobileMode = false }) {
   const allocatedSet = new Set(allocatedIds);
   const [hovered, setHovered]       = useState(null);
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const containerRef = useRef(null);
 
@@ -82,6 +83,13 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
   };
 
   const handleNodeClick = (id) => {
+    const node = TREE_NODE_MAP[id];
+    if (!node) return;
+    setSelectedNodeId(id);
+    if (mobileMode) {
+      setHovered(node);
+      return;
+    }
     if (getNodeState(id, allocatedSet, skillPoints) === 'available') {
       onAllocate(id);
     }
@@ -122,8 +130,12 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
     return lines;
   };
 
+  const detailNode = mobileMode ? (TREE_NODE_MAP[selectedNodeId] ?? hovered) : hovered;
+  const detailState = detailNode ? getNodeState(detailNode.id, allocatedSet, skillPoints) : 'locked';
+  const detailLines = detailNode ? statLines(detailNode) : [];
+
   return (
-    <div className="tree-overlay" onContextMenu={(e) => e.preventDefault()}>
+    <div className={`tree-overlay${mobileMode ? ' tree-overlay--mobile' : ''}`} onContextMenu={(e) => e.preventDefault()}>
 
       {/* ── Header ───────────────────────────────────────────────── */}
       <div className="tree-header">
@@ -136,11 +148,11 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
               {skillPoints} skill point{skillPoints > 1 ? 's' : ''} available
             </span>
           ) : (
-            <span className="tree-points-zero">No points available — press [P] or level up</span>
+            <span className="tree-points-zero">{mobileMode ? 'No points available — level up to earn more.' : 'No points available — press [P] or level up'}</span>
           )}
         </div>
         <div className="tree-header-right">
-          <button className="btn tree-close-btn" onClick={onClose}>✕ Close [P]</button>
+          <button className="btn tree-close-btn" onClick={onClose}>{mobileMode ? 'Done' : '✕ Close [P]'}</button>
         </div>
       </div>
 
@@ -246,7 +258,7 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
       </div>
 
       {/* ── Tooltip ───────────────────────────────────────────────── */}
-      {hovered && (
+      {!mobileMode && hovered && (
         <div
           className="tree-tooltip"
           style={{
@@ -277,6 +289,32 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
           {getNodeState(hovered.id, allocatedSet, skillPoints) === 'locked' &&
             allocatedSet.size > 0 && skillPoints <= 0 && (
             <div className="tree-tt-hint tree-tt-hint--locked">Requires a skill point</div>
+          )}
+        </div>
+      )}
+
+      {mobileMode && detailNode && (
+        <div className="tree-mobile-sheet">
+          <div className={`tree-tt-type tree-tt-type--${detailNode.type}`}>
+            {detailNode.type.toUpperCase()}
+          </div>
+          <div className="tree-tt-name">{detailNode.label}</div>
+          <div className="tree-tt-desc">{detailNode.description}</div>
+          {detailLines.length > 0 && (
+            <ul className="tree-tt-stats">
+              {detailLines.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          )}
+          {detailState === 'available' ? (
+            <button className="btn btn-primary tree-mobile-allocate" onClick={() => onAllocate(detailNode.id)}>
+              Allocate Node
+            </button>
+          ) : detailState === 'allocated' ? (
+            <div className="tree-mobile-status tree-mobile-status--done">✓ Allocated</div>
+          ) : (
+            <div className="tree-mobile-status">Connect to this node and spend a point to unlock it.</div>
           )}
         </div>
       )}

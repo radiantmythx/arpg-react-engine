@@ -36,6 +36,11 @@ const TAG_COLORS = {
   default:     '#9e9e9e',
 };
 
+function pulse(ms = 10) {
+  if (typeof navigator === 'undefined' || !navigator.vibrate) return;
+  navigator.vibrate(ms);
+}
+
 function TagBadge({ tag }) {
   const color = TAG_COLORS[tag] ?? TAG_COLORS.default;
   return (
@@ -128,9 +133,10 @@ function SkillRow({ skill, isSelected, onClick }) {
   );
 }
 
-export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, onUnsocketGem }) {
+export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, onUnsocketGem, mobileMode = false }) {
   const [selectedSkillId, setSelectedSkillId] = useState(null);
   const [selectedGemUid, setSelectedGemUid]   = useState(null);
+  const [mobileView, setMobileView] = useState('skills');
 
   // Extract support gems from inventory
   const stashGems = (inventory?.items ?? []).filter(
@@ -146,12 +152,14 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
 
   const handleSocket = (slotIndex, gemUid) => {
     if (!activeSkill) return;
+    pulse(10);
     onSocketGem(activeSkill.id, slotIndex, gemUid);
     setSelectedGemUid(null);
   };
 
   const handleUnsocket = (slotIndex) => {
     if (!activeSkill) return;
+    pulse(8);
     onUnsocketGem(activeSkill.id, slotIndex);
   };
 
@@ -160,9 +168,17 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
   const skillTags   = activeSkill?.tags ?? [];
 
   return (
-    <div className="gem-panel-body">
+    <>
+      {mobileMode && (
+        <div className="gem-mobile-tabs">
+          <button type="button" className={`gem-mobile-tab${mobileView === 'skills' ? ' gem-mobile-tab--active' : ''}`} onClick={() => setMobileView('skills')}>Skills</button>
+          <button type="button" className={`gem-mobile-tab${mobileView === 'sockets' ? ' gem-mobile-tab--active' : ''}`} onClick={() => setMobileView('sockets')}>Sockets</button>
+          <button type="button" className={`gem-mobile-tab${mobileView === 'stash' ? ' gem-mobile-tab--active' : ''}`} onClick={() => setMobileView('stash')}>Supports</button>
+        </div>
+      )}
+      <div className={`gem-panel-body${mobileMode ? ' gem-panel-body--mobile' : ''}`}>
           {/* ── Left: Skill List ────────────────────────── */}
-          <div className="gem-skill-list">
+          <div className={`gem-skill-list${mobileMode && mobileView !== 'skills' ? ' gem-pane--hidden' : ''}`}>
             <p className="gem-section-label">SKILLS</p>
             {skills.length === 0 && (
               <p className="gem-empty-hint">No active skills equipped.</p>
@@ -172,13 +188,18 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
                 key={skill.id}
                 skill={skill}
                 isSelected={skill.id === (activeSkill?.id)}
-                onClick={() => { setSelectedSkillId(skill.id); setSelectedGemUid(null); }}
+                onClick={() => {
+                  pulse(8);
+                  setSelectedSkillId(skill.id);
+                  setSelectedGemUid(null);
+                  if (mobileMode) setMobileView('sockets');
+                }}
               />
             ))}
           </div>
 
           {/* ── Center: Socket Slots ─────────────────── */}
-          <div className="gem-socket-panel">
+          <div className={`gem-socket-panel${mobileMode && mobileView !== 'sockets' ? ' gem-pane--hidden' : ''}`}>
             {activeSkill ? (
               <>
                 <div className="gem-active-skill-header">
@@ -193,6 +214,9 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
                 </div>
 
                 <p className="gem-section-label">SOCKETS ({openSlots} / {slots.length})</p>
+                {mobileMode && (
+                  <p className="gem-mobile-hint">Tap a support gem, then tap an open socket. Tap a filled socket to remove it.</p>
+                )}
                 <div className="gem-socket-grid">
                   {slots.map((support, idx) => (
                     <SocketSlot
@@ -230,7 +254,7 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
           </div>
 
           {/* ── Right: Gem Stash ─────────────────────── */}
-          <div className="gem-stash">
+          <div className={`gem-stash${mobileMode && mobileView !== 'stash' ? ' gem-pane--hidden' : ''}`}>
             <p className="gem-section-label">GEM STASH</p>
             {stashGems.length === 0 && (
               <p className="gem-empty-hint">No support gems in inventory.</p>
@@ -250,7 +274,11 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
                     !compatible ? 'gem-stash-item--incompatible' : '',
                   ].join(' ')}
                   title={def?.description ?? gem.name}
-                  onClick={() => setSelectedGemUid(isSelected ? null : gem.uid)}
+                  onClick={() => {
+                    pulse(8);
+                    setSelectedGemUid(isSelected ? null : gem.uid);
+                    if (!isSelected && mobileMode) setMobileView('sockets');
+                  }}
                 >
                   <span className="gem-stash-icon">{def?.icon ?? '◆'}</span>
                   <div className="gem-stash-meta">
@@ -265,6 +293,7 @@ export function GemPanel({ primarySkill, activeSkills, inventory, onSocketGem, o
               );
             })}
           </div>
-    </div>
+      </div>
+    </>
   );
 }

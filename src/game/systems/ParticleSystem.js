@@ -25,6 +25,23 @@ export class ParticleSystem {
     this._pool = [];
     /** @type {Array<{x:number,y:number,vx:number,vy:number,age:number,lifetime:number,text:string,color:string,size:number,alpha:number}>} */
     this._floatTexts = [];
+    this.quality = {
+      particleMultiplier: 1,
+      maxParticles: 220,
+      maxFloatTexts: 24,
+    };
+  }
+
+  setQuality(options = {}) {
+    this.quality = {
+      ...this.quality,
+      particleMultiplier: options.particleMultiplier ?? this.quality.particleMultiplier,
+      maxParticles: options.maxParticles ?? this.quality.maxParticles,
+      maxFloatTexts: options.maxFloatTexts ?? this.quality.maxFloatTexts,
+    };
+    if (this._floatTexts.length > this.quality.maxFloatTexts) {
+      this._floatTexts = this._floatTexts.slice(-this.quality.maxFloatTexts);
+    }
   }
 
   /** Retrieve an inactive Particle from the pool, or allocate a new one. */
@@ -32,9 +49,14 @@ export class ParticleSystem {
     for (const p of this._pool) {
       if (!p.active) return p;
     }
+    if (this.count >= this.quality.maxParticles) return null;
     const p = new Particle();
     this._pool.push(p);
     return p;
+  }
+
+  _scaledCount(baseCount) {
+    return Math.max(1, Math.round(baseCount * (this.quality.particleMultiplier ?? 1)));
   }
 
   /**
@@ -72,11 +94,12 @@ export class ParticleSystem {
   }
 
   _emitHit(x, y, color) {
-    const count = 4 + Math.floor(Math.random() * 3); // 4–6
+    const count = this._scaledCount(4 + Math.floor(Math.random() * 3));
     for (let i = 0; i < count; i++) {
       const angle = rand(0, TAU);
       const speed = rand(60, 140);
       const p     = this._acquire();
+      if (!p) break;
       p.reset(
         x, y,
         Math.cos(angle) * speed,
@@ -90,11 +113,12 @@ export class ParticleSystem {
   }
 
   _emitTuningPop(x, y, color, count = 12) {
-    const sparks = Math.max(8, count);
+    const sparks = Math.max(4, this._scaledCount(Math.max(8, count)));
     for (let i = 0; i < sparks; i++) {
       const angle = rand(0, TAU);
       const speed = rand(120, 320);
       const p     = this._acquire();
+      if (!p) break;
       p.reset(
         x, y,
         Math.cos(angle) * speed,
@@ -105,10 +129,11 @@ export class ParticleSystem {
         0.7,
       );
     }
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this._scaledCount(4); i++) {
       const angle = rand(0, TAU);
       const speed = rand(40, 120);
       const p     = this._acquire();
+      if (!p) break;
       p.reset(
         x, y,
         Math.cos(angle) * speed,
@@ -122,6 +147,9 @@ export class ParticleSystem {
   }
 
   _emitDamageNumber(x, y, value, options) {
+    if (this._floatTexts.length >= this.quality.maxFloatTexts) {
+      this._floatTexts.shift();
+    }
     const n = typeof value === 'number' ? Math.max(0, Math.round(value)) : value;
     this._floatTexts.push({
       x,
@@ -138,11 +166,12 @@ export class ParticleSystem {
   }
 
   _emitDeath(x, y, color) {
-    const count = 10 + Math.floor(Math.random() * 5); // 10–14
+    const count = this._scaledCount(10 + Math.floor(Math.random() * 5));
     for (let i = 0; i < count; i++) {
       const angle = rand(0, TAU);
       const speed = rand(80, 220);
       const p     = this._acquire();
+      if (!p) break;
       p.reset(
         x, y,
         Math.cos(angle) * speed,
@@ -154,20 +183,22 @@ export class ParticleSystem {
       );
     }
     // White flash burst — a few bright centred particles.
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this._scaledCount(4); i++) {
       const angle = rand(0, TAU);
       const speed = rand(20, 60);
       const p     = this._acquire();
+      if (!p) break;
       p.reset(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, rand(3, 6), '#ffffff', 0.25, 0.8);
     }
   }
 
   _emitXp(x, y) {
-    const count = 5 + Math.floor(Math.random() * 4); // 5–8
+    const count = this._scaledCount(5 + Math.floor(Math.random() * 4));
     for (let i = 0; i < count; i++) {
       const angle = -Math.PI / 2 + rand(-0.8, 0.8); // mostly upward
       const speed = rand(30, 90);
       const p     = this._acquire();
+      if (!p) break;
       p.reset(
         x, y,
         Math.cos(angle) * speed,
@@ -181,13 +212,14 @@ export class ParticleSystem {
   }
 
   _emitLevelUp(x, y) {
-    const count = 24;
+    const count = this._scaledCount(24);
     const colors = ['#3498db', '#9b59b6', '#2ecc71', '#f1c40f', '#e74c3c', '#00bcd4'];
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * TAU;
       const speed = rand(120, 280);
       const color = colors[i % colors.length];
       const p     = this._acquire();
+      if (!p) break;
       p.reset(
         x, y,
         Math.cos(angle) * speed,

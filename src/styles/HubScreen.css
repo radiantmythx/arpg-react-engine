@@ -105,6 +105,19 @@
     display: none;
   }
 
+  .hub-help-strip--mobile {
+    display: flex;
+    top: auto;
+    bottom: calc(max(env(safe-area-inset-bottom), 0px) + 86px);
+    width: min(92vw, 460px);
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 12px;
+    padding: 8px 12px;
+    border-radius: 14px;
+    font-size: 0.64rem;
+  }
+
   .hub-topbar {
     bottom: 12px;
     left: 10px;

@@ -44,7 +44,7 @@ function VendorRow({ row, canAfford, onBuy }) {
   );
 }
 
-export function VendorScreen({ stock = [], gold = 0, onBuy, onClose, feedback = '', onReroll, rerollCost = 50 }) {
+export function VendorScreen({ stock = [], gold = 0, onBuy, onClose, feedback = '', onReroll, rerollCost = 5, mobileMode = false }) {
   const [tab, setTab] = useState('skill');
 
   const filtered = useMemo(
@@ -93,7 +93,7 @@ export function VendorScreen({ stock = [], gold = 0, onBuy, onClose, feedback = 
         </div>
 
         <div className="vendor-footer">
-          <span className="vendor-feedback">{feedback || 'Tip: right-click a gem in inventory to equip it.'}</span>
+          <span className="vendor-feedback">{feedback || (mobileMode ? 'Tip: tap to move items, or hold an inventory item to quick-equip / use it.' : 'Tip: right-click a gem in inventory to equip it.')}</span>
           <div className="vendor-footer-actions">
             {canReroll && (
               <button

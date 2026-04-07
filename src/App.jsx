@@ -65,6 +65,7 @@ const INITIAL_HUD = {
 
 const MOBILE_PREF_KEY = 'survivor_mobile_mode';
 const MOBILE_UI_PREF_KEY = 'survivor_mobile_ui';
+const MOBILE_PERF_PREF_KEY = 'survivor_mobile_perf';
 
 function detectMobileByDefault() {
   if (typeof window === 'undefined') return false;
@@ -77,19 +78,89 @@ function detectMobileByDefault() {
 
 function loadMobileUiPrefs() {
   if (typeof window === 'undefined') {
-    return { leftHanded: false, largeButtons: false, haptics: true };
+    return { leftHanded: false, largeButtons: false, haptics: true, autoPickup: true };
   }
   try {
     const raw = window.localStorage.getItem(MOBILE_UI_PREF_KEY);
-    if (!raw) return { leftHanded: false, largeButtons: false, haptics: true };
+    if (!raw) return { leftHanded: false, largeButtons: false, haptics: true, autoPickup: true };
     const parsed = JSON.parse(raw);
     return {
       leftHanded: !!parsed.leftHanded,
       largeButtons: !!parsed.largeButtons,
       haptics: parsed.haptics !== false,
+      autoPickup: parsed.autoPickup !== false,
     };
   } catch {
-    return { leftHanded: false, largeButtons: false, haptics: true };
+    return { leftHanded: false, largeButtons: false, haptics: true, autoPickup: true };
+  }
+}
+
+function detectDefaultPerfPreset() {
+  if (typeof window === 'undefined') return 'quality';
+  const saveData = navigator.connection?.saveData === true;
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const lowCpu = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4;
+  const lowMemory = typeof navigator.deviceMemory === 'number' && navigator.deviceMemory <= 4;
+  if (saveData || reduceMotion || (detectMobileByDefault() && (lowCpu || lowMemory))) return 'battery';
+  if (detectMobileByDefault()) return 'balanced';
+  return 'quality';
+}
+
+function loadMobilePerfPrefs() {
+  const fallback = { preset: detectDefaultPerfPreset() };
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(MOBILE_PERF_PREF_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    const preset = ['quality', 'balanced', 'battery'].includes(parsed?.preset) ? parsed.preset : fallback.preset;
+    return { preset };
+  } catch {
+    return fallback;
+  }
+}
+
+function buildPerformanceProfile(preset = 'quality', mobileActive = false) {
+  switch (preset) {
+    case 'battery':
+      return {
+        preset,
+        targetFps: 30,
+        particleMultiplier: 0.35,
+        maxParticles: 80,
+        maxFloatTexts: 12,
+        drawBackgroundGrid: false,
+        backgroundGridStep: 3,
+        drawWallDetails: false,
+        hudInterval: 0.09,
+        reduceUiEffects: true,
+      };
+    case 'balanced':
+      return {
+        preset,
+        targetFps: mobileActive ? 45 : 60,
+        particleMultiplier: 0.65,
+        maxParticles: 130,
+        maxFloatTexts: 16,
+        drawBackgroundGrid: true,
+        backgroundGridStep: mobileActive ? 2 : 1,
+        drawWallDetails: !mobileActive,
+        hudInterval: 0.065,
+        reduceUiEffects: mobileActive,
+      };
+    default:
+      return {
+        preset: 'quality',
+        targetFps: 60,
+        particleMultiplier: 1,
+        maxParticles: 220,
+        maxFloatTexts: 24,
+        drawBackgroundGrid: true,
+        backgroundGridStep: 1,
+        drawWallDetails: true,
+        hudInterval: 0.05,
+        reduceUiEffects: false,
+      };
   }
 }
 
@@ -101,10 +172,8 @@ export default function App() {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
 
-  // Determine initial screen: skip MENU entirely and go straight to character flow.
-  const [screen, setScreen] = useState(() =>
-    CharacterSave.list().length > 0 ? 'CHARACTER_SELECT' : 'CHARACTER_CREATE',
-  );
+  // Start on the title screen so players can confirm desktop/mobile mode first.
+  const [screen, setScreen] = useState('MENU');
   const [hud, setHud]                 = useState(INITIAL_HUD);
   const [finalStats, setFinalStats]   = useState(null);
   // D2/PoE inventory state
@@ -136,6 +205,11 @@ export default function App() {
   const [showOptions, setShowOptions] = useState(false);
   // Inventory tab: 'equipment' | 'gems'
   const [invTab, setInvTab] = useState('equipment');
+  const [hasExplicitMobilePref, setHasExplicitMobilePref] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = window.localStorage.getItem(MOBILE_PREF_KEY);
+    return saved === '1' || saved === '0';
+  });
   const [mobileMode, setMobileMode] = useState(() => {
     if (typeof window === 'undefined') return false;
     const saved = window.localStorage.getItem(MOBILE_PREF_KEY);
@@ -144,6 +218,7 @@ export default function App() {
     return detectMobileByDefault();
   });
   const [mobileUi, setMobileUi] = useState(() => loadMobileUiPrefs());
+  const [mobilePerf, setMobilePerf] = useState(() => loadMobilePerfPrefs());
 
   // ── Callbacks passed to GameEngine ──────────────────────────────
 
@@ -258,6 +333,8 @@ export default function App() {
       handleHubInteractableChange,
       handleMapComplete,
     );
+    engine.setMobileAssistOptions?.({ autoPickup: mobileMode && mobileUi.autoPickup });
+    engine.setPerformanceProfile?.(buildPerformanceProfile(mobilePerf.preset, mobileMode));
     engineRef.current = engine;
 
     setHud(INITIAL_HUD);
@@ -265,6 +342,7 @@ export default function App() {
     setCursorItem(null);
     setHoveredDrop(null);
     setDeathInfo(null);
+    setBossAnnouncement(null);
     setNearbyHubInteractable(null);
     setActiveMapInfo(null);
     setMapCompleteInfo(null);
@@ -284,6 +362,9 @@ export default function App() {
     handlePlayerDied,
     handleHubInteractableChange,
     handleMapComplete,
+    mobileMode,
+    mobileUi.autoPickup,
+    mobilePerf.preset,
   ]);
 
   const startGame = useCallback((classId = 'sage', characterId = null) => {
@@ -611,7 +692,8 @@ export default function App() {
     if (!engine || screen !== 'INVENTORY') return;
     // If cursor item is held, drop it back into the world
     if (cursorItem) {
-      engine.dropItemToWorld(cursorItem);
+      const returned = engine.addToInventory(cursorItem);
+      if (!returned) engine.dropItemToWorld(cursorItem);
       setCursorItem(null);
     }
     engine.resume();
@@ -787,17 +869,37 @@ export default function App() {
     engineRef.current?.toggleTargetLock?.();
   }, [screen]);
 
+  const handleToggleMobileMode = useCallback(() => {
+    setHasExplicitMobilePref(true);
+    setMobileMode((prev) => !prev);
+  }, []);
+
   // ── Global effects ───────────────────────────────────────────────
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem(MOBILE_PREF_KEY, mobileMode ? '1' : '0');
-  }, [mobileMode]);
+    if (hasExplicitMobilePref) {
+      window.localStorage.setItem(MOBILE_PREF_KEY, mobileMode ? '1' : '0');
+    }
+  }, [mobileMode, hasExplicitMobilePref]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(MOBILE_UI_PREF_KEY, JSON.stringify(mobileUi));
   }, [mobileUi]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(MOBILE_PERF_PREF_KEY, JSON.stringify(mobilePerf));
+  }, [mobilePerf]);
+
+  useEffect(() => {
+    engineRef.current?.setMobileAssistOptions?.({ autoPickup: mobileMode && mobileUi.autoPickup });
+  }, [mobileMode, mobileUi.autoPickup]);
+
+  useEffect(() => {
+    engineRef.current?.setPerformanceProfile?.(buildPerformanceProfile(mobilePerf.preset, mobileMode));
+  }, [mobileMode, mobilePerf.preset]);
 
   // Resize canvas
   useEffect(() => {
@@ -871,6 +973,35 @@ export default function App() {
     input.setVirtualPrimaryHeld(false);
   }, [mobileMode, screen]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !mobileMode) return;
+
+    const pauseForInterruption = () => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      engine.input?.setVirtualMovement(0, 0);
+      engine.input?.setVirtualAim(0, 0);
+      engine.input?.setVirtualPrimaryHeld(false);
+      if (screen === 'RUNNING') {
+        engine.pause();
+        setScreen('PAUSED');
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) pauseForInterruption();
+    };
+
+    window.addEventListener('blur', pauseForInterruption);
+    window.addEventListener('orientationchange', pauseForInterruption);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('blur', pauseForInterruption);
+      window.removeEventListener('orientationchange', pauseForInterruption);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [mobileMode, screen]);
+
   const showHud = screen === 'RUNNING'      || screen === 'HUB'    || screen === 'PAUSED' ||
                   screen === 'MAP_SELECT'   ||
                   screen === 'MAP_COMPLETE' ||
@@ -879,9 +1010,10 @@ export default function App() {
 
   const hideHudTimer = screen === 'HUB';
   const showMobileControls = mobileMode && (screen === 'RUNNING' || screen === 'HUB');
+  const perfClass = ` perf-${mobilePerf.preset}-mode`;
 
   return (
-    <div className={`app${mobileMode ? ' mobile-mode' : ''}${mobileUi.leftHanded ? ' mobile-left-handed' : ''}${mobileUi.largeButtons ? ' mobile-large-controls' : ''}`}>
+    <div className={`app${mobileMode ? ' mobile-mode' : ''}${mobileUi.leftHanded ? ' mobile-left-handed' : ''}${mobileUi.largeButtons ? ' mobile-large-controls' : ''}${perfClass}`}>
       <canvas
         ref={canvasRef}
         className="game-canvas"
@@ -897,7 +1029,8 @@ export default function App() {
           onMeta={() => setScreen('META')}
           onOptions={() => setShowOptions(true)}
           mobileMode={mobileMode}
-          onToggleMobileMode={() => setMobileMode((prev) => !prev)}
+          mobileModeIsAuto={!hasExplicitMobilePref}
+          onToggleMobileMode={handleToggleMobileMode}
           history={MetaProgression.loadHistory()}
         />
       )}
@@ -928,6 +1061,7 @@ export default function App() {
           characterName={activeCharacterName}
           nearbyInteractable={nearbyHubInteractable}
           onSwitchCharacter={handleSwitchCharacterFromHub}
+          mobileMode={mobileMode}
         />
       )}
 
@@ -941,6 +1075,7 @@ export default function App() {
           primedPortal={primedMapPortal}
           onOpenMapPortal={handleOpenMapPortalFromItem}
           onClose={handleCloseMapSelect}
+          mobileMode={mobileMode}
         />
       )}
 
@@ -965,6 +1100,7 @@ export default function App() {
           hud={hud}
           characterName={activeCharacterName}
           onClose={closeCharacterSheet}
+          mobileMode={mobileMode}
         />
       )}
 
@@ -976,7 +1112,8 @@ export default function App() {
           onBuy={handleVendorBuy}
           onClose={closeVendor}
           onReroll={handleVendorReroll}
-          rerollCost={50}
+          rerollCost={5}
+          mobileMode={mobileMode}
         />
       )}
 
@@ -1007,16 +1144,18 @@ export default function App() {
           leftHanded={mobileUi.leftHanded}
           largeButtons={mobileUi.largeButtons}
           hapticsEnabled={mobileUi.haptics}
+          autoPickupEnabled={mobileUi.autoPickup}
           onToggleHandedness={() => setMobileUi((prev) => ({ ...prev, leftHanded: !prev.leftHanded }))}
           onToggleButtonSize={() => setMobileUi((prev) => ({ ...prev, largeButtons: !prev.largeButtons }))}
           onToggleHaptics={() => setMobileUi((prev) => ({ ...prev, haptics: !prev.haptics }))}
+          onToggleAutoPickup={() => setMobileUi((prev) => ({ ...prev, autoPickup: !prev.autoPickup }))}
           showCombatButtons={screen === 'RUNNING'}
           showSheetButton={screen === 'HUB'}
         />
       )}
 
       {screen === 'RUNNING' && hoveredDrop && (
-        <ItemTooltip itemData={hoveredDrop} mousePos={mousePos} hint="Click to pick up" />
+        <ItemTooltip itemData={hoveredDrop} mousePos={mousePos} hint={mobileMode ? 'Tap to pick up' : 'Click to pick up'} />
       )}
 
       {screen === 'TREE' && (
@@ -1025,6 +1164,7 @@ export default function App() {
           skillPoints={hud.skillPoints}
           onAllocate={handleAllocateNode}
           onClose={closeTree}
+          mobileMode={mobileMode}
         />
       )}
 
@@ -1035,6 +1175,7 @@ export default function App() {
           gold={hud.gold ?? 0}
           cursorItem={cursorItem}
           mousePos={mousePos}
+          mobileMode={mobileMode}
           onClose={closeInventory}
           onItemClick={handleInventoryItemClick}
           onItemRightClick={handleInventoryItemRightClick}
@@ -1068,6 +1209,9 @@ export default function App() {
         <OptionsModal
           engine={engineRef.current ?? undefined}
           onClose={() => setShowOptions(false)}
+          mobileMode={mobileMode}
+          perfSettings={mobilePerf}
+          onPerfChange={(preset) => setMobilePerf({ preset })}
         />
       )}
 

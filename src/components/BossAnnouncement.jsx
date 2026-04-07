@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * BossAnnouncement — full-width dramatic overlay that appears when a boss spawns.
@@ -7,10 +7,16 @@ import { useEffect } from 'react';
  * @param {{ bossName: string, onDone: () => void }} props
  */
 export function BossAnnouncement({ bossName, onDone }) {
+  const onDoneRef = useRef(onDone);
+
   useEffect(() => {
-    const t = setTimeout(onDone, 4000);
+    onDoneRef.current = onDone;
+  }, [onDone]);
+
+  useEffect(() => {
+    const t = setTimeout(() => onDoneRef.current?.(), 4000);
     return () => clearTimeout(t);
-  }, [bossName, onDone]);
+  }, [bossName]);
 
   return (
     <div className="boss-announcement">

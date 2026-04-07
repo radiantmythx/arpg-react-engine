@@ -106,6 +106,21 @@ export class GameEngine {
     this._mapModSnapshot = null;
     /** Cached rolled equipment/map vendor stock — null forces regen on next getVendorStock(). */
     this._vendorEquipStock = null;
+    /** Optional mobile-only quality-of-life assists. */
+    this.mobileAssist = { autoPickup: false };
+    /** Runtime performance profile, tuned from the mobile options panel. */
+    this.performanceProfile = {
+      preset: 'quality',
+      targetFps: 60,
+      particleMultiplier: 1,
+      maxParticles: 220,
+      maxFloatTexts: 24,
+      drawBackgroundGrid: true,
+      backgroundGridStep: 1,
+      drawWallDetails: true,
+      hudInterval: 0.05,
+      reduceUiEffects: false,
+    };
 
     this.state = 'MENU';
     this.elapsed = 0;
@@ -118,6 +133,7 @@ export class GameEngine {
     this._dtIndex = 0;
     this._smoothDt = 1 / 60;
     this._fps = 60;
+    this._lastFrameAt = 0;
 
     this.input = new InputManager();
     this.entities = new EntityManager();
@@ -126,6 +142,8 @@ export class GameEngine {
     this.spawner = new ClusterSpawner(this.entities);
     this.xpSystem = new ExperienceSystem(this, onLevelUp);
     this.particles = new ParticleSystem();
+    this.renderer.setPerformanceOptions?.(this.performanceProfile);
+    this.particles.setQuality?.(this.performanceProfile);
     this.audio = new AudioManager();
     this.achievements = new AchievementSystem(this, onAchievementUnlock ?? (() => {}));
     this.activeSkillSystem = new ActiveSkillSystem();
@@ -211,6 +229,7 @@ export class GameEngine {
     this.activeSkillSystem = new ActiveSkillSystem();
 
     this._lastTime = performance.now();
+    this._lastFrameAt = this._lastTime;
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = requestAnimationFrame((t) => this._loop(t));
     // Flush so React receives the correct allocatedNodes/skillPoints immediately.
@@ -338,6 +357,7 @@ export class GameEngine {
     this.state = 'HUB';
 
     this._lastTime = performance.now();
+    this._lastFrameAt = this._lastTime;
     this._raf = requestAnimationFrame((t) => this._loop(t));
     this._flushHudUpdate();
 
@@ -726,6 +746,14 @@ export class GameEngine {
   }
 
   _loop(now) {
+    const targetFps = Math.max(15, this.performanceProfile?.targetFps ?? 60);
+    const minFrameMs = 1000 / targetFps;
+    if (this._lastFrameAt && now - this._lastFrameAt < minFrameMs - 0.5) {
+      this._raf = requestAnimationFrame((t) => this._loop(t));
+      return;
+    }
+    this._lastFrameAt = now;
+
     // Raw dt capped at 50ms to prevent physics tunneling after tab blur.
     const rawDt = Math.min((now - this._lastTime) / 1000, 0.05);
     this._lastTime = now;
@@ -737,7 +765,7 @@ export class GameEngine {
     let sum = 0;
     for (let i = 0; i < count; i++) sum += this._dtBuffer[i];
     this._smoothDt = sum / count;
-    this._fps = Math.round(1 / this._smoothDt);
+    this._fps = Math.round(1 / Math.max(this._smoothDt, 0.0001));
 
     if (this.state === 'RUNNING') {
       this.update(this._smoothDt);
@@ -823,6 +851,7 @@ export class GameEngine {
       drop.update(dt);
     }
     this._updateHoveredDrop();
+    this._autoPickupNearbyDrops();
 
     // Collision
     this.collision.buildGrids(this.entities);
@@ -832,7 +861,7 @@ export class GameEngine {
     this.collision.checkPlayerVsShardGems(this.player, this.entities, this);
     this.collision.checkPlayerVsGoldGems(this.player, this.entities, this);
     this.collision.checkPlayerVsAoeZones(this.player, this.entities, this);
-    // Item pickup is click-based (see pickupHoveredItem) — no automatic overlap check.
+    // Large gear remains click-based; optional mobile assist can auto-loot nearby small drops.
 
     // Boss spawning
     if (!this.mapLayout) {
@@ -1161,8 +1190,10 @@ export class GameEngine {
         ));
       }
       const mapTier = Math.max(1, this.mapInstance?.mapDef?.tier ?? 1);
-      const bossGoldPiles = 10 + Math.floor(mapTier * 1.5);
-      const baseBossGold = 4 + Math.floor(mapTier * 0.6);
+      const mapId = this.mapInstance?.mapDef?.id ?? '';
+      const isActOneMap = mapTier === 1 || mapId.startsWith('act1_');
+      const bossGoldPiles = 10 + Math.floor(mapTier * 1.5) + (isActOneMap ? 3 : 0);
+      const baseBossGold = 4 + Math.floor(mapTier * 0.6) + (isActOneMap ? 1 : 0);
       for (let i = 0; i < bossGoldPiles; i++) {
         const angle = (i / bossGoldPiles) * Math.PI * 2;
         const radius = 34 + (i % 3) * 10;
@@ -1202,12 +1233,17 @@ export class GameEngine {
 
     // Gold drops are intentionally common and scale by map tier.
     const mapTier = Math.max(1, this.mapInstance?.mapDef?.tier ?? 1);
-    const goldChance = enemy.isChampion ? 1.0 : Math.min(0.92, 0.72 + (mapTier - 1) * 0.02);
+    const mapId = this.mapInstance?.mapDef?.id ?? '';
+    const isActOneMap = mapTier === 1 || mapId.startsWith('act1_');
+    const goldChance = enemy.isChampion
+      ? 1.0
+      : Math.min(0.96, 0.72 + (mapTier - 1) * 0.02 + (isActOneMap ? 0.14 : 0));
     if (Math.random() < goldChance) {
       const tierBonus = Math.floor((mapTier - 1) / 2);
-      const value = enemy.isChampion
+      const baseValue = enemy.isChampion
         ? (3 + tierBonus * 2) + Math.floor(Math.random() * (4 + Math.floor(mapTier / 3)))
         : (1 + tierBonus) + (Math.random() < (0.25 + Math.min(0.25, mapTier * 0.03)) ? 1 : 0);
+      const value = baseValue + (isActOneMap ? (enemy.isChampion ? 2 : 1) : 0);
       this.entities.addGoldGem(new GoldGem(enemy.x, enemy.y, value));
     }
 
@@ -1323,6 +1359,18 @@ export class GameEngine {
     this.audio.play('xp_collect');
   }
 
+  /** Update optional engine performance profile from React. */
+  setPerformanceProfile(profile = {}) {
+    this.performanceProfile = { ...this.performanceProfile, ...profile };
+    this.renderer.setPerformanceOptions?.(this.performanceProfile);
+    this.particles.setQuality?.(this.performanceProfile);
+  }
+
+  /** Update optional mobile assist settings from React. */
+  setMobileAssistOptions(options = {}) {
+    this.mobileAssist = { ...this.mobileAssist, ...options };
+  }
+
   /**
    * Called by React on every canvas mousemove.
    * Converts screen coords to world coords and updates the hovered item drop.
@@ -1381,6 +1429,42 @@ export class GameEngine {
       mapMods: d.mapMods ?? [],
       mapItemLevel: d.mapItemLevel,
     };
+  }
+
+  /** @private Only small items are eligible for mobile auto-loot assist. */
+  _shouldAutoPickupDrop(drop) {
+    const item = drop?.itemDef;
+    if (!item) return false;
+    if (item.type === 'skill_gem' || item.type === 'support_gem' || item.type === 'map_item') return true;
+    const area = Math.max(1, (item.gridW ?? 99) * (item.gridH ?? 99));
+    return area <= 1;
+  }
+
+  /** @private Auto-collect nearby small items when the mobile loot assist is enabled. */
+  _autoPickupNearbyDrops() {
+    if (!this.mobileAssist?.autoPickup || !this.player) return;
+    const pickupRadius = Math.max(72, 48 + (this.player.pickupRadiusBonus ?? 0));
+    const pickupSq = pickupRadius * pickupRadius;
+    let changed = false;
+
+    for (const drop of this.entities.itemDrops) {
+      if (!drop.active || !this._shouldAutoPickupDrop(drop)) continue;
+      const dx = drop.x - this.player.x;
+      const dy = drop.y - this.player.y;
+      if (dx * dx + dy * dy > pickupSq) continue;
+      const placed = this.player.inventory.autoPlace(drop.itemDef);
+      if (!placed) continue;
+      drop.active = false;
+      changed = true;
+      if (drop === this._hoveredDrop) this._hoveredDrop = null;
+    }
+
+    if (changed) {
+      if (this.onHoveredItemChange) {
+        this.onHoveredItemChange(this._hoveredDrop ? this._serializeHoveredDrop(this._hoveredDrop) : null);
+      }
+      this._flushHudUpdate();
+    }
   }
 
   /**
@@ -1676,7 +1760,8 @@ export class GameEngine {
     const playerLevel = this.player?.level ?? 1;
     const difficulty  = Math.min(5, Math.max(1, Math.round(playerLevel / 6)));
 
-    const RARITY_PRICE = { normal: 80, magic: 140, rare: 240, unique: 400 };
+    // Temporary testing economy so early shopping is easy during balance passes.
+    const RARITY_PRICE = { normal: 2, magic: 4, rare: 7, unique: 10 };
     const SLOT_ICON = {
       weapon: '⚔', mainhand: '⚔', offhand: '🗡',
       armor: '🛡', bodyarmor: '🛡', helmet: '⛑',
@@ -1728,7 +1813,7 @@ export class GameEngine {
         name:  mapItem.name,
         icon:  '🗺',
         description: `Tier ${mapItem.mapTier} — ${mapItem.description}`,
-        price: (mapItem.mapTier ?? 1) * 35,
+        price: Math.min(10, Math.max(3, 2 + (mapItem.mapTier ?? 1))),
         rarity: mapItem.rarity,
         itemDef: mapItem,
       };
@@ -1749,7 +1834,7 @@ export class GameEngine {
       name:  `${offer.name} Gem`,
       icon:  offer.isWeaponSkill ? '✦' : '◇',
       description: offer.description,
-      price: offer.isWeaponSkill ? 130 : 110,
+      price: offer.isWeaponSkill ? 8 : 6,
       offerId: offer.id,
     }));
 
@@ -1760,7 +1845,7 @@ export class GameEngine {
       name:  `${support.name} Support`,
       icon:  support.icon ?? '◆',
       description: support.description,
-      price: 75,
+      price: 5,
       supportId: support.id,
     }));
 
@@ -1774,10 +1859,10 @@ export class GameEngine {
 
   /**
    * Reroll the equipment/map vendor stock, charging the given gold cost.
-   * @param {number} [rerollCost=50]
+   * @param {number} [rerollCost=5]
    * @returns {{ ok: boolean, reason?: string, price?: number }}
    */
-  rerollVendorEquipment(rerollCost = 50) {
+  rerollVendorEquipment(rerollCost = 5) {
     if (!this.player) return { ok: false, reason: 'no_player' };
     if ((this.player.gold ?? 0) < rerollCost) {
       return { ok: false, reason: 'not_enough_gold', price: rerollCost };
@@ -1845,6 +1930,9 @@ export class GameEngine {
   pause() {
     if (this.state === 'RUNNING' || this.state === 'HUB') {
       this._pausedFrom = this.state;
+      this.input?.setVirtualMovement?.(0, 0);
+      this.input?.setVirtualAim?.(0, 0);
+      this.input?.setVirtualPrimaryHeld?.(false);
       this.state = 'PAUSED';
     }
   }
@@ -1854,7 +1942,11 @@ export class GameEngine {
       // Return to whichever state was active before the pause.
       this.state = this._pausedFrom ?? (this.currentCharId ? (this.mapInstance ? 'RUNNING' : 'HUB') : 'RUNNING');
       this._pausedFrom = null;
+      this.input?.setVirtualMovement?.(0, 0);
+      this.input?.setVirtualAim?.(0, 0);
+      this.input?.setVirtualPrimaryHeld?.(false);
       this._lastTime = performance.now(); // reset to avoid large dt spike
+      this._lastFrameAt = this._lastTime;
     }
   }
 

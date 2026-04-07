@@ -12,6 +12,15 @@ export class Renderer {
     this.camY = 0; // top-left world y visible on screen
     this.width = 0;
     this.height = 0;
+    this.performance = {
+      drawBackgroundGrid: true,
+      backgroundGridStep: 1,
+      drawWallDetails: true,
+    };
+  }
+
+  setPerformanceOptions(options = {}) {
+    this.performance = { ...this.performance, ...options };
   }
 
   /**
@@ -38,15 +47,18 @@ export class Renderer {
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
+    if (!this.performance.drawBackgroundGrid) return;
+
     ctx.strokeStyle = grid;
     ctx.lineWidth = 1;
 
-    const startX = Math.floor(camX / TILE_SIZE) * TILE_SIZE;
-    const startY = Math.floor(camY / TILE_SIZE) * TILE_SIZE;
+    const step = TILE_SIZE * Math.max(1, this.performance.backgroundGridStep ?? 1);
+    const startX = Math.floor(camX / step) * step;
+    const startY = Math.floor(camY / step) * step;
 
-    for (let wx = startX; wx < camX + width + TILE_SIZE; wx += TILE_SIZE) {
-      for (let wy = startY; wy < camY + height + TILE_SIZE; wy += TILE_SIZE) {
-        ctx.strokeRect(wx - camX, wy - camY, TILE_SIZE, TILE_SIZE);
+    for (let wx = startX; wx < camX + width + step; wx += step) {
+      for (let wy = startY; wy < camY + height + step; wy += step) {
+        ctx.strokeRect(wx - camX, wy - camY, step, step);
       }
     }
   }
@@ -85,9 +97,11 @@ export class Renderer {
         if (isWall) {
           ctx.fillStyle = (tx + ty) % 2 === 0 ? wallA : wallB;
           ctx.fillRect(sx, sy, tile, tile);
-          ctx.strokeStyle = wallEdge;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
+          if (this.performance.drawWallDetails !== false) {
+            ctx.strokeStyle = wallEdge;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
+          }
         } else {
           ctx.fillStyle = (tx + ty) % 2 === 0 ? floorA : floorB;
           ctx.fillRect(sx, sy, tile, tile);
