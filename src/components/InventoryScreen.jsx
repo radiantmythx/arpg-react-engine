@@ -171,6 +171,7 @@ export function InventoryScreen({
 }) {
   const [hoveredItem, setHoveredItem] = useState(null);
   const [mobileSection, setMobileSection] = useState('bag');
+  const [selectedSupportGemUid, setSelectedSupportGemUid] = useState(null);
   const touchTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
   const suppressClickUntilRef = useRef(0);
@@ -183,6 +184,8 @@ export function InventoryScreen({
   const tileSize = mobileMode ? Math.max(30, Math.min(38, cellSize + 2)) : CELL_SIZE;
   const showGearPanel = !mobileMode || mobileSection === 'gear';
   const showBagPanel = !mobileMode || mobileSection === 'bag';
+  const isGemItem = (item) => item?.type === 'support_gem' || item?.type === 'skill_gem';
+  const selectedSupportGem = items.find((item) => item.uid === selectedSupportGemUid && item.type === 'support_gem') ?? null;
 
   const handleSlotActivation = (slot, fromTouch = false) => {
     if (fromTouch) suppressClickUntilRef.current = Date.now() + 300;
@@ -233,6 +236,20 @@ export function InventoryScreen({
     longPressFiredRef.current = false;
   };
 
+  const handleInventoryItemActivation = (itemUid, itemDef) => {
+    const targetTab = isGemItem(itemDef) ? 'gems' : 'equipment';
+    onTabChange?.(targetTab);
+
+    // Support gems use selection mode for socketing from any tab.
+    if (itemDef?.type === 'support_gem') {
+      setSelectedSupportGemUid((prev) => (prev === itemUid ? null : itemUid));
+      return;
+    }
+
+    setSelectedSupportGemUid(null);
+    onItemClick(itemUid);
+  };
+
   // Shorthand for tiles
   const eq = equipment ?? {};
   const T  = (key) => (
@@ -244,6 +261,87 @@ export function InventoryScreen({
       mobileMode={mobileMode}
       tileSize={tileSize}
     />
+  );
+
+  const renderInventoryGrid = (showHint = true) => (
+    <div className={`inv-grid-wrap${showBagPanel ? '' : ' inv-mobile-hidden'}`}>
+      <div
+        className="inv-grid"
+        style={{
+          width:               cols * cellSize,
+          height:              rows * cellSize,
+          gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
+          gridTemplateRows:    `repeat(${rows}, ${cellSize}px)`,
+        }}
+      >
+        {Array.from({ length: rows * cols }, (_, i) => {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          return (
+            <div
+              key={`c${i}`}
+              className="inv-cell"
+              onClick={() => {
+                if (suppressGhostClick()) return;
+                onCellClick(col, row);
+              }}
+              onTouchEnd={(e) => {
+                if (!mobileMode) return;
+                e.preventDefault();
+                e.stopPropagation();
+                suppressClickUntilRef.current = Date.now() + 300;
+                pulse(6);
+                onCellClick(col, row);
+              }}
+              onTouchCancel={cancelTouchPress}
+            />
+          );
+        })}
+
+        {items.map((item) => (
+          <div
+            key={item.uid}
+            className={`inv-item inv-item--${item.rarity}`}
+            style={{
+              position:    'absolute',
+              left:        item.gridX * cellSize,
+              top:         item.gridY * cellSize,
+              width:       item.gridW * cellSize,
+              height:      item.gridH * cellSize,
+              borderColor: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal,
+            }}
+            data-gem-selected={tab === 'gems' && selectedSupportGemUid === item.uid ? 'true' : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (suppressGhostClick()) return;
+              handleInventoryItemActivation(item.uid, item);
+            }}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onItemRightClick(item.uid); }}
+            onTouchStart={startLongPress(() => onItemRightClick(item.uid))}
+            onTouchEnd={finishTouchTap(() => handleInventoryItemActivation(item.uid, item))}
+            onTouchCancel={cancelTouchPress}
+            onMouseEnter={() => setHoveredItem(item)}
+            onMouseLeave={() => setHoveredItem(null)}
+          >
+            <span className="inv-item-icon-glyph">{getItemIcon(item)}</span>
+            <span
+              className="inv-item-name"
+              style={{ color: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal }}
+            >
+              {item.name}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {showHint && (
+        <p className="inv-hint inv-hint--help">
+          {mobileMode
+            ? 'Tap: pick up or place · Hold: quick-equip / consume'
+            : 'Left-click: pick up · Right-click: equip'}
+        </p>
+      )}
+    </div>
   );
 
   const gap = mobileMode ? 6 : 4; // px gap between doll slots
@@ -271,7 +369,7 @@ export function InventoryScreen({
             </button>
           </div>
 
-          <div className="inv-header-hint">
+          <div className="inv-header-hint inv-header-hint--help">
             {mobileMode ? (
               <>{mobileSection === 'bag'
                 ? 'Tap to move · hold an item to quick-equip or use it · tap a destination to place'
@@ -280,9 +378,11 @@ export function InventoryScreen({
               <><kbd>V</kbd> equip &nbsp;·&nbsp; <kbd>G</kbd> gems &nbsp;·&nbsp; <kbd>Esc</kbd> close</>
             )}
           </div>
-          <div className="inv-header-hint">Gold: {gold ?? 0}</div>
+          <div className="inv-header-hint inv-header-hint--gold">Gold: {gold ?? 0}</div>
           <button className="btn inv-close-btn" onClick={onClose}>✕</button>
         </div>
+
+        <div className={`inv-content${mobileMode ? ' inv-content--mobile' : ''}`}>
 
         {mobileMode && tab === 'equipment' && (
           <div className="inv-mobile-view-tabs">
@@ -344,98 +444,31 @@ export function InventoryScreen({
           {!mobileMode && <div className="inv-divider" />}
 
           {/* ── Inventory Grid (12×6) ───────────────────── */}
-          <div className={`inv-grid-wrap${showBagPanel ? '' : ' inv-mobile-hidden'}`}>
-            <div
-              className="inv-grid"
-              style={{
-                width:               cols * cellSize,
-                height:              rows * cellSize,
-                gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
-                gridTemplateRows:    `repeat(${rows}, ${cellSize}px)`,
-              }}
-            >
-              {/* Background cells */}
-              {Array.from({ length: rows * cols }, (_, i) => {
-                const col = i % cols;
-                const row = Math.floor(i / cols);
-                return (
-                  <div
-                    key={`c${i}`}
-                    className="inv-cell"
-                    onClick={() => {
-                      if (suppressGhostClick()) return;
-                      onCellClick(col, row);
-                    }}
-                    onTouchEnd={(e) => {
-                      if (!mobileMode) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      suppressClickUntilRef.current = Date.now() + 300;
-                      pulse(6);
-                      onCellClick(col, row);
-                    }}
-                    onTouchCancel={cancelTouchPress}
-                  />
-                );
-              })}
-
-              {/* Items — absolutely positioned */}
-              {items.map((item) => (
-                <div
-                  key={item.uid}
-                  className={`inv-item inv-item--${item.rarity}`}
-                  style={{
-                    position:    'absolute',
-                    left:        item.gridX * cellSize,
-                    top:         item.gridY * cellSize,
-                    width:       item.gridW * cellSize,
-                    height:      item.gridH * cellSize,
-                    borderColor: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal,
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (suppressGhostClick()) return;
-                    onItemClick(item.uid);
-                  }}
-                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onItemRightClick(item.uid); }}
-                  onTouchStart={startLongPress(() => onItemRightClick(item.uid))}
-                  onTouchEnd={finishTouchTap(() => onItemClick(item.uid))}
-                  onTouchCancel={cancelTouchPress}
-                  onMouseEnter={() => setHoveredItem(item)}
-                  onMouseLeave={() => setHoveredItem(null)}
-                >
-                  <span className="inv-item-icon-glyph">{getItemIcon(item)}</span>
-                  <span
-                    className="inv-item-name"
-                    style={{ color: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal }}
-                  >
-                    {item.name}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <p className="inv-hint">
-              {mobileMode
-                ? 'Tap: pick up or place · Hold: quick-equip / consume'
-                : 'Left-click: pick up · Right-click: equip'}
-            </p>
-          </div>
+          {renderInventoryGrid(true)}
         </div>
         )}
 
         {/* ── Gems Tab ────────────────────────────────────── */}
         {tab === 'gems' && (
-          <GemPanel
-            primarySkill={primarySkill ?? null}
-            activeSkills={activeSkills ?? []}
-            inventory={inventory}
-            onSocketGem={onSocketGem}
-            onUnsocketGem={onUnsocketGem}
-            mobileMode={mobileMode}
-          />
+          <div className={`inv-body inv-body--gems${mobileMode ? ' inv-body--mobile' : ''}`}>
+            <GemPanel
+              primarySkill={primarySkill ?? null}
+              activeSkills={activeSkills ?? []}
+              selectedSupportGem={selectedSupportGem}
+              onClearSelectedGem={() => setSelectedSupportGemUid(null)}
+              onSocketGem={onSocketGem}
+              onUnsocketGem={onUnsocketGem}
+            />
+            {!mobileMode && <div className="inv-divider" />}
+            {renderInventoryGrid(false)}
+          </div>
         )}
+        </div>
       </div>
+
+      {mobileMode && (
+        <button className="btn inv-close-fab" onClick={onClose} aria-label="Close inventory">✕</button>
+      )}
 
       {mobileMode && cursorItem && (
         <div className="inv-mobile-held">

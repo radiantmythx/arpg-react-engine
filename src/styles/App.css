@@ -1406,6 +1406,10 @@ body {
   flex-wrap: wrap;
 }
 
+.inv-content {
+  min-height: 0;
+}
+
 .inv-title {
   font-size: 0.78rem;
   font-weight: 800;
@@ -1426,6 +1430,17 @@ body {
 .inv-body {
   display: flex;
   gap: 2rem;
+  align-items: flex-start;
+}
+
+.inv-body--gems {
+  flex-direction: row;
+  gap: 2rem;
+  align-items: flex-start;
+}
+
+.inv-body--gems .inv-grid-wrap {
+  flex: 0 0 auto;
   align-items: flex-start;
 }
 
@@ -1664,6 +1679,12 @@ body {
   z-index: 3;
 }
 
+.inv-item[data-gem-selected='true'] {
+  border-color: #4ecdc4 !important;
+  box-shadow: 0 0 0 1px rgba(78, 205, 196, 0.35), 0 0 12px rgba(78, 205, 196, 0.35);
+  background: rgba(18, 46, 52, 0.9);
+}
+
 .inv-item--normal { border-color: rgba(158, 158, 158, 0.7); }
 .inv-item--magic  { border-color: rgba(107, 156, 212, 0.8); box-shadow: 0 0 5px rgba(107, 156, 212, 0.3); }
 .inv-item--rare   { border-color: rgba(241, 196, 15,  0.8); box-shadow: 0 0 7px rgba(241, 196, 15,  0.35); }
@@ -1739,6 +1760,10 @@ body {
   font-size: 0.72rem;
   color: #d2e7f9;
   text-align: center;
+}
+
+.inv-close-fab {
+  display: none;
 }
 
 /* ── Cursor item (floating while held) ──────────────── */
@@ -2833,6 +2858,30 @@ body {
   border-radius: 14px;
 }
 
+.app.mobile-mode .inventory-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app.mobile-mode .inv-header {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  background: linear-gradient(180deg, rgba(8, 8, 20, 0.97), rgba(8, 8, 20, 0.9));
+}
+
+.app.mobile-mode .inv-content--mobile {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  padding-bottom: calc(max(env(safe-area-inset-bottom), 0px) + 0.4rem);
+}
+
 .app.mobile-mode .inv-header,
 .app.mobile-mode .mapsel-header,
 .app.mobile-mode .vendor-header,
@@ -2954,6 +3003,76 @@ body {
 
   .app.mobile-mode .doll-row {
     justify-content: center;
+  }
+}
+
+@media (max-width: 420px), (max-height: 700px) {
+  .app.mobile-mode .inventory-panel {
+    padding: 0.7rem;
+    border-radius: 12px;
+  }
+
+  .app.mobile-mode .inv-title {
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+  }
+
+  .app.mobile-mode .inv-header-hint {
+    font-size: 0.56rem;
+  }
+
+  .app.mobile-mode .inv-tab {
+    padding: 0.45rem 0.7rem;
+    font-size: 0.74rem;
+    min-height: 40px;
+  }
+
+  .app.mobile-mode .inv-mobile-view-tab {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.68rem;
+  }
+}
+
+@media (max-width: 420px), (max-height: 760px) {
+  .app.mobile-mode .inv-close-btn {
+    display: none;
+  }
+
+  .app.mobile-mode .inv-close-fab {
+    display: inline-flex;
+    position: fixed;
+    top: calc(max(env(safe-area-inset-top), 8px) + 4px);
+    right: calc(max(env(safe-area-inset-right), 8px) + 4px);
+    z-index: 6105;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 999px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+    color: #ffe7ad;
+    border: 1px solid rgba(255, 225, 138, 0.55);
+    background: rgba(16, 20, 36, 0.94);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  }
+}
+
+@media (max-height: 620px) {
+  .app.mobile-mode .inv-header-hint--help,
+  .app.mobile-mode .inv-hint--help,
+  .app.mobile-mode .inv-mobile-held-hint {
+    display: none;
+  }
+
+  .app.mobile-mode .inv-mobile-view-tabs {
+    margin: -0.05rem 0 0.35rem;
+  }
+
+  .app.mobile-mode .inv-content--mobile {
+    padding-bottom: calc(max(env(safe-area-inset-bottom), 0px) + 0.2rem);
   }
 }
 
