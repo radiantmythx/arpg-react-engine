@@ -273,6 +273,33 @@ body {
   box-shadow: inset 0 0 0 1px rgba(130, 176, 91, 0.42);
 }
 
+.vendor-skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.3rem 0;
+}
+
+.vendor-skill-tag {
+  border: 1px solid rgba(173, 189, 208, 0.26);
+  border-radius: 999px;
+  background: rgba(16, 23, 34, 0.72);
+  color: #b7c8da;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.vendor-skill-tag--active {
+  color: #eff9ff;
+  border-color: rgba(141, 191, 255, 0.62);
+  background: rgba(29, 53, 82, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(141, 191, 255, 0.2);
+}
+
 .vendor-list {
   flex: 1;
   min-height: 260px;
@@ -503,13 +530,21 @@ body {
   gap: 0.75rem;
 }
 
+@keyframes title-glow {
+  0%   { color: #f1c40f; text-shadow: 0 0 18px rgba(241,196,15,0.6), 0 0 48px rgba(241,196,15,0.28); }
+  20%  { color: #ff8c42; text-shadow: 0 0 22px rgba(255,140,66,0.7), 0 0 56px rgba(255,100,20,0.3); }
+  40%  { color: #e040fb; text-shadow: 0 0 20px rgba(224,64,251,0.65), 0 0 52px rgba(180,0,220,0.28); }
+  60%  { color: #40c4ff; text-shadow: 0 0 20px rgba(64,196,255,0.65), 0 0 52px rgba(0,150,220,0.28); }
+  80%  { color: #69f0ae; text-shadow: 0 0 18px rgba(105,240,174,0.6), 0 0 48px rgba(0,200,100,0.25); }
+  100% { color: #f1c40f; text-shadow: 0 0 18px rgba(241,196,15,0.6), 0 0 48px rgba(241,196,15,0.28); }
+}
+
 .game-title {
   font-size: 3.5rem;
   font-weight: 700;
-  color: #f1c40f;
-  letter-spacing: 10px;
-  text-shadow: 0 0 24px rgba(241, 196, 15, 0.45);
+  letter-spacing: 12px;
   margin-bottom: 0.4rem;
+  animation: title-glow 6s ease-in-out infinite;
 }
 
 .menu-subtitle {
@@ -717,6 +752,11 @@ body {
 .mobile-btn--lock {
   border-color: rgba(139, 211, 255, 0.6);
   color: #aee0ff;
+}
+
+.mobile-btn--portal {
+  border-color: rgba(180, 130, 255, 0.65);
+  color: #d4aaff;
 }
 
 .mobile-btn--small {
@@ -2128,6 +2168,14 @@ body {
   letter-spacing: 0.05em;
 }
 
+.tree-points-guide {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.64rem;
+  color: rgba(206, 226, 255, 0.72);
+  letter-spacing: 0.02em;
+}
+
 .tree-close-btn {
   font-size: 0.78rem;
   padding: 0.35rem 0.9rem;
@@ -2326,6 +2374,11 @@ body {
   transition: none;
 }
 
+.tree-mobile-layout {
+  flex: 1;
+  min-height: 0;
+}
+
 .tree-overlay--mobile .tree-svg-container {
   padding: 0.45rem 0.45rem 12.4rem;
 }
@@ -2378,6 +2431,34 @@ body {
   color: #a7efb2;
   border-color: rgba(120, 214, 148, 0.28);
   background: rgba(84, 165, 104, 0.08);
+}
+
+.tree-overlay--mobile.tree-overlay--mobile-landscape .tree-mobile-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.tree-overlay--mobile.tree-overlay--mobile-landscape .tree-svg-container {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.45rem;
+}
+
+.tree-overlay--mobile.tree-overlay--mobile-landscape .tree-mobile-sheet {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  margin: 0.45rem 0.45rem 0.45rem 0;
+  width: min(34vw, 320px);
+  min-width: 220px;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.tree-overlay--mobile.tree-overlay--mobile-landscape .tree-mobile-sheet__hint {
+  display: none;
 }
 
 /* ── HUD skill-point badge ───────────────────────────────────────── */
@@ -3431,30 +3512,285 @@ body {
   line-height: 1.45;
 }
 
+/* ── Landscape mobile: panels must never overflow horizontally ── */
+.app.mobile-mode .inv-panel-wide,
+.app.mobile-mode .inv-panel-gems {
+  min-width: 0;
+}
+
+/* ── Landscape (non-portrait) mobile: compact & fit-to-screen ── */
+.app.mobile-mode:not(.phone-portrait-mode) .inventory-panel {
+  padding: 0.55rem 0.7rem;
+}
+
+.app.mobile-mode:not(.phone-portrait-mode) .inv-header {
+  margin-bottom: 0.2rem;
+  gap: 0.5rem;
+}
+
+/* Hide the verbose step-guide cards in landscape — tab labels are sufficient */
+.app.mobile-mode:not(.phone-portrait-mode) .inv-section-card {
+  display: none;
+}
+
+.app.mobile-mode:not(.phone-portrait-mode) .inv-mobile-view-tabs {
+  margin: 0 0 0.4rem;
+}
+
+/* ── Vendor: landscape compact ── */
+.app.mobile-mode:not(.phone-portrait-mode) .vendor-panel {
+  padding: 0.55rem 0.7rem;
+  gap: 6px;
+  max-height: calc(100vh - max(env(safe-area-inset-top), 8px) - max(env(safe-area-inset-bottom), 8px) - 16px);
+}
+
+/* Let the list shrink freely so the footer (Reroll / Close) is never clipped */
+.app.mobile-mode:not(.phone-portrait-mode) .vendor-list {
+  min-height: 0;
+}
+
+.app.mobile-mode:not(.phone-portrait-mode) .vendor-header {
+  gap: 0.5rem;
+}
+
+/* Sub-heading is redundant in landscape — the tab label conveys the same */
+.app.mobile-mode:not(.phone-portrait-mode) .vendor-subtitle {
+  display: none;
+}
+
+/* Footer tip text is low-priority in landscape */
+.app.mobile-mode:not(.phone-portrait-mode) .vendor-feedback {
+  display: none;
+}
+
+/* ── MapSelect: landscape compact ── */
+.app.mobile-mode:not(.phone-portrait-mode) .mapsel-panel {
+  padding: 0.55rem 0.7rem 0.6rem;
+  max-height: calc(100vh - max(env(safe-area-inset-top), 8px) - max(env(safe-area-inset-bottom), 8px) - 16px);
+}
+
+.app.mobile-mode:not(.phone-portrait-mode) .mapsel-header {
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+/* Subtitle and step-guide card are redundant in landscape */
+.app.mobile-mode:not(.phone-portrait-mode) .mapsel-subtitle {
+  display: none;
+}
+
+.app.mobile-mode:not(.phone-portrait-mode) .mapsel-mobile-summary {
+  display: none;
+}
+
 .app.mobile-mode .tree-header {
-  padding-top: calc(max(env(safe-area-inset-top), 0px) + 0.6rem);
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  position: relative;
+  padding: calc(max(env(safe-area-inset-top), 0px) + 0.2rem) 2.2rem 0.2rem 0.45rem;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  min-height: auto;
 }
 
 .app.mobile-mode .tree-header-left,
 .app.mobile-mode .tree-header-center,
 .app.mobile-mode .tree-header-right {
   min-width: 0;
-  flex: 1 1 100%;
-  justify-content: center;
+  flex: 0 0 auto;
+  justify-content: flex-start;
+}
+
+.app.mobile-mode .tree-header-left {
+  display: none;
+}
+
+.app.mobile-mode .tree-header-center {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  padding-right: 0.2rem;
+}
+
+.app.mobile-mode .tree-header-right {
+  position: absolute;
+  top: calc(max(env(safe-area-inset-top), 0px) + 0.15rem);
+  right: 0.35rem;
 }
 
 .app.mobile-mode .tree-title,
 .app.mobile-mode .tree-points-badge,
 .app.mobile-mode .tree-points-zero {
-  text-align: center;
+  text-align: left;
+}
+
+.app.mobile-mode .tree-points-badge {
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-shadow: none;
+}
+
+.app.mobile-mode .tree-points-zero {
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.app.mobile-mode .tree-points-guide {
+  margin-top: 0.08rem;
+  font-size: 0.5rem;
+  line-height: 1.12;
+}
+
+.app.mobile-mode .tree-close-btn--mobile {
+  min-width: 26px;
+  min-height: 26px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app.mobile-mode .tree-mobile-toolbar {
+  padding: 0.18rem 0.35rem;
+  gap: 0.3rem;
+}
+
+.app.mobile-mode .tree-mobile-toolbar__hint {
+  font-size: 0.5rem;
+  line-height: 1.15;
+}
+
+.app.mobile-mode .tree-mobile-zoom {
+  gap: 0.2rem;
+}
+
+.app.mobile-mode .tree-mobile-zoom-btn {
+  min-width: 26px;
+  min-height: 22px;
+  padding: 0.05rem 0.32rem;
+  border-radius: 7px;
+  font-size: 0.62rem;
+}
+
+.app.mobile-mode .tree-mobile-zoom-btn--reset {
+  min-width: 44px;
+}
+
+.app.mobile-mode .tree-mobile-zoom-label {
+  min-width: 34px;
+  font-size: 0.56rem;
 }
 
 .app.mobile-mode .tree-legend {
   flex-wrap: wrap;
   gap: 0.5rem;
   padding-bottom: calc(max(env(safe-area-inset-bottom), 0px) + 0.45rem);
+}
+
+/* ── Phase 6: compact in-run HUD/controls simplification for tiny phones ── */
+.app.mobile-mode.mobile-compact-ui .mobile-stick {
+  width: 98px;
+  height: 98px;
+  left: calc(max(env(safe-area-inset-left), 8px) + 6px);
+  bottom: calc(max(env(safe-area-inset-bottom), 8px) + 6px);
+}
+
+.app.mobile-mode.mobile-compact-ui .mobile-stick-thumb {
+  width: 42px;
+  height: 42px;
+  margin-left: -21px;
+  margin-top: -21px;
+}
+
+.app.mobile-mode.mobile-compact-ui .mobile-combat-buttons {
+  gap: 6px;
+  right: calc(max(env(safe-area-inset-right), 8px) + 6px);
+  bottom: calc(max(env(safe-area-inset-bottom), 8px) + 6px);
+}
+
+.app.mobile-mode.mobile-compact-ui .mobile-btn {
+  min-width: 48px;
+  height: 38px;
+  font-size: 0.74rem;
+}
+
+.app.mobile-mode.mobile-compact-ui .mobile-btn--primary {
+  min-width: 64px;
+  height: 44px;
+  font-size: 0.82rem;
+}
+
+.app.mobile-mode.mobile-compact-ui .mobile-btn--small {
+  min-width: 38px;
+  height: 30px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.68rem;
+}
+
+.app.mobile-mode.mobile-compact-ui .mobile-utility-buttons {
+  top: calc(max(env(safe-area-inset-top), 8px) + 6px);
+  right: calc(max(env(safe-area-inset-right), 8px) + 6px);
+  gap: 4px;
+  max-width: min(45vw, 220px);
+}
+
+.app.mobile-mode.mobile-compact-ui .hud--mobile .hud-bottom {
+  max-width: min(44vw, 220px);
+}
+
+.app.mobile-mode.mobile-compact-ui .hud--compact .bar-row {
+  gap: 4px;
+}
+
+.app.mobile-mode.mobile-compact-ui .hud--compact .bar-bg {
+  height: 8px;
+}
+
+.app.mobile-mode.mobile-compact-ui .hud--compact .bar-label {
+  width: 18px;
+  font-size: 0.6rem;
+}
+
+.app.mobile-mode.mobile-compact-ui .equip-doll-mini {
+  display: none;
+}
+
+.app.mobile-mode.mobile-compact-ui .skill-hotbar {
+  bottom: calc(max(env(safe-area-inset-bottom), 0px) + 5.3rem);
+}
+
+.app.mobile-mode.mobile-compact-ui .skill-slot {
+  width: 50px;
+  min-height: 50px;
+  padding: 0.2rem;
+}
+
+.app.mobile-mode.mobile-compact-ui .skill-name {
+  display: none;
+}
+
+.app.mobile-mode.mobile-compact-ui .skill-key {
+  font-size: 0.52rem;
+}
+
+.app.mobile-mode.mobile-compact-ui .portal-hud-badge {
+  bottom: calc(max(env(safe-area-inset-bottom), 0px) + 6.8rem);
+  padding: 0.26rem 0.4rem;
+}
+
+.app.mobile-mode.mobile-compact-ui .map-mod-hud {
+  top: calc(max(env(safe-area-inset-top), 0px) + 4.8rem);
+  max-width: min(40vw, 170px);
+}
+
+.app.mobile-mode.mobile-compact-ui .skill-point-badge {
+  bottom: calc(max(env(safe-area-inset-bottom), 0px) + 8.2rem);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
 }
 
 @media (max-width: 900px) {
@@ -4032,9 +4368,7 @@ body {
 }
 
 .game-title {
-  color: var(--ui-ink-0);
   letter-spacing: 0.16em;
-  text-shadow: 0 0 30px rgba(108, 182, 255, 0.35);
 }
 
 .menu-subtitle {

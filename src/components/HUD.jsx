@@ -148,7 +148,7 @@ function MiniSlot({ slotKey, entry, onHover }) {
   );
 }
 
-export function HUD({ hud, hideTimer = false, mobileMode = false }) {
+export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = false, screenContext = 'RUNNING' }) {
   const [hoveredEquip, setHoveredEquip] = useState(null);
   const [hoveredSkill, setHoveredSkill] = useState(null);
 
@@ -160,9 +160,12 @@ export function HUD({ hud, hideTimer = false, mobileMode = false }) {
   const xpPct = Math.max(0, (xp / xpToNext) * 100);
   const esPct = maxEnergyShield > 0 ? Math.max(0, (energyShield / maxEnergyShield) * 100) : 0;
   const hpColor = hpPct > 50 ? '#4ecdc4' : hpPct > 25 ? '#ffe66d' : '#ff6b6b';
+  const compactHud = mobileMode && compactMode;
+  const hidePaperdoll = mobileMode && (compactMode || screenContext === 'HUB');
+  const showSkillHotbar = (primarySkill || activeSkills) && screenContext === 'RUNNING';
 
   return (
-    <div className={`hud${mobileMode ? ' hud--mobile' : ''}`}>
+    <div className={`hud${mobileMode ? ' hud--mobile' : ''}${compactHud ? ' hud--compact' : ''}`}>
       {/* Timer / map entry banner — top center */}
       <div className="hud-center">
         {!mapContext && !hideTimer && <div className="timer">{formatTime(elapsed)}</div>}
@@ -176,33 +179,39 @@ export function HUD({ hud, hideTimer = false, mobileMode = false }) {
 
       <div className="hud-bottom">
         <div className="bar-row">
-          <span className="bar-label">HP</span>
+          <span className="bar-label">{compactHud ? '❤️' : 'HP'}</span>
           <div className="bar-bg">
             <div className="bar-fill" style={{ width: `${hpPct}%`, background: hpColor }} />
           </div>
-          <span className="bar-value">
-            {Math.ceil(health)}/{maxHealth}
-          </span>
+          {!compactHud && (
+            <span className="bar-value">
+              {Math.ceil(health)}/{maxHealth}
+            </span>
+          )}
         </div>
         <div className="bar-row">
-          <span className="bar-label">XP</span>
+          <span className="bar-label">{compactHud ? '✨' : 'XP'}</span>
           <div className="bar-bg">
             <div className="bar-fill xp-fill" style={{ width: `${xpPct}%` }} />
           </div>
-          <span className="bar-value">
-            {xp}/{xpToNext}
-          </span>
+          {!compactHud && (
+            <span className="bar-value">
+              {xp}/{xpToNext}
+            </span>
+          )}
         </div>
 
         {maxEnergyShield > 0 && (
           <div className="bar-row">
-            <span className="bar-label es-label">ES</span>
+            <span className="bar-label es-label">{compactHud ? '🛡️' : 'ES'}</span>
             <div className="bar-bg">
               <div className="bar-fill es-fill" style={{ width: `${esPct}%` }} />
             </div>
-            <span className="bar-value">
-              {Math.ceil(energyShield)}/{Math.round(maxEnergyShield)}
-            </span>
+            {!compactHud && (
+              <span className="bar-value">
+                {Math.ceil(energyShield)}/{Math.round(maxEnergyShield)}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -210,7 +219,7 @@ export function HUD({ hud, hideTimer = false, mobileMode = false }) {
       {/* Skill point ready badge */}
       {skillPoints > 0 && (
         <div className="skill-point-badge">
-          ⛆ {skillPoints} Skill Point{skillPoints > 1 ? 's' : ''} — press [P]
+          {mobileMode ? `⛆ ${skillPoints}` : `⛆ ${skillPoints} Skill Point${skillPoints > 1 ? 's' : ''} - press [P]`}
         </div>
       )}
 
@@ -260,7 +269,7 @@ export function HUD({ hud, hideTimer = false, mobileMode = false }) {
         </div>
       )}
 
-      {equipment && (
+      {equipment && !hidePaperdoll && (
         <div className="equip-doll-mini">
           {/* Row 1 — Helmet */}
           <div className="doll-mini-row doll-mini-row--center">
@@ -302,7 +311,7 @@ export function HUD({ hud, hideTimer = false, mobileMode = false }) {
       )}
 
       {/* Active skill hotbar — Space / Q / E / R */}
-      {(primarySkill || activeSkills) && (
+      {showSkillHotbar && (
         <div className="skill-hotbar">
           {[primarySkill ?? null, ...(activeSkills ?? [])].map((s, i) => {
             const key = ['␣', 'Q', 'E', 'R'][i] ?? '?';

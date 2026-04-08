@@ -131,22 +131,22 @@ Exit criteria:
 
 ---
 
-## Phase 6 - In-Run HUD and Overlay Collision Pass [ ]
+## Phase 6 - In-Run HUD and Overlay Collision Pass [~]
 
-- [ ] Audit the moment-to-moment HUD in portrait while actually playing.
-- [ ] Check for overlap between:
+- [x] Audit the moment-to-moment HUD in portrait while actually playing.
+- [x] Check for overlap between:
   - movement stick
   - skill buttons
   - boss announcements
   - interact prompts
   - portal/map banners
   - loot / tooltip feedback
-- [ ] Reduce clutter when multiple alerts appear at once.
-- [ ] Add compact or collapsible behavior for lower-priority info during combat.
-- [ ] Ensure hub help text and tutorial prompts do not block the lower thumb zone.
+- [x] Reduce clutter when multiple alerts appear at once.
+- [x] Add compact or collapsible behavior for lower-priority info during combat.
+- [x] Ensure hub help text and tutorial prompts do not block the lower thumb zone.
 
 Exit criteria:
-- [ ] Portrait gameplay remains readable during combat, looting, hub navigation, and boss encounters.
+- [~] Portrait gameplay remains readable during combat, looting, hub navigation, and boss encounters.
 
 ---
 

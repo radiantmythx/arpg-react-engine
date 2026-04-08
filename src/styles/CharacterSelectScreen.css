@@ -231,3 +231,154 @@
     transform: translateY(0);
   }
 }
+
+/* ── Journal button on card ── */
+.cs-journal-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.4);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-right: 4px;
+  transition: background 150ms, border-color 150ms, color 150ms;
+}
+.cs-journal-btn:hover {
+  background: rgba(255,214,123,0.1);
+  border-color: rgba(255,214,123,0.4);
+  color: #ffd67b;
+}
+
+/* ── Journal modal ── */
+.cs-journal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.cs-journal-modal {
+  background: linear-gradient(180deg, rgba(12,19,36,0.98), rgba(8,13,26,0.99));
+  border: 1px solid rgba(180,160,255,0.3);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(180,160,255,0.12);
+  padding: 24px;
+  width: min(420px, 94vw);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.cs-journal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cs-journal-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.cs-journal-title-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cs-journal-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+.cs-journal-class {
+  font-size: 0.7rem;
+  color: rgba(200,210,255,0.55);
+  letter-spacing: 0.05em;
+}
+.cs-journal-close {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.4);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 150ms, border-color 150ms;
+}
+.cs-journal-close:hover {
+  color: #fff;
+  border-color: rgba(255,255,255,0.3);
+}
+
+.cs-journal-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+.cs-journal-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.cs-js-label {
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(180,200,240,0.45);
+}
+.cs-js-val {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f0ff;
+}
+
+.cs-journal-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cs-journal-runs-title {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(180,200,240,0.4);
+  margin-bottom: 2px;
+}
+.cs-journal-run-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.cs-jr-map {
+  flex: 1;
+  font-size: 0.72rem;
+  color: rgba(220,230,255,0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-jr-kills {
+  font-size: 0.65rem;
+  color: rgba(180,200,240,0.5);
+  white-space: nowrap;
+}
+.cs-jr-time {
+  font-size: 0.65rem;
+  color: rgba(180,200,240,0.5);
+  white-space: nowrap;
+}

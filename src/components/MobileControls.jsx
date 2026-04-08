@@ -16,6 +16,7 @@ export function MobileControls({
   onOpenTree,
   onOpenSheet,
   onPause,
+  onPortal,
   onToggleLock,
   lockActive = false,
   leftHanded = false,
@@ -28,6 +29,7 @@ export function MobileControls({
   onToggleAutoPickup,
   showCombatButtons = true,
   showSheetButton = false,
+  compactMode = false,
 }) {
   const stickRef = useRef(null);
   const [thumb, setThumb] = useState({ x: 0, y: 0 });
@@ -115,7 +117,7 @@ export function MobileControls({
   };
 
   return (
-    <div className={`mobile-controls-layer${leftHanded ? ' mobile-controls-layer--left-handed' : ''}${largeButtons ? ' mobile-controls-layer--large' : ''}`} aria-hidden>
+    <div className={`mobile-controls-layer${leftHanded ? ' mobile-controls-layer--left-handed' : ''}${largeButtons ? ' mobile-controls-layer--large' : ''}${compactMode ? ' mobile-controls-layer--compact' : ''}`} aria-hidden>
       <div
         ref={stickRef}
         className="mobile-stick"
@@ -142,25 +144,27 @@ export function MobileControls({
             onMouseUp={invokeMouse(() => onPrimaryHold(false))}
             onMouseLeave={invokeMouse(() => onPrimaryHold(false))}
           >
-            Primary
+            {compactMode ? '⚔' : 'Primary'}
           </button>
-          <button type="button" className={`mobile-btn mobile-btn--lock${lockActive ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleLock, 12)} onMouseDown={invokeMouse(onToggleLock)}>Lock</button>
+          <button type="button" className={`mobile-btn mobile-btn--lock${lockActive ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleLock, 12)} onMouseDown={invokeMouse(onToggleLock)}>{compactMode ? '🎯' : 'Lock'}</button>
           <button type="button" className="mobile-btn" onTouchStart={invokeTouch(() => onSkillTap('q'), 12)} onMouseDown={invokeMouse(() => onSkillTap('q'))}>Q</button>
           <button type="button" className="mobile-btn" onTouchStart={invokeTouch(() => onSkillTap('e'), 12)} onMouseDown={invokeMouse(() => onSkillTap('e'))}>E</button>
           <button type="button" className="mobile-btn" onTouchStart={invokeTouch(() => onSkillTap('r'), 12)} onMouseDown={invokeMouse(() => onSkillTap('r'))}>R</button>
+          <button type="button" className="mobile-btn mobile-btn--portal" onTouchStart={invokeTouch(onPortal, 12)} onMouseDown={invokeMouse(onPortal)}>{compactMode ? '🚪' : 'Portal'}</button>
         </div>
       )}
 
       <div className="mobile-utility-buttons">
-        <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onOpenInventory, 10)} onMouseDown={invokeMouse(onOpenInventory)}>Inv</button>
-        <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onOpenGems, 10)} onMouseDown={invokeMouse(onOpenGems)}>Gems</button>
-        <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onOpenTree, 10)} onMouseDown={invokeMouse(onOpenTree)}>Tree</button>
+        <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onOpenInventory, 10)} onMouseDown={invokeMouse(onOpenInventory)}>{compactMode ? '🎒' : 'Inv'}</button>
+        <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onOpenGems, 10)} onMouseDown={invokeMouse(onOpenGems)}>{compactMode ? '💎' : 'Gems'}</button>
+        <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onOpenTree, 10)} onMouseDown={invokeMouse(onOpenTree)}>{compactMode ? '🌳' : 'Tree'}</button>
         {showSheetButton && (
-          <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onOpenSheet, 10)} onMouseDown={invokeMouse(onOpenSheet)}>Sheet</button>
+          <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onOpenSheet, 10)} onMouseDown={invokeMouse(onOpenSheet)}>{compactMode ? '📜' : 'Sheet'}</button>
         )}
-        <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onPause, 10)} onMouseDown={invokeMouse(onPause)}>Pause</button>
+        <button type="button" className="mobile-btn mobile-btn--small" onTouchStart={invokeTouch(onPause, 10)} onMouseDown={invokeMouse(onPause)}>{compactMode ? '⏸' : 'Pause'}</button>
       </div>
 
+      {!compactMode && (
       <div className="mobile-settings-buttons">
         <button type="button" className={`mobile-btn mobile-btn--tiny${leftHanded ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleHandedness, 8)} onMouseDown={invokeMouse(onToggleHandedness)}>Swap</button>
         <button type="button" className={`mobile-btn mobile-btn--tiny${largeButtons ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleButtonSize, 8)} onMouseDown={invokeMouse(onToggleButtonSize)}>Large</button>
@@ -169,6 +173,7 @@ export function MobileControls({
           <button type="button" className={`mobile-btn mobile-btn--tiny${autoPickupEnabled ? ' mobile-btn--active' : ''}`} onTouchStart={invokeTouch(onToggleAutoPickup, 8)} onMouseDown={invokeMouse(onToggleAutoPickup)}>Loot+</button>
         )}
       </div>
+      )}
     </div>
   );
 }

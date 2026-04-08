@@ -21,6 +21,37 @@ const VENDOR_TABS = [
 // Tabs that consume vendor reroll (equipment/maps — not infinite gems)
 const REROLL_TABS = new Set(['weapons', 'armour', 'jewelry', 'maps']);
 
+const SKILL_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'spell', label: 'Spell' },
+  { id: 'attack', label: 'Attack' },
+  { id: 'movement', label: 'Movement' },
+];
+
+function deriveSkillTags(row) {
+  const text = `${row?.name ?? ''} ${row?.description ?? ''}`.toLowerCase();
+  const tags = new Set();
+
+  const isWeaponSkill = row?.icon === '✦';
+  if (isWeaponSkill || /weapon|melee|blade|cleave|strike|spear|slam/.test(text)) {
+    tags.add('attack');
+  }
+
+  if (!isWeaponSkill || /spell|arcane|fire|frost|lightning|chaos|vortex|nova|gravity/.test(text)) {
+    tags.add('spell');
+  }
+
+  if (/blink|warp|teleport|dash|movement|speed|travel/.test(text)) {
+    tags.add('movement');
+  }
+
+  if (tags.size === 0) {
+    tags.add('spell');
+  }
+
+  return tags;
+}
+
 function VendorRow({ row, canAfford, onBuy }) {
   const nameColor = row.rarity ? (RARITY_COLORS[row.rarity] ?? undefined) : undefined;
   return (
@@ -87,6 +118,7 @@ export function VendorScreen({
   mobileMode = false,
 }) {
   const [tab, setTab] = useState('skill');
+  const [skillFilter, setSkillFilter] = useState('all');
 
   // Handle sell tab separately since it uses inventory instead of stock
   const inventoryItems = useMemo(() => {
@@ -99,9 +131,13 @@ export function VendorScreen({
       if (tab === 'sell') {
         return inventoryItems;
       }
-      return stock.filter((r) => r.tab === tab);
+      const tabRows = stock.filter((r) => r.tab === tab);
+      if (tab !== 'skill' || skillFilter === 'all') {
+        return tabRows;
+      }
+      return tabRows.filter((row) => deriveSkillTags(row).has(skillFilter));
     },
-    [stock, tab, inventoryItems],
+    [stock, tab, inventoryItems, skillFilter],
   );
 
   const canReroll       = REROLL_TABS.has(tab) && tab !== 'sell';
@@ -123,12 +159,32 @@ export function VendorScreen({
             <button
               key={t.id}
               className={`vendor-tab ${tab === t.id ? 'vendor-tab--active' : ''}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => {
+                setTab(t.id);
+                if (t.id !== 'skill') {
+                  setSkillFilter('all');
+                }
+              }}
             >
               {t.label}
             </button>
           ))}
         </div>
+
+        {tab === 'skill' && (
+          <div className="vendor-skill-tags" aria-label="Skill tag filters">
+            {SKILL_FILTERS.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                className={`vendor-skill-tag${skillFilter === filter.id ? ' vendor-skill-tag--active' : ''}`}
+                onClick={() => setSkillFilter(filter.id)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="vendor-list phone-shell-scroll">
           {tab === 'sell' ? (

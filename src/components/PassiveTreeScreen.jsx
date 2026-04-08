@@ -224,9 +224,125 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
   const detailNode = mobileMode ? (TREE_NODE_MAP[selectedNodeId] ?? hovered) : hovered;
   const detailState = detailNode ? getNodeState(detailNode.id, allocatedSet, skillPoints) : 'locked';
   const detailLines = detailNode ? statLines(detailNode) : [];
+  const isLandscapeMobile = mobileMode
+    && typeof window !== 'undefined'
+    && window.innerWidth > window.innerHeight;
+
+  const treeSvgView = (
+    <div
+      ref={containerRef}
+      className={`tree-svg-container${mobileMode ? ' tree-svg-container--mobile' : ''}${isDragging ? ' tree-svg-container--dragging' : ''}`}
+      onMouseMove={mobileMode ? undefined : handleSvgMouseMove}
+      onPointerDown={mobileMode ? handlePanStart : undefined}
+      onPointerMove={mobileMode ? handlePanMove : undefined}
+      onPointerUp={mobileMode ? handlePanEnd : undefined}
+      onPointerCancel={mobileMode ? handlePanEnd : undefined}
+    >
+      <div
+        className="tree-svg-pan"
+        style={mobileMode ? { transform: `translate3d(${pan.x}px, ${pan.y}px, 0)` } : undefined}
+      >
+        <svg
+          viewBox="0 0 900 900"
+          preserveAspectRatio="xMidYMid meet"
+          className="tree-svg"
+          style={mobileMode ? { transform: `scale(${zoom})`, transformOrigin: 'center center' } : undefined}
+        >
+        {/* ── Connection lines ─────────────────────────────────── */}
+        {TREE_EDGES.map(({ a, b }) => {
+          const na = TREE_NODE_MAP[a];
+          const nb = TREE_NODE_MAP[b];
+          if (!na || !nb) return null;
+          const bothAllocated = allocatedSet.has(a) && allocatedSet.has(b);
+          const eitherAvailable =
+            getNodeState(a, allocatedSet, skillPoints) === 'available' ||
+            getNodeState(b, allocatedSet, skillPoints) === 'available';
+          const stroke   = bothAllocated ? '#f1c40f'
+                         : eitherAvailable ? '#3a5f82'
+                         : '#2a2a3a';
+          const sw = bothAllocated ? 3 : 1.5;
+          const opacity = stroke === '#2a2a3a' ? 0.45 : 1;
+          return (
+            <line
+              key={`${a}||${b}`}
+              x1={na.position.x} y1={na.position.y}
+              x2={nb.position.x} y2={nb.position.y}
+              stroke={stroke}
+              strokeWidth={sw}
+              opacity={opacity}
+            />
+          );
+        })}
+
+        {/* ── Nodes ─────────────────────────────────────────────── */}
+        {PASSIVE_TREE_NODES.map((node) => {
+          const state     = getNodeState(node.id, allocatedSet, skillPoints);
+          const r         = NODE_RADIUS[node.type];
+          const isAvail   = state === 'available';
+          const isAlloc   = state === 'allocated';
+          const isSelected = selectedNodeId === node.id;
+          const { x, y }  = node.position;
+
+          return (
+            <g
+              key={node.id}
+              className={`tree-node tree-node--${state}`}
+              onClick={() => handleNodeClick(node.id)}
+              onMouseEnter={() => setHovered(node)}
+              onMouseLeave={() => setHovered(null)}
+              style={{ cursor: isAvail ? 'pointer' : 'default' }}
+            >
+              {/* Outer glow ring */}
+              {(isAlloc || isAvail || isSelected) && (
+                <circle
+                  cx={x} cy={y} r={r + 6}
+                  fill="none"
+                  stroke={isSelected ? '#8bd3ff' : (isAlloc ? '#f1c40f' : '#4a7fb5')}
+                  strokeWidth={isSelected ? 2 : 1}
+                  opacity={isSelected ? 0.65 : (isAlloc ? 0.35 : 0.22)}
+                />
+              )}
+
+              {/* Pulse ring (available only) */}
+              {isAvail && (
+                <circle
+                  cx={x} cy={y} r={r + 4}
+                  fill="none"
+                  stroke="#6b9cd4"
+                  strokeWidth={1.5}
+                  className="tree-pulse"
+                />
+              )}
+
+              {/* Node shape */}
+              <NodeShape node={node} state={state} />
+
+              {/* Labels — notable and keystone only */}
+              {(node.type === 'notable' || node.type === 'keystone') && (
+                <text
+                  x={x}
+                  y={y + r + 13}
+                  textAnchor="middle"
+                  fill={state === 'locked' ? '#484860' : '#d0d0e0'}
+                  fontSize={node.type === 'keystone' ? 10 : 9}
+                  fontWeight="700"
+                  fontFamily="'Courier New', Courier, monospace"
+                  pointerEvents="none"
+                  letterSpacing="0.5"
+                >
+                  {node.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        </svg>
+      </div>
+    </div>
+  );
 
   return (
-    <div className={`tree-overlay${mobileMode ? ' tree-overlay--mobile' : ''}`} onContextMenu={(e) => e.preventDefault()}>
+    <div className={`tree-overlay${mobileMode ? ' tree-overlay--mobile' : ''}${isLandscapeMobile ? ' tree-overlay--mobile-landscape' : ''}`} onContextMenu={(e) => e.preventDefault()}>
 
       {/* ── Header ───────────────────────────────────────────────── */}
       <div className="tree-header">
@@ -239,11 +355,22 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
               {skillPoints} skill point{skillPoints > 1 ? 's' : ''} available
             </span>
           ) : (
-            <span className="tree-points-zero">{mobileMode ? 'No points available — level up to earn more.' : 'No points available — press [P] or level up'}</span>
+            <span className="tree-points-zero">
+              {mobileMode ? 'No points available - level up to earn more.' : 'No points available - press [P] or level up'}
+              {mobileMode && (
+                <span className="tree-points-guide">Tap a node to focus it. Drag on the tree to pan.</span>
+              )}
+            </span>
           )}
         </div>
         <div className="tree-header-right">
-          <button className="btn tree-close-btn" onClick={onClose}>{mobileMode ? 'Done' : '✕ Close [P]'}</button>
+          <button
+            className={`btn tree-close-btn${mobileMode ? ' tree-close-btn--mobile' : ''}`}
+            onClick={onClose}
+            aria-label={mobileMode ? 'Close passive tree' : undefined}
+          >
+            {mobileMode ? '✕' : '✕ Close [P]'}
+          </button>
         </div>
       </div>
 
@@ -260,116 +387,38 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
       )}
 
       {/* ── SVG Tree ─────────────────────────────────────────────── */}
-      <div
-        ref={containerRef}
-        className={`tree-svg-container${mobileMode ? ' tree-svg-container--mobile' : ''}${isDragging ? ' tree-svg-container--dragging' : ''}`}
-        onMouseMove={mobileMode ? undefined : handleSvgMouseMove}
-        onPointerDown={mobileMode ? handlePanStart : undefined}
-        onPointerMove={mobileMode ? handlePanMove : undefined}
-        onPointerUp={mobileMode ? handlePanEnd : undefined}
-        onPointerCancel={mobileMode ? handlePanEnd : undefined}
-      >
-        <div
-          className="tree-svg-pan"
-          style={mobileMode ? { transform: `translate3d(${pan.x}px, ${pan.y}px, 0)` } : undefined}
-        >
-          <svg
-            viewBox="0 0 900 900"
-            preserveAspectRatio="xMidYMid meet"
-            className="tree-svg"
-            style={mobileMode ? { transform: `scale(${zoom})`, transformOrigin: 'center center' } : undefined}
-          >
-          {/* ── Connection lines ─────────────────────────────────── */}
-          {TREE_EDGES.map(({ a, b }) => {
-            const na = TREE_NODE_MAP[a];
-            const nb = TREE_NODE_MAP[b];
-            if (!na || !nb) return null;
-            const bothAllocated = allocatedSet.has(a) && allocatedSet.has(b);
-            const eitherAvailable =
-              getNodeState(a, allocatedSet, skillPoints) === 'available' ||
-              getNodeState(b, allocatedSet, skillPoints) === 'available';
-            const stroke   = bothAllocated ? '#f1c40f'
-                           : eitherAvailable ? '#3a5f82'
-                           : '#2a2a3a';
-            const sw = bothAllocated ? 3 : 1.5;
-            const opacity = stroke === '#2a2a3a' ? 0.45 : 1;
-            return (
-              <line
-                key={`${a}||${b}`}
-                x1={na.position.x} y1={na.position.y}
-                x2={nb.position.x} y2={nb.position.y}
-                stroke={stroke}
-                strokeWidth={sw}
-                opacity={opacity}
-              />
-            );
-          })}
-
-          {/* ── Nodes ─────────────────────────────────────────────── */}
-          {PASSIVE_TREE_NODES.map((node) => {
-            const state     = getNodeState(node.id, allocatedSet, skillPoints);
-            const r         = NODE_RADIUS[node.type];
-            const isAvail   = state === 'available';
-            const isAlloc   = state === 'allocated';
-            const isSelected = selectedNodeId === node.id;
-            const { x, y }  = node.position;
-
-            return (
-              <g
-                key={node.id}
-                className={`tree-node tree-node--${state}`}
-                onClick={() => handleNodeClick(node.id)}
-                onMouseEnter={() => setHovered(node)}
-                onMouseLeave={() => setHovered(null)}
-                style={{ cursor: isAvail ? 'pointer' : 'default' }}
-              >
-                {/* Outer glow ring */}
-                {(isAlloc || isAvail || isSelected) && (
-                  <circle
-                    cx={x} cy={y} r={r + 6}
-                    fill="none"
-                    stroke={isSelected ? '#8bd3ff' : (isAlloc ? '#f1c40f' : '#4a7fb5')}
-                    strokeWidth={isSelected ? 2 : 1}
-                    opacity={isSelected ? 0.65 : (isAlloc ? 0.35 : 0.22)}
-                  />
-                )}
-
-                {/* Pulse ring (available only) */}
-                {isAvail && (
-                  <circle
-                    cx={x} cy={y} r={r + 4}
-                    fill="none"
-                    stroke="#6b9cd4"
-                    strokeWidth={1.5}
-                    className="tree-pulse"
-                  />
-                )}
-
-                {/* Node shape */}
-                <NodeShape node={node} state={state} />
-
-                {/* Labels — notable and keystone only */}
-                {(node.type === 'notable' || node.type === 'keystone') && (
-                  <text
-                    x={x}
-                    y={y + r + 13}
-                    textAnchor="middle"
-                    fill={state === 'locked' ? '#484860' : '#d0d0e0'}
-                    fontSize={node.type === 'keystone' ? 10 : 9}
-                    fontWeight="700"
-                    fontFamily="'Courier New', Courier, monospace"
-                    pointerEvents="none"
-                    letterSpacing="0.5"
-                  >
-                    {node.label}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-          </svg>
+      {mobileMode && isLandscapeMobile ? (
+        <div className="tree-mobile-layout">
+          {treeSvgView}
+          {detailNode && (
+            <div className="tree-mobile-sheet tree-mobile-sheet--landscape">
+              <div className={`tree-tt-type tree-tt-type--${detailNode.type}`}>
+                {detailNode.type.toUpperCase()}
+              </div>
+              <div className="tree-tt-name">{detailNode.label}</div>
+              <div className="tree-tt-desc">{detailNode.description}</div>
+              {detailLines.length > 0 && (
+                <ul className="tree-tt-stats">
+                  {detailLines.map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              )}
+              {detailState === 'available' ? (
+                <button className="btn btn-primary tree-mobile-allocate" onClick={() => onAllocate(detailNode.id)}>
+                  Allocate Node
+                </button>
+              ) : detailState === 'allocated' ? (
+                <div className="tree-mobile-status tree-mobile-status--done">Allocated</div>
+              ) : (
+                <div className="tree-mobile-status">Connect to this node and spend a point to unlock it.</div>
+              )}
+            </div>
+          )}
         </div>
-      </div>
+      ) : (
+        treeSvgView
+      )}
 
       {/* ── Tooltip ───────────────────────────────────────────────── */}
       {!mobileMode && hovered && (
@@ -407,9 +456,8 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
         </div>
       )}
 
-      {mobileMode && detailNode && (
+      {mobileMode && detailNode && !isLandscapeMobile && (
         <div className="tree-mobile-sheet">
-          <div className="tree-mobile-sheet__hint">Tap a node to focus it. Drag anywhere on the tree to pan, and use the zoom controls above to scan the layout.</div>
           <div className={`tree-tt-type tree-tt-type--${detailNode.type}`}>
             {detailNode.type.toUpperCase()}
           </div>

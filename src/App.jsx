@@ -178,7 +178,7 @@ function getPhoneUiHint(context) {
     case 'VENDOR':
       return 'Shop tabs and item browsing fit better in landscape.';
     case 'MAP_SELECT':
-      return 'Acts and map-device details are easier to scan in landscape.';
+      return '';
     case 'TREE':
       return 'The passive tree is much easier to pan and read in landscape.';
     case 'SHEET':
@@ -625,7 +625,7 @@ export default function App() {
   const togglePause = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) return;
-    if (screen === 'RUNNING') {
+    if (screen === 'RUNNING' || screen === 'HUB') {
       engine.pause();
       setScreen('PAUSED');
     } else if (screen === 'PAUSED') {
@@ -648,6 +648,12 @@ export default function App() {
     engineRef.current = null;
     handleGameOver(stats);
   }, [hud, handleGameOver]);
+
+  const handleReturnToMainMenu = useCallback(() => {
+    engineRef.current?.destroy();
+    engineRef.current = null;
+    setScreen('MENU');
+  }, []);
 
   // ── Passive tree interactions ───────────────────────────────────────
 
@@ -909,7 +915,7 @@ export default function App() {
   }, [screen, openCharacterSheet]);
 
   const handleMobilePause = useCallback(() => {
-    if (screen === 'RUNNING' || screen === 'PAUSED') togglePause();
+    if (screen === 'RUNNING' || screen === 'PAUSED' || screen === 'HUB') togglePause();
   }, [screen, togglePause]);
 
   const handleMobileToggleLock = useCallback(() => {
@@ -1011,7 +1017,7 @@ export default function App() {
         else if (screen === 'VENDOR')                closeVendor();
         else if (screen === 'PORTAL_CONFIRM')        closePortalConfirm();
         else if (screen === 'MAP_SELECT')            handleCloseMapSelect();
-        else if (screen === 'RUNNING' || screen === 'PAUSED') togglePause();
+        else if (screen === 'RUNNING' || screen === 'PAUSED' || screen === 'HUB') togglePause();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1076,12 +1082,18 @@ export default function App() {
     && viewportSize.width > 0
     && viewportSize.width <= 640
     && viewportSize.width < viewportSize.height;
+  const isCompactPhoneUi = mobileMode
+    && (
+      (viewportSize.width > 0 && viewportSize.width <= 390)
+      || (viewportSize.height > 0 && viewportSize.height <= 740)
+    );
   const showRotateHint = isPortraitPhone && !!rotateHintCopy && dismissedPhoneHintKey !== activePhoneHintKey;
   const perfClass = ` perf-${mobilePerf.preset}-mode`;
   const phonePortraitClass = isPortraitPhone ? ' phone-portrait-mode' : '';
+  const compactPhoneClass = isCompactPhoneUi ? ' mobile-compact-ui' : '';
 
   return (
-    <div className={`app${mobileMode ? ' mobile-mode' : ''}${mobileUi.leftHanded ? ' mobile-left-handed' : ''}${mobileUi.largeButtons ? ' mobile-large-controls' : ''}${perfClass}${phonePortraitClass}`}>
+    <div className={`app${mobileMode ? ' mobile-mode' : ''}${mobileUi.leftHanded ? ' mobile-left-handed' : ''}${mobileUi.largeButtons ? ' mobile-large-controls' : ''}${perfClass}${phonePortraitClass}${compactPhoneClass}`}>
       <canvas
         ref={canvasRef}
         className="game-canvas"
@@ -1094,12 +1106,10 @@ export default function App() {
           hasCharacters={CharacterSave.list().length > 0}
           onNewCharacter={() => setScreen('CHARACTER_CREATE')}
           onContinue={() => setScreen('CHARACTER_SELECT')}
-          onMeta={() => setScreen('META')}
           onOptions={() => setShowOptions(true)}
           mobileMode={mobileMode}
           mobileModeIsAuto={!hasExplicitMobilePref}
           onToggleMobileMode={handleToggleMobileMode}
-          history={MetaProgression.loadHistory()}
         />
       )}
 
@@ -1109,6 +1119,7 @@ export default function App() {
           onSelect={handleSelectCharacter}
           onNew={() => setScreen('CHARACTER_CREATE')}
           onBack={() => setScreen('MENU')}
+          history={MetaProgression.loadHistory()}
         />
       )}
 
@@ -1130,6 +1141,7 @@ export default function App() {
           nearbyInteractable={nearbyHubInteractable}
           onSwitchCharacter={handleSwitchCharacterFromHub}
           mobileMode={mobileMode}
+          compactMode={isCompactPhoneUi}
         />
       )}
 
@@ -1197,7 +1209,7 @@ export default function App() {
         />
       )}
 
-      {showHud && <HUD hud={hud} hideTimer={hideHudTimer} mobileMode={mobileMode} />}
+      {showHud && <HUD hud={hud} hideTimer={hideHudTimer} mobileMode={mobileMode} compactMode={isCompactPhoneUi} screenContext={screen} />}
 
       {showMobileControls && (
         <MobileControls
@@ -1209,6 +1221,7 @@ export default function App() {
           onOpenTree={handleMobileOpenTree}
           onOpenSheet={handleMobileOpenSheet}
           onPause={handleMobilePause}
+          onPortal={openPortalConfirm}
           onToggleLock={handleMobileToggleLock}
           lockActive={!!hud.lockedTarget}
           leftHanded={mobileUi.leftHanded}
@@ -1221,6 +1234,7 @@ export default function App() {
           onToggleAutoPickup={() => setMobileUi((prev) => ({ ...prev, autoPickup: !prev.autoPickup }))}
           showCombatButtons={screen === 'RUNNING'}
           showSheetButton={screen === 'HUB'}
+          compactMode={isCompactPhoneUi}
         />
       )}
 
@@ -1263,9 +1277,11 @@ export default function App() {
 
 
       {screen === 'PAUSED' && <PauseScreen
+        hubMode={!hud.mapContext}
         onResume={togglePause}
         onOptions={() => setShowOptions(true)}
         onAbandon={handleAbandonRun}
+        onMainMenu={handleReturnToMainMenu}
       />}
 
       {screen === 'PORTAL_CONFIRM' && (

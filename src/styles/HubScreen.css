@@ -119,7 +119,34 @@
   }
 
   .hub-topbar {
-    bottom: 12px;
-    left: 10px;
+    top: calc(max(env(safe-area-inset-top), 0px) + 86px);
+    left: calc(max(env(safe-area-inset-left), 0px) + 8px);
+    bottom: auto;
+    gap: 6px;
+    max-width: min(56vw, 230px);
+  }
+
+  .hub-topbar-left {
+    padding: 6px 9px;
+    gap: 6px;
+  }
+
+  .hub-topbar-label {
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+  }
+
+  .hub-topbar-char {
+    font-size: 0.66rem;
+    max-width: 116px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hub-switch-btn {
+    font-size: 0.62rem;
+    letter-spacing: 0.05em;
+    padding: 6px 8px;
   }
 }
