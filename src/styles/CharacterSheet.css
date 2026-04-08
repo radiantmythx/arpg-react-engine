@@ -11,7 +11,9 @@
 .cs-panel {
   width: min(900px, 94vw);
   max-height: 88vh;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background: linear-gradient(180deg, rgba(12, 19, 33, 0.96), rgba(8, 14, 27, 0.98));
   border: 1px solid rgba(169, 194, 235, 0.34);
   border-radius: 14px;
@@ -51,6 +53,46 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+.cs-content {
+  min-height: 0;
+}
+
+.cs-mobile-tabs {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.6rem;
+}
+
+.cs-mobile-tab {
+  border: 1px solid rgba(173, 189, 208, 0.22);
+  background: rgba(15, 22, 34, 0.76);
+  color: #b8cae2;
+  border-radius: 999px;
+  padding: 0.4rem 0.75rem;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cs-mobile-tab--active {
+  border-color: rgba(141, 191, 255, 0.8);
+  background: rgba(24, 39, 58, 0.92);
+  color: #edf6ff;
+}
+
+.cs-mobile-hint {
+  margin-bottom: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(141, 191, 255, 0.22);
+  background: rgba(14, 22, 38, 0.82);
+  color: #dce8fb;
+  font-size: 0.74rem;
+  line-height: 1.45;
 }
 
 .cs-grid {
@@ -129,7 +171,24 @@
 }
 
 @media (max-width: 760px) {
+  .cs-panel {
+    width: min(100%, 96vw);
+    padding: 14px;
+  }
+
   .cs-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cs-row,
+  .cs-eq-row,
+  .cs-mod-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .cs-close {
+    min-height: 40px;
   }
 }

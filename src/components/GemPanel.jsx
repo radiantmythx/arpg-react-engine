@@ -5,6 +5,7 @@
  * Player selects a support gem from the shared inventory grid,
  * then clicks a compatible socket here.
  */
+import { useEffect, useState } from 'react';
 import { SUPPORT_POOL, isSupportCompatible } from '../game/data/supports.js';
 import { highlightElementalText } from './ElementalText.jsx';
 import '../styles/GemPanel.css';
@@ -40,6 +41,16 @@ function TagBadge({ tag }) {
       {tag}
     </span>
   );
+}
+
+function skillCanAcceptCursorGem(skill, cursorGem) {
+  if (!skill || !cursorGem) return false;
+  const supportDef = SUPPORT_POOL.find((s) => s.id === cursorGem.gemId) ?? null;
+  if (!supportDef) return false;
+  const slots = skill.supportSlots ?? [null];
+  const openSlots = skill.openSlots ?? slots.length;
+  const hasRoom = slots.slice(0, openSlots).some((slot) => !slot);
+  return hasRoom && isSupportCompatible(supportDef, skill.tags ?? []);
 }
 
 /** A single support socket slot (target for drag-drop). */
@@ -84,7 +95,7 @@ function SocketSlot({ skillId, slotIndex, support, isOpen, skillTags, cursorGem,
 }
 
 /** Skill row for paperdoll (left side). */
-function SkillSocket({ skill, cursorGem, onSocketGem, onUnsocketGem }) {
+function SkillSocket({ skill, cursorGem, onSocketGem, onUnsocketGem, mobileMode = false, isFocused = false, isSuggested = false }) {
   const isMax = skill.isMaxLevel ?? false;
   const xpPct = isMax
     ? 100
@@ -97,7 +108,12 @@ function SkillSocket({ skill, cursorGem, onSocketGem, onUnsocketGem }) {
   const openSlots = skill.openSlots ?? slots.length;
 
   return (
-    <div className="gem-skill-socket-block">
+    <div className={[
+      'gem-skill-socket-block',
+      mobileMode ? 'gem-skill-socket-block--mobile' : '',
+      isFocused ? 'gem-skill-socket-block--focused' : '',
+      isSuggested ? 'gem-skill-socket-block--suggested' : '',
+    ].filter(Boolean).join(' ')}>
       <div className="gem-skill-compact">
         <div className="gem-skill-header">
           <span className="gem-skill-icon">{skill.icon ?? '⚡'}</span>
@@ -148,14 +164,29 @@ function SkillSocket({ skill, cursorGem, onSocketGem, onUnsocketGem }) {
     </div>
   );
 }
-export function GemPanel({ primarySkill, activeSkills, selectedSupportGem, onClearSelectedGem, onSocketGem, onUnsocketGem }) {
+export function GemPanel({ primarySkill, activeSkills, selectedSupportGem, onClearSelectedGem, onSocketGem, onUnsocketGem, mobileMode = false }) {
+  const [selectedSkillId, setSelectedSkillId] = useState(null);
 
   const skills = [
     ...(primarySkill ? [primarySkill] : []),
     ...((activeSkills ?? []).filter(Boolean)),
   ].filter((skill, index, arr) => arr.findIndex((s) => s.id === skill.id) === index);
 
+  useEffect(() => {
+    if (!skills.length) {
+      setSelectedSkillId(null);
+      return;
+    }
+    if (!skills.some((skill) => skill.id === selectedSkillId)) {
+      setSelectedSkillId(skills[0].id);
+    }
+  }, [skills, selectedSkillId]);
+
   const cursorGem = selectedSupportGem ?? null;
+  const focusedSkill = mobileMode
+    ? (skills.find((skill) => skill.id === selectedSkillId) ?? skills[0] ?? null)
+    : null;
+  const visibleSkills = mobileMode ? (focusedSkill ? [focusedSkill] : []) : skills;
 
   const handleSocketGem = (skillId, slotIndex, gemUid) => {
     pulse(10);
@@ -169,10 +200,29 @@ export function GemPanel({ primarySkill, activeSkills, selectedSupportGem, onCle
   };
 
   return (
-    <div className="gem-panel-body gem-panel-body--paperdoll">
+    <div className={`gem-panel-body gem-panel-body--paperdoll${mobileMode ? ' gem-panel-body--mobile' : ''}`}>
       <div className="gem-doll-wrap">
         <p className="gem-section-label">SKILLS & SOCKETS</p>
-        {cursorGem ? (
+
+        {mobileMode ? (
+          <div className={`gem-flow-card${cursorGem ? ' gem-flow-card--selected' : ''}`}>
+            <div className="gem-flow-step">{cursorGem ? 'Step 2 · Link the selected support' : 'Link Skills view'}</div>
+            <p className="gem-mobile-hint">
+              {cursorGem ? (
+                <>
+                  Selected support gem: <span className="gem-selected-name">{cursorGem.name}</span>. Switch skills below and tap a glowing compatible socket.
+                </>
+              ) : (
+                'No support gem is selected yet. Use the Support Gems view to choose one first, then come back here to attach it.'
+              )}
+            </p>
+            {cursorGem && (
+              <button type="button" className="gem-flow-clear" onClick={() => onClearSelectedGem?.()}>
+                Clear Selection
+              </button>
+            )}
+          </div>
+        ) : cursorGem ? (
           <p className="gem-desktop-hint">
             Selected support gem: <span className="gem-selected-name">{cursorGem.name}</span> (click compatible socket to apply)
           </p>
@@ -181,17 +231,40 @@ export function GemPanel({ primarySkill, activeSkills, selectedSupportGem, onCle
             Select a support gem from inventory (from either tab), then click a compatible socket.
           </p>
         )}
+
+        {mobileMode && skills.length > 1 && (
+          <div className="gem-skill-switcher">
+            {skills.map((skill) => {
+              const suggested = skillCanAcceptCursorGem(skill, cursorGem);
+              return (
+                <button
+                  key={skill.id}
+                  type="button"
+                  className={`gem-skill-chip${focusedSkill?.id === skill.id ? ' gem-skill-chip--active' : ''}${suggested ? ' gem-skill-chip--suggested' : ''}`}
+                  onClick={() => setSelectedSkillId(skill.id)}
+                >
+                  <span className="gem-skill-chip-icon">{skill.icon ?? '⚡'}</span>
+                  <span>{skill.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {skills.length === 0 ? (
           <p className="gem-empty-hint">No active skills equipped.</p>
         ) : (
-          <div className="gem-doll">
-            {skills.map((skill) => (
+          <div className={`gem-doll${mobileMode ? ' gem-doll--mobile' : ''}`}>
+            {visibleSkills.map((skill) => (
               <SkillSocket
                 key={skill.id}
                 skill={skill}
                 cursorGem={cursorGem}
                 onSocketGem={handleSocketGem}
                 onUnsocketGem={handleUnsocketGem}
+                mobileMode={mobileMode}
+                isFocused={!mobileMode || focusedSkill?.id === skill.id}
+                isSuggested={skillCanAcceptCursorGem(skill, cursorGem)}
               />
             ))}
           </div>

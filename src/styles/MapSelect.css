@@ -235,6 +235,36 @@
   margin-bottom: 6px;
 }
 
+.mapsel-mobile-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  margin-bottom: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 11px;
+  border: 1px solid rgba(141, 191, 255, 0.28);
+  background: rgba(14, 22, 38, 0.88);
+}
+
+.mapsel-mobile-step {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b8d8ff;
+}
+
+.mapsel-mobile-copy {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #d8e6fb;
+}
+
+.mapsel-open-btn--mobile {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
 @keyframes mapselStaggerIn {
   from {
     opacity: 0;
@@ -243,5 +273,39 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .mapsel-panel {
+    width: min(100%, 96vw);
+    padding: 14px;
+  }
+
+  .mapsel-tabs {
+    overflow-x: auto;
+    padding-bottom: 2px;
+    flex-wrap: nowrap;
+  }
+
+  .mapsel-row,
+  .mapsel-device-item {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .mapsel-tier {
+    justify-self: start;
+  }
+
+  .mapsel-desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .mapsel-open-btn {
+    width: 100%;
   }
 }

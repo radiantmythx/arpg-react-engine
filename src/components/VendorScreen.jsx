@@ -109,8 +109,8 @@ export function VendorScreen({
 
   return (
     <div className="vendor-overlay">
-      <div className="vendor-panel">
-        <div className="vendor-header">
+      <div className="vendor-panel phone-shell-panel">
+        <div className="vendor-header phone-shell-header">
           <div>
             <h2 className="vendor-title">Vendor</h2>
             <p className="vendor-subtitle">{tab === 'sell' ? 'Sell your unwanted gear for gold.' : 'Browse gems, gear, and maps — all for Gold.'}</p>
@@ -130,7 +130,7 @@ export function VendorScreen({
           ))}
         </div>
 
-        <div className="vendor-list">
+        <div className="vendor-list phone-shell-scroll">
           {tab === 'sell' ? (
             filtered.map((item) => (
               <SellInventoryRow key={item.uid} item={item} onSell={onSell} />
@@ -152,7 +152,7 @@ export function VendorScreen({
           )}
         </div>
 
-        <div className="vendor-footer">
+        <div className="vendor-footer phone-shell-footer">
           <span className="vendor-feedback">{feedback || (mobileMode ? 'Tip: tap to move items, or hold an inventory item to quick-equip / use it.' : 'Tip: right-click a gem in inventory to equip it.')}</span>
           <div className="vendor-footer-actions">
             {canReroll && (

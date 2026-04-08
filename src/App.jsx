@@ -164,6 +164,30 @@ function buildPerformanceProfile(preset = 'quality', mobileActive = false) {
   }
 }
 
+function getViewportSize() {
+  if (typeof window === 'undefined') return { width: 1024, height: 768 };
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
+function getPhoneUiHint(context) {
+  switch (context) {
+    case 'INVENTORY_equipment':
+      return 'Your bag and gear are easier to compare in landscape.';
+    case 'INVENTORY_gems':
+      return 'Gems and socket links are much easier to manage with extra horizontal space.';
+    case 'VENDOR':
+      return 'Shop tabs and item browsing fit better in landscape.';
+    case 'MAP_SELECT':
+      return 'Acts and map-device details are easier to scan in landscape.';
+    case 'TREE':
+      return 'The passive tree is much easier to pan and read in landscape.';
+    case 'SHEET':
+      return 'Character stats and equipment details fit more comfortably in landscape.';
+    default:
+      return '';
+  }
+}
+
 // Screen names:
 // 'MENU' | 'CHARACTER_SELECT' | 'CHARACTER_CREATE' | 'HUB' | 'DIED' |
 // 'MAP_SELECT' | 'MAP_COMPLETE' | 'RUNNING' | 'PAUSED' | 'TREE' | 'INVENTORY' | 'SHEET' | 'VENDOR' | 'PORTAL_CONFIRM' | 'GAME_OVER' | 'META'
@@ -219,6 +243,8 @@ export default function App() {
   });
   const [mobileUi, setMobileUi] = useState(() => loadMobileUiPrefs());
   const [mobilePerf, setMobilePerf] = useState(() => loadMobilePerfPrefs());
+  const [viewportSize, setViewportSize] = useState(() => getViewportSize());
+  const [dismissedPhoneHintKey, setDismissedPhoneHintKey] = useState('');
 
   // ── Callbacks passed to GameEngine ──────────────────────────────
 
@@ -753,6 +779,15 @@ export default function App() {
     if (displaced) setCursorItem(displaced);
   }, [hud.inventory.items]);
 
+  const handleInventoryDropItem = useCallback((uid) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const def = engine.player?.inventory?.remove(uid);
+    if (!def) return;
+    engine.dropItemToWorld(def);
+    engine._flushHudUpdate();
+  }, []);
+
   // Click empty grid cell with cursor item → place it there
   const handleInventoryCellClick = useCallback((col, row) => {
     const engine = engineRef.current;
@@ -914,6 +949,18 @@ export default function App() {
     engineRef.current?.setPerformanceProfile?.(buildPerformanceProfile(mobilePerf.preset, mobileMode));
   }, [mobileMode, mobilePerf.preset]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const syncViewport = () => setViewportSize(getViewportSize());
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.addEventListener('orientationchange', syncViewport);
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('orientationchange', syncViewport);
+    };
+  }, []);
+
   // Resize canvas
   useEffect(() => {
     const resize = () => {
@@ -1023,10 +1070,18 @@ export default function App() {
 
   const hideHudTimer = screen === 'HUB';
   const showMobileControls = mobileMode && (screen === 'RUNNING' || screen === 'HUB');
+  const activePhoneHintKey = showOptions ? 'OPTIONS' : screen === 'INVENTORY' ? `INVENTORY_${invTab}` : screen;
+  const rotateHintCopy = getPhoneUiHint(activePhoneHintKey);
+  const isPortraitPhone = mobileMode
+    && viewportSize.width > 0
+    && viewportSize.width <= 640
+    && viewportSize.width < viewportSize.height;
+  const showRotateHint = isPortraitPhone && !!rotateHintCopy && dismissedPhoneHintKey !== activePhoneHintKey;
   const perfClass = ` perf-${mobilePerf.preset}-mode`;
+  const phonePortraitClass = isPortraitPhone ? ' phone-portrait-mode' : '';
 
   return (
-    <div className={`app${mobileMode ? ' mobile-mode' : ''}${mobileUi.leftHanded ? ' mobile-left-handed' : ''}${mobileUi.largeButtons ? ' mobile-large-controls' : ''}${perfClass}`}>
+    <div className={`app${mobileMode ? ' mobile-mode' : ''}${mobileUi.leftHanded ? ' mobile-left-handed' : ''}${mobileUi.largeButtons ? ' mobile-large-controls' : ''}${perfClass}${phonePortraitClass}`}>
       <canvas
         ref={canvasRef}
         className="game-canvas"
@@ -1194,6 +1249,7 @@ export default function App() {
           onClose={closeInventory}
           onItemClick={handleInventoryItemClick}
           onItemRightClick={handleInventoryItemRightClick}
+          onDropItem={handleInventoryDropItem}
           onCellClick={handleInventoryCellClick}
           onSlotClick={handleEquipSlotClick}
           activeTab={invTab}
@@ -1228,6 +1284,24 @@ export default function App() {
           perfSettings={mobilePerf}
           onPerfChange={(preset) => setMobilePerf({ preset })}
         />
+      )}
+
+      {showRotateHint && (
+        <div className="phone-rotate-hint" role="status" aria-live="polite">
+          <span className="phone-rotate-hint__icon" aria-hidden="true">↻</span>
+          <div className="phone-rotate-hint__copy">
+            <strong>Portrait works, but landscape is easier here.</strong>
+            <span>{rotateHintCopy}</span>
+          </div>
+          <button
+            type="button"
+            className="phone-rotate-hint__dismiss"
+            onClick={() => setDismissedPhoneHintKey(activePhoneHintKey)}
+            aria-label="Dismiss rotate hint"
+          >
+            ✕
+          </button>
+        </div>
       )}
 
       {bossAnnouncement && (

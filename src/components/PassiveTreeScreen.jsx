@@ -19,7 +19,7 @@
  *   onAllocate(id) — called when player clicks an available node
  *   onClose        — called when player closes the tree
  */
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PASSIVE_TREE_NODES, TREE_NODE_MAP, TREE_EDGES } from '../game/data/passiveTree.js';
 
 const NODE_RADIUS = { minor: 10, notable: 16, keystone: 22 };
@@ -36,6 +36,14 @@ const STROKE = {
   available: 'rgba(107,156,212,0.6)',
   locked:    'transparent',
 };
+
+const MIN_MOBILE_ZOOM = 0.8;
+const MAX_MOBILE_ZOOM = 5;
+const DEFAULT_MOBILE_ZOOM = 3.5;
+
+function clampMobileZoom(value) {
+  return Math.max(MIN_MOBILE_ZOOM, Math.min(MAX_MOBILE_ZOOM, value));
+}
 
 function getNodeState(id, allocatedSet, skillPoints) {
   if (allocatedSet.has(id)) return 'allocated';
@@ -76,18 +84,101 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
   const [hovered, setHovered]       = useState(null);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(DEFAULT_MOBILE_ZOOM);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef(null);
+  const dragRef = useRef(null);
+  const suppressNodeTapUntilRef = useRef(0);
+
+  useEffect(() => {
+    if (!mobileMode) return;
+    const fallbackId = TREE_NODE_MAP.start ? 'start' : (PASSIVE_TREE_NODES[0]?.id ?? null);
+    if (!selectedNodeId && fallbackId) {
+      setSelectedNodeId(fallbackId);
+    }
+  }, [mobileMode, selectedNodeId]);
+
+  const centerOnNode = (node, nextZoom = zoom) => {
+    const container = containerRef.current;
+    if (!container || !node) return;
+    const rect = container.getBoundingClientRect();
+    const baseSize = Math.min(rect.width - 12, rect.height - 12, 820);
+    const offsetY = mobileMode ? Math.round(rect.height * -0.08) : 0;
+    const relativeX = ((node.position.x / 900) - 0.5) * baseSize;
+    const relativeY = ((node.position.y / 900) - 0.5) * baseSize;
+    setPan({
+      x: Math.round(-(relativeX * nextZoom)),
+      y: Math.round(offsetY - (relativeY * nextZoom)),
+    });
+  };
 
   const handleSvgMouseMove = (e) => {
     setTooltipPos({ x: e.clientX, y: e.clientY });
   };
 
+  const handleZoomChange = (delta) => {
+    const nextZoom = clampMobileZoom(zoom + delta);
+    setZoom(nextZoom);
+    if (mobileMode && selectedNodeId && typeof window !== 'undefined') {
+      const node = TREE_NODE_MAP[selectedNodeId];
+      if (node) {
+        window.requestAnimationFrame(() => centerOnNode(node, nextZoom));
+      }
+    }
+  };
+
+  const resetMobileView = () => {
+    setZoom(DEFAULT_MOBILE_ZOOM);
+    setSelectedNodeId(TREE_NODE_MAP.start ? 'start' : (PASSIVE_TREE_NODES[0]?.id ?? null));
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handlePanStart = (e) => {
+    if (!mobileMode) return;
+    if (e.target.closest('.tree-mobile-sheet') || e.target.closest('.tree-mobile-toolbar')) return;
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      panX: pan.x,
+      panY: pan.y,
+      moved: false,
+    };
+    setIsDragging(true);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const handlePanMove = (e) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      drag.moved = true;
+    }
+    setPan({ x: drag.panX + dx, y: drag.panY + dy });
+  };
+
+  const handlePanEnd = (e) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (drag.moved) {
+      suppressNodeTapUntilRef.current = Date.now() + 250;
+    }
+    dragRef.current = null;
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
+
   const handleNodeClick = (id) => {
+    if (mobileMode && Date.now() < suppressNodeTapUntilRef.current) return;
     const node = TREE_NODE_MAP[id];
     if (!node) return;
     setSelectedNodeId(id);
     if (mobileMode) {
       setHovered(node);
+      centerOnNode(node);
       return;
     }
     if (getNodeState(id, allocatedSet, skillPoints) === 'available') {
@@ -156,17 +247,38 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
         </div>
       </div>
 
+      {mobileMode && (
+        <div className="tree-mobile-toolbar">
+          <span className="tree-mobile-toolbar__hint">Drag to pan · zoom in farther for tiny clusters.</span>
+          <div className="tree-mobile-zoom">
+            <button type="button" className="tree-mobile-zoom-btn" onClick={() => handleZoomChange(-0.2)} aria-label="Zoom out">−</button>
+            <span className="tree-mobile-zoom-label">{Math.round(zoom * 100)}%</span>
+            <button type="button" className="tree-mobile-zoom-btn" onClick={() => handleZoomChange(0.2)} aria-label="Zoom in">+</button>
+            <button type="button" className="tree-mobile-zoom-btn tree-mobile-zoom-btn--reset" onClick={resetMobileView}>Reset</button>
+          </div>
+        </div>
+      )}
+
       {/* ── SVG Tree ─────────────────────────────────────────────── */}
       <div
         ref={containerRef}
-        className="tree-svg-container"
-        onMouseMove={handleSvgMouseMove}
+        className={`tree-svg-container${mobileMode ? ' tree-svg-container--mobile' : ''}${isDragging ? ' tree-svg-container--dragging' : ''}`}
+        onMouseMove={mobileMode ? undefined : handleSvgMouseMove}
+        onPointerDown={mobileMode ? handlePanStart : undefined}
+        onPointerMove={mobileMode ? handlePanMove : undefined}
+        onPointerUp={mobileMode ? handlePanEnd : undefined}
+        onPointerCancel={mobileMode ? handlePanEnd : undefined}
       >
-        <svg
-          viewBox="0 0 900 900"
-          preserveAspectRatio="xMidYMid meet"
-          className="tree-svg"
+        <div
+          className="tree-svg-pan"
+          style={mobileMode ? { transform: `translate3d(${pan.x}px, ${pan.y}px, 0)` } : undefined}
         >
+          <svg
+            viewBox="0 0 900 900"
+            preserveAspectRatio="xMidYMid meet"
+            className="tree-svg"
+            style={mobileMode ? { transform: `scale(${zoom})`, transformOrigin: 'center center' } : undefined}
+          >
           {/* ── Connection lines ─────────────────────────────────── */}
           {TREE_EDGES.map(({ a, b }) => {
             const na = TREE_NODE_MAP[a];
@@ -199,6 +311,7 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
             const r         = NODE_RADIUS[node.type];
             const isAvail   = state === 'available';
             const isAlloc   = state === 'allocated';
+            const isSelected = selectedNodeId === node.id;
             const { x, y }  = node.position;
 
             return (
@@ -211,13 +324,13 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
                 style={{ cursor: isAvail ? 'pointer' : 'default' }}
               >
                 {/* Outer glow ring */}
-                {(isAlloc || isAvail) && (
+                {(isAlloc || isAvail || isSelected) && (
                   <circle
                     cx={x} cy={y} r={r + 6}
                     fill="none"
-                    stroke={isAlloc ? '#f1c40f' : '#4a7fb5'}
-                    strokeWidth={1}
-                    opacity={isAlloc ? 0.35 : 0.22}
+                    stroke={isSelected ? '#8bd3ff' : (isAlloc ? '#f1c40f' : '#4a7fb5')}
+                    strokeWidth={isSelected ? 2 : 1}
+                    opacity={isSelected ? 0.65 : (isAlloc ? 0.35 : 0.22)}
                   />
                 )}
 
@@ -254,7 +367,8 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
               </g>
             );
           })}
-        </svg>
+          </svg>
+        </div>
       </div>
 
       {/* ── Tooltip ───────────────────────────────────────────────── */}
@@ -295,6 +409,7 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
 
       {mobileMode && detailNode && (
         <div className="tree-mobile-sheet">
+          <div className="tree-mobile-sheet__hint">Tap a node to focus it. Drag anywhere on the tree to pan, and use the zoom controls above to scan the layout.</div>
           <div className={`tree-tt-type tree-tt-type--${detailNode.type}`}>
             {detailNode.type.toUpperCase()}
           </div>

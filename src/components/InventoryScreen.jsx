@@ -21,7 +21,7 @@
  *   onCellClick(col, row)
  *   onSlotClick(slot)
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ItemTooltip } from './ItemTooltip.jsx';
 import { GemPanel } from './GemPanel.jsx';
 
@@ -77,6 +77,8 @@ const RARITY_COLORS = {
   rare:   '#f1c40f',
   unique: '#c86400',
 };
+
+const EQUIPPABLE_SLOTS = new Set(['weapon', 'armor', 'jewelry', 'helmet', 'boots', 'offhand', 'ring', 'amulet', 'mainhand', 'bodyarmor', 'gloves', 'belt']);
 
 // Slots that accept a given item.slot string
 const SLOT_ACCEPTS = {
@@ -158,6 +160,7 @@ export function InventoryScreen({
   onClose,
   onItemClick,
   onItemRightClick,
+  onDropItem,
   onCellClick,
   onSlotClick,
   // Gem tab props
@@ -171,7 +174,9 @@ export function InventoryScreen({
 }) {
   const [hoveredItem, setHoveredItem] = useState(null);
   const [mobileSection, setMobileSection] = useState('bag');
+  const [mobileGemStep, setMobileGemStep] = useState('supports');
   const [selectedSupportGemUid, setSelectedSupportGemUid] = useState(null);
+  const [selectedMobileItemUid, setSelectedMobileItemUid] = useState(null);
   const touchTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
   const suppressClickUntilRef = useRef(0);
@@ -185,7 +190,13 @@ export function InventoryScreen({
   const showGearPanel = !mobileMode || mobileSection === 'gear';
   const showBagPanel = !mobileMode || mobileSection === 'bag';
   const isGemItem = (item) => item?.type === 'support_gem' || item?.type === 'skill_gem';
+  const supportGemItems = items.filter((item) => item.type === 'support_gem');
+  const skillGemItems = items.filter((item) => item.type === 'skill_gem');
   const selectedSupportGem = items.find((item) => item.uid === selectedSupportGemUid && item.type === 'support_gem') ?? null;
+  const selectedMobileItem = items.find((item) => item.uid === selectedMobileItemUid) ?? null;
+  const canQuickAction = !!selectedMobileItem && (selectedMobileItem.type === 'skill_gem' || EQUIPPABLE_SLOTS.has(selectedMobileItem.slot));
+  const canManageInGems = !!selectedMobileItem && isGemItem(selectedMobileItem);
+  const quickActionLabel = selectedMobileItem?.type === 'skill_gem' ? 'Use Skill Gem' : 'Quick Equip';
 
   const handleSlotActivation = (slot, fromTouch = false) => {
     if (fromTouch) suppressClickUntilRef.current = Date.now() + 300;
@@ -236,14 +247,42 @@ export function InventoryScreen({
     longPressFiredRef.current = false;
   };
 
+  useEffect(() => {
+    if (!mobileMode) {
+      setSelectedMobileItemUid(null);
+      return;
+    }
+    if (cursorItem || tab !== 'equipment') {
+      setSelectedMobileItemUid(null);
+      return;
+    }
+    if (selectedMobileItemUid && !items.some((item) => item.uid === selectedMobileItemUid)) {
+      setSelectedMobileItemUid(null);
+    }
+  }, [mobileMode, cursorItem, tab, items, selectedMobileItemUid]);
+
   const handleInventoryItemActivation = (itemUid, itemDef) => {
+    if (mobileMode && tab === 'equipment' && !cursorItem) {
+      setSelectedMobileItemUid((prev) => (prev === itemUid ? null : itemUid));
+      return;
+    }
+
     const targetTab = isGemItem(itemDef) ? 'gems' : 'equipment';
     onTabChange?.(targetTab);
+
+    if (mobileMode && targetTab === 'equipment') {
+      setMobileSection('bag');
+    }
 
     // Support gems use selection mode for socketing from any tab.
     if (itemDef?.type === 'support_gem') {
       setSelectedSupportGemUid((prev) => (prev === itemUid ? null : itemUid));
+      if (mobileMode) setMobileGemStep('sockets');
       return;
+    }
+
+    if (mobileMode && itemDef?.type === 'skill_gem') {
+      setMobileGemStep('sockets');
     }
 
     setSelectedSupportGemUid(null);
@@ -311,6 +350,7 @@ export function InventoryScreen({
               borderColor: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal,
             }}
             data-gem-selected={tab === 'gems' && selectedSupportGemUid === item.uid ? 'true' : undefined}
+            data-mobile-selected={mobileMode && selectedMobileItemUid === item.uid ? 'true' : undefined}
             onClick={(e) => {
               e.stopPropagation();
               if (suppressGhostClick()) return;
@@ -337,9 +377,102 @@ export function InventoryScreen({
       {showHint && (
         <p className="inv-hint inv-hint--help">
           {mobileMode
-            ? 'Tap: pick up or place · Hold: quick-equip / consume'
+            ? 'Tap: open actions or place · Hold: quick-equip / consume'
             : 'Left-click: pick up · Right-click: equip'}
         </p>
+      )}
+    </div>
+  );
+
+  const handleSelectedItemAction = (action) => {
+    if (!selectedMobileItem) return;
+
+    if (action === 'move') {
+      onItemClick(selectedMobileItem.uid);
+      setSelectedMobileItemUid(null);
+      return;
+    }
+
+    if (action === 'quick') {
+      onItemRightClick(selectedMobileItem.uid);
+      setSelectedMobileItemUid(null);
+      return;
+    }
+
+    if (action === 'gems') {
+      onTabChange?.('gems');
+      if (selectedMobileItem.type === 'support_gem') {
+        setSelectedSupportGemUid(selectedMobileItem.uid);
+      }
+      setMobileGemStep('sockets');
+      setSelectedMobileItemUid(null);
+      return;
+    }
+
+    if (action === 'drop') {
+      onDropItem?.(selectedMobileItem.uid);
+      setSelectedSupportGemUid((prev) => (prev === selectedMobileItem.uid ? null : prev));
+      setSelectedMobileItemUid(null);
+    }
+  };
+
+  const renderGemSelectionList = () => (
+    <div className="inv-gem-picker">
+      <div className="inv-gem-picker-section">
+        <div className="inv-gem-picker-title">Support Gems</div>
+        {supportGemItems.length === 0 ? (
+          <p className="inv-gem-picker-empty">No support gems in inventory yet. They will appear here once found or purchased.</p>
+        ) : (
+          supportGemItems.map((item) => {
+            const selected = selectedSupportGemUid === item.uid;
+            return (
+              <button
+                key={item.uid}
+                type="button"
+                className={`inv-gem-pick${selected ? ' inv-gem-pick--selected' : ''}`}
+                onClick={() => handleInventoryItemActivation(item.uid, item)}
+                onContextMenu={(e) => { e.preventDefault(); onItemRightClick(item.uid); }}
+                onTouchStart={startLongPress(() => onItemRightClick(item.uid))}
+                onTouchEnd={finishTouchTap(() => handleInventoryItemActivation(item.uid, item), 6)}
+                onTouchCancel={cancelTouchPress}
+              >
+                <span className="inv-gem-pick-icon">{getItemIcon(item)}</span>
+                <span className="inv-gem-pick-meta">
+                  <span className="inv-gem-pick-name" style={{ color: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal }}>
+                    {item.name}
+                  </span>
+                  <span className="inv-gem-pick-hint">{selected ? 'Ready to link — open Link Skills.' : 'Tap to prepare for socketing.'}</span>
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {skillGemItems.length > 0 && (
+        <div className="inv-gem-picker-section">
+          <div className="inv-gem-picker-title">Skill Gems</div>
+          {skillGemItems.map((item) => (
+            <button
+              key={item.uid}
+              type="button"
+              className="inv-gem-pick inv-gem-pick--skill"
+              onClick={() => handleInventoryItemActivation(item.uid, item)}
+              onContextMenu={(e) => { e.preventDefault(); onItemRightClick(item.uid); }}
+              onTouchStart={startLongPress(() => onItemRightClick(item.uid))}
+              onTouchEnd={finishTouchTap(() => handleInventoryItemActivation(item.uid, item), 6)}
+              onTouchCancel={cancelTouchPress}
+            >
+              <span className="inv-gem-pick-icon">{getItemIcon(item)}</span>
+              <span className="inv-gem-pick-meta">
+                <span className="inv-gem-pick-name" style={{ color: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal }}>
+                  {item.name}
+                </span>
+                <span className="inv-gem-pick-hint">Tap to equip or inspect this skill gem.</span>
+              </span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -348,9 +481,9 @@ export function InventoryScreen({
 
   return (
     <div className="inventory-overlay" onContextMenu={(e) => e.preventDefault()}>
-      <div className={`inventory-panel inv-panel-wide${tab === 'gems' ? ' inv-panel-gems' : ''}`}>
+      <div className={`inventory-panel inv-panel-wide phone-shell-panel${tab === 'gems' ? ' inv-panel-gems' : ''}`}>
         {/* ── Header ──────────────────────────────────────── */}
-        <div className="inv-header">
+        <div className="inv-header phone-shell-header">
           <span className="inv-title">INVENTORY</span>
 
           {/* Tab switcher */}
@@ -382,25 +515,76 @@ export function InventoryScreen({
           <button className="btn inv-close-btn" onClick={onClose}>✕</button>
         </div>
 
-        <div className={`inv-content${mobileMode ? ' inv-content--mobile' : ''}`}>
+        <div className={`inv-content phone-shell-scroll${mobileMode ? ' inv-content--mobile' : ''}`}>
 
         {mobileMode && tab === 'equipment' && (
-          <div className="inv-mobile-view-tabs">
-            <button
-              type="button"
-              className={`inv-mobile-view-tab${mobileSection === 'bag' ? ' inv-mobile-view-tab--active' : ''}`}
-              onClick={() => setMobileSection('bag')}
-            >
-              🎒 Bag
-            </button>
-            <button
-              type="button"
-              className={`inv-mobile-view-tab${mobileSection === 'gear' ? ' inv-mobile-view-tab--active' : ''}`}
-              onClick={() => setMobileSection('gear')}
-            >
-              🛡 Gear
-            </button>
-          </div>
+          <>
+            <div className="inv-mobile-view-tabs">
+              <button
+                type="button"
+                className={`inv-mobile-view-tab${mobileSection === 'bag' ? ' inv-mobile-view-tab--active' : ''}`}
+                onClick={() => setMobileSection('bag')}
+              >
+                🎒 Bag
+              </button>
+              <button
+                type="button"
+                className={`inv-mobile-view-tab${mobileSection === 'gear' ? ' inv-mobile-view-tab--active' : ''}`}
+                onClick={() => setMobileSection('gear')}
+              >
+                🛡 Gear
+              </button>
+            </div>
+
+            <div className="inv-section-card">
+              <div>
+                <div className="inv-section-step">{mobileSection === 'bag' ? 'Bag view' : 'Gear view'}</div>
+                <div className="inv-section-copy">
+                  {mobileSection === 'bag'
+                    ? 'Browse loot here. Tap an item to open actions, use Pick Up to move it, or hold to quick-equip or use it.'
+                    : 'Manage what you are wearing here. Tap an equipment slot to place or swap the held item.'}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {mobileMode && tab === 'gems' && (
+          <>
+            <div className="inv-mobile-view-tabs inv-mobile-view-tabs--gems">
+              <button
+                type="button"
+                className={`inv-mobile-view-tab${mobileGemStep === 'supports' ? ' inv-mobile-view-tab--active' : ''}`}
+                onClick={() => setMobileGemStep('supports')}
+              >
+                ① Support Gems
+              </button>
+              <button
+                type="button"
+                className={`inv-mobile-view-tab${mobileGemStep === 'sockets' ? ' inv-mobile-view-tab--active' : ''}`}
+                onClick={() => setMobileGemStep('sockets')}
+              >
+                ② Link Skills
+              </button>
+            </div>
+
+            <div className="inv-section-card inv-section-card--gems">
+              <div>
+                <div className="inv-section-step">{selectedSupportGem ? 'Step 2 · Link the selected support' : 'Step 1 · Choose a support gem'}</div>
+                <div className="inv-section-copy">
+                  {selectedSupportGem
+                    ? <>Selected: <strong>{selectedSupportGem.name}</strong>. Open <strong>Link Skills</strong> and tap a highlighted compatible socket.</>
+                    : 'Start by picking a support gem from your inventory, then move to Link Skills to attach it.'}
+                </div>
+              </div>
+              {selectedSupportGem && (
+                <div className="inv-section-actions">
+                  <button type="button" className="btn btn-secondary" onClick={() => setMobileGemStep('supports')}>Change</button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setSelectedSupportGemUid(null)}>Clear</button>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {/* ── Tab Content ─────────────────────────────────── */}
@@ -450,17 +634,35 @@ export function InventoryScreen({
 
         {/* ── Gems Tab ────────────────────────────────────── */}
         {tab === 'gems' && (
-          <div className={`inv-body inv-body--gems${mobileMode ? ' inv-body--mobile' : ''}`}>
-            <GemPanel
-              primarySkill={primarySkill ?? null}
-              activeSkills={activeSkills ?? []}
-              selectedSupportGem={selectedSupportGem}
-              onClearSelectedGem={() => setSelectedSupportGemUid(null)}
-              onSocketGem={onSocketGem}
-              onUnsocketGem={onUnsocketGem}
-            />
-            {!mobileMode && <div className="inv-divider" />}
-            {renderInventoryGrid(false)}
+          <div className={`inv-body inv-body--gems${mobileMode ? ' inv-body--mobile inv-body--gems-mobile' : ''}`}>
+            {mobileMode ? (
+              mobileGemStep === 'supports' ? (
+                renderGemSelectionList()
+              ) : (
+                <GemPanel
+                  primarySkill={primarySkill ?? null}
+                  activeSkills={activeSkills ?? []}
+                  selectedSupportGem={selectedSupportGem}
+                  onClearSelectedGem={() => setSelectedSupportGemUid(null)}
+                  onSocketGem={onSocketGem}
+                  onUnsocketGem={onUnsocketGem}
+                  mobileMode={mobileMode}
+                />
+              )
+            ) : (
+              <>
+                <GemPanel
+                  primarySkill={primarySkill ?? null}
+                  activeSkills={activeSkills ?? []}
+                  selectedSupportGem={selectedSupportGem}
+                  onClearSelectedGem={() => setSelectedSupportGemUid(null)}
+                  onSocketGem={onSocketGem}
+                  onUnsocketGem={onUnsocketGem}
+                />
+                <div className="inv-divider" />
+                {renderInventoryGrid(false)}
+              </>
+            )}
           </div>
         )}
         </div>
@@ -468,6 +670,48 @@ export function InventoryScreen({
 
       {mobileMode && (
         <button className="btn inv-close-fab" onClick={onClose} aria-label="Close inventory">✕</button>
+      )}
+
+      {mobileMode && selectedMobileItem && !cursorItem && tab === 'equipment' && (
+        <div className="inv-item-sheet" role="dialog" aria-label="Selected inventory item actions">
+          <div className="inv-item-sheet__header">
+            <div>
+              <div className="inv-item-sheet__eyebrow">Selected item</div>
+              <div className="inv-item-sheet__title" style={{ color: RARITY_COLORS[selectedMobileItem.rarity] ?? RARITY_COLORS.normal }}>
+                {selectedMobileItem.name}
+              </div>
+              <div className="inv-item-sheet__meta">
+                {(selectedMobileItem.slot ?? selectedMobileItem.type ?? 'item').toString().replaceAll('_', ' ')} · {selectedMobileItem.gridW ?? 1}×{selectedMobileItem.gridH ?? 1}
+              </div>
+            </div>
+            <button type="button" className="inv-item-sheet__close" onClick={() => setSelectedMobileItemUid(null)} aria-label="Close item actions">✕</button>
+          </div>
+
+          {selectedMobileItem.description && (
+            <p className="inv-item-sheet__desc">{selectedMobileItem.description}</p>
+          )}
+
+          <div className="inv-item-sheet__actions">
+            <button type="button" className="btn btn-primary" onClick={() => handleSelectedItemAction('move')}>
+              Pick Up / Move
+            </button>
+            {canQuickAction && (
+              <button type="button" className="btn btn-secondary" onClick={() => handleSelectedItemAction('quick')}>
+                {quickActionLabel}
+              </button>
+            )}
+            {canManageInGems && (
+              <button type="button" className="btn btn-secondary" onClick={() => handleSelectedItemAction('gems')}>
+                Open Gems
+              </button>
+            )}
+            {onDropItem && (
+              <button type="button" className="btn btn-secondary inv-item-sheet__danger" onClick={() => handleSelectedItemAction('drop')}>
+                Drop
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {mobileMode && cursorItem && (
