@@ -10,9 +10,10 @@
  * Generated itemDef is compatible with `new PassiveItem(def)` — all stats
  * are pre-merged so PassiveItem.apply() / remove() work with one snapshot.
  */
-import { AFFIX_POOL } from './affixes.js';
+import { AFFIX_POOL, isAffixTierUnlocked } from './affixes.js';
 import { getAffixCountForRarity } from './rarityProfiles.js';
 import { ITEM_GENERATION_TUNING } from '../content/tuning/index.js';
+import { clampAreaLevel } from '../config/scalingConfig.js';
 
 // Rarity display colors — mirrors PoE naming tiers
 export const RARITY_COLORS = {
@@ -87,14 +88,27 @@ export function rollRarity(difficulty, isChampion = false) {
   return rarity;
 }
 
+function resolveItemLevel(baseDef, options = {}) {
+  const raw =
+    options.itemLevel
+    ?? baseDef?.itemLevel
+    ?? baseDef?.baseStats?.itemLevel
+    ?? baseDef?.mapItemLevel
+    ?? 1;
+  return clampAreaLevel(raw);
+}
+
 /**
  * Generate a procedural item definition.
  *
  * @param {object} baseDef — raw entry from ITEM_DEFS (items.js)
  * @param {'normal'|'magic'|'rare'} rarity
+ * @param {{itemLevel?: number}} [options]
  * @returns {object} generated itemDef — a plain config object accepted by PassiveItem
  */
-export function generateItem(baseDef, rarity) {
+export function generateItem(baseDef, rarity, options = {}) {
+  const itemLevel = resolveItemLevel(baseDef, options);
+
   // Unique items bypass the affix roller entirely
   if (baseDef.isUnique) {
     return {
@@ -103,6 +117,7 @@ export function generateItem(baseDef, rarity) {
       rarity:    'unique',
       color:     UNIQUE_COLOR,
       baseColor: baseDef.color,
+      itemLevel,
       affixes:   [],
       baseStats: baseDef.stats,
     };
@@ -115,6 +130,7 @@ export function generateItem(baseDef, rarity) {
   const eligible = AFFIX_POOL
     .filter((a) => {
       if (!a.slots.includes(baseDef.slot)) return false;
+      if (!isAffixTierUnlocked(itemLevel, a.tier)) return false;
       // If the affix has a defenseTypes restriction, the base must match at least one
       if (a.defenseTypes) {
         return a.defenseTypes.some((dt) => baseDefenseTypes.includes(dt));
@@ -151,6 +167,7 @@ export function generateItem(baseDef, rarity) {
     color:     RARITY_COLORS[rarity],
     // Preserve original item color for possible future icon use
     baseColor: baseDef.color,
+    itemLevel,
     affixes:   chosen.map((a) => ({
       id: a.id,
       type: a.type,

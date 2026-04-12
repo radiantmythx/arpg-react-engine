@@ -125,6 +125,8 @@ export class CharacterSave {
       xp:             0,
       health:         charDef.baseStats?.maxHealth ?? 100,
       maxHealth:      charDef.baseStats?.maxHealth ?? 100,
+      mana:           charDef.baseStats?.maxMana ?? 100,
+      maxMana:        charDef.baseStats?.maxMana ?? 100,
       energyShield:   0,
       maxEnergyShield: 0,
       gold: 0,

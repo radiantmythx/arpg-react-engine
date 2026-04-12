@@ -39,7 +39,10 @@ function fmtStat(key, value) {
     damageMult:       (v) => `+${Math.round((v - 1) * 100)}% weapon damage`,
     cooldownMult:     (v) => `${Math.round((v - 1) * 100)}% weapon cooldown`,
     maxHealthFlat:    (v) => `+${v} max life`,
+    maxManaFlat:      (v) => `+${v} max mana`,
     healthRegenPerS:  (v) => `+${v} life regen/s`,
+    manaRegenPerS:    (v) => `+${v} mana regen/s`,
+    manaCostMult:     (v) => `${Math.round((v - 1) * 100)}% mana costs`,
     xpMultiplier:     (v) => `+${Math.round((v - 1) * 100)}% XP gain`,
     speedFlat:        (v) => `+${v} move speed`,
     pickupRadiusFlat: (v) => `+${v} pickup radius`,
@@ -61,6 +64,8 @@ export function CharacterSheet({ hud, characterName = '', onClose, mobileMode = 
     level = 1,
     health = 0,
     maxHealth = 0,
+    mana = 0,
+    maxMana = 0,
     energyShield = 0,
     maxEnergyShield = 0,
     kills = 0,
@@ -96,7 +101,7 @@ export function CharacterSheet({ hud, characterName = '', onClose, mobileMode = 
 
   const selectedGearItem = selectedGearSlot ? (equipment?.[selectedGearSlot] ?? null) : null;
   const selectedGearStats = selectedGearItem
-    ? Object.entries(selectedGearItem.baseStats ?? {}).filter(([k]) => k !== 'mapTier' && k !== 'mapItemLevel')
+    ? Object.entries(selectedGearItem.baseStats ?? {}).filter(([k]) => k !== 'mapItemLevel')
     : [];
   const selectedGearAffixes = selectedGearItem?.affixes ?? [];
 
@@ -136,6 +141,7 @@ export function CharacterSheet({ hud, characterName = '', onClose, mobileMode = 
                   <h3>Defenses</h3>
                   <div className="cs-row"><span>Level</span><strong>{level}</strong></div>
                   <div className="cs-row"><span>Life</span><strong>{Math.ceil(health)} / {maxHealth}</strong></div>
+                  <div className="cs-row"><span>Mana</span><strong>{Math.ceil(mana)} / {Math.round(maxMana)}</strong></div>
                   <div className="cs-row"><span>Energy Shield</span><strong>{Math.ceil(energyShield)} / {Math.round(maxEnergyShield)}</strong></div>
                   <div className="cs-row"><span>Estimated Life %</span><strong>{maxHealth > 0 ? pct(health / maxHealth) : '0%'}</strong></div>
                 </div>

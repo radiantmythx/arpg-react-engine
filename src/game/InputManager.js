@@ -40,6 +40,11 @@ export class InputManager {
     };
   }
 
+  /** Returns true if the given key code was pressed this frame. */
+  wasPressed(code) {
+    return this._justPressed.has(code);
+  }
+
   /** Clear the rising-edge set. Must be called at the end of every update frame. */
   clearJustPressed() {
     this._justPressed.clear();

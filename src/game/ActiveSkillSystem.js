@@ -1,4 +1,5 @@
 import { makeSupportInstance } from './data/supports.js';
+import { openSupportSlotsForSkill } from './supportSockets.js';
 
 /**
  * ActiveSkillSystem — Manages 3 active skill slots (Q / E / R).
@@ -133,9 +134,11 @@ export class ActiveSkillSystem {
     const isAttack = skill.tags?.includes('Attack');
     const speed = isAttack ? (player.attackSpeed ?? 1.0) : (player.castSpeed ?? 1.0);
     const actualCastTime = (skill.castTime ?? 0) / speed;
+    const manaCost = this._resolveManaCost(skill, player);
 
     if (skill._isPureSkill) {
       if (skill._timer < skill.cooldown) return false;
+      if (!player.spendMana(manaCost)) return false;
 
       if (actualCastTime > 0.01) {
         this._castingTimers[slotIdx] = {
@@ -163,6 +166,7 @@ export class ActiveSkillSystem {
     // Weapon-based active skill: uses the weapon's own _timer
     if (skill.isActive) {
       if (skill._timer < skill.cooldown) return false;
+      if (!player.spendMana(manaCost)) return false;
 
       if (actualCastTime > 0.01) {
         this._castingTimers[slotIdx] = {
@@ -193,7 +197,7 @@ export class ActiveSkillSystem {
    */
   grantSkillXP(amount) {
     for (const slot of this.slots) {
-      if (slot?._isPureSkill && typeof slot.addXP === 'function') {
+      if (slot && typeof slot.addXP === 'function') {
         slot.addXP(amount);
       }
     }
@@ -225,6 +229,8 @@ export class ActiveSkillSystem {
       const remaining = Math.max(0, s.cooldown - s._timer);
       const ct = this._castingTimers[i];
       const computed = typeof s.computedStats === 'function' ? (s.computedStats(player) ?? {}) : {};
+      const manaCost = this._resolveManaCost(s, player, computed);
+      const canAfford = player ? player.canSpendMana(manaCost) : true;
       const supportSlots = (s.supportSlots ?? []).map((sup) =>
         sup ? { id: sup.id, name: sup.name, icon: sup.icon ?? '◆' } : null
       );
@@ -236,9 +242,11 @@ export class ActiveSkillSystem {
         tags:         s.tags ?? [],
         cooldown:     s.cooldown,
         remaining:    parseFloat(remaining.toFixed(1)),
-        ready:        remaining <= 0 && !ct,
+        ready:        remaining <= 0 && !ct && canAfford,
         casting:      ct ? parseFloat(Math.max(0, ct.remaining).toFixed(2)) : 0,
-        openSlots:    (s.supportSlots ?? []).length,
+        manaCost,
+        canAfford,
+        openSlots:    this._openSupportSlots(s),
         supportSlots,
         // XP / levelling fields
         level:        s.level ?? 1,
@@ -248,13 +256,32 @@ export class ActiveSkillSystem {
                         ? (s.constructor.xpNeeded?.(s.level ?? 1) ?? 0)
                         : 0,
         isMaxLevel:   (s.level ?? 1) >= (s.maxLevel ?? 20),
-        maxLevelBonus: s.maxLevelBonus ?? null,
         castTime:     s.castTime ?? 0,
         computedDamage: Number.isFinite(computed.damage) ? computed.damage : null,
         damageBreakdown: computed.damageBreakdown ?? null,
         damageRange: computed.damageRange ?? null,
       };
     });
+  }
+
+  _resolveManaCost(skill, player, precomputed = null) {
+    if (!skill) return 0;
+    const computed = precomputed ?? (typeof skill.computedStats === 'function' ? (skill.computedStats(player) ?? {}) : {});
+    const supportMult = Math.max(0.1, computed.manaCostMult ?? 1);
+    const baseCost = Math.max(
+      0,
+      Math.round(
+        computed.manaCost
+        ?? skill.manaCost
+        ?? (skill.castTime || skill.cooldown ? (3 + (skill.cooldown ?? 0) * 1.2 + (skill.castTime ?? 0) * 6) : 0),
+      ),
+    );
+    const mult = Math.max(0.1, player?.manaCostMult ?? 1) * supportMult;
+    return Math.max(0, Math.round(baseCost * mult));
+  }
+
+  _openSupportSlots(skill) {
+    return openSupportSlotsForSkill(skill);
   }
 
   // ── Full serialization (for CharacterSave) ──────────────────────────────
@@ -289,6 +316,16 @@ export class ActiveSkillSystem {
       return {
         type: 'weapon',
         id:   s.id,
+        level: s.level ?? 1,
+        xp: s._xp ?? 0,
+        supportSlots: (s.supportSlots ?? []).map((sup) => {
+          if (!sup) return null;
+          return {
+            id:   sup.id,
+            name: sup.name,
+            icon: sup.icon ?? '◆',
+          };
+        }),
       };
     });
   }
@@ -307,9 +344,16 @@ export class ActiveSkillSystem {
   socketGem(skillId, slotIndex, gemItemDef) {
     const skill = this.findSkillById(skillId);
     if (!skill) return false;
-    if (!Array.isArray(skill.supportSlots) || slotIndex >= skill.supportSlots.length) return false;
+    if (!Array.isArray(skill.supportSlots) || slotIndex < 0 || slotIndex >= this._openSupportSlots(skill)) return false;
     const instance = makeSupportInstance(gemItemDef);
     if (!instance) return false;
+    const tags = skill.tags ?? [];
+    for (const req of instance.requiredTags ?? []) {
+      if (!tags.includes(req)) return false;
+    }
+    for (const bad of instance.incompatibleTags ?? []) {
+      if (tags.includes(bad)) return false;
+    }
     skill.supportSlots[slotIndex] = instance;
     return true;
   }
@@ -321,6 +365,7 @@ export class ActiveSkillSystem {
   unsocketGem(skillId, slotIndex) {
     const skill = this.findSkillById(skillId);
     if (!skill || !Array.isArray(skill.supportSlots)) return null;
+    if (slotIndex < 0 || slotIndex >= skill.supportSlots.length) return null;
     const instance = skill.supportSlots[slotIndex];
     if (!instance) return null;
     skill.supportSlots[slotIndex] = null;

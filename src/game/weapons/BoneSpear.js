@@ -9,6 +9,12 @@
 
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import {
+  buildProjectileConfig,
+  buildSpreadAngles,
+  getProjectileSupportState,
+  scaleProjectileMotion,
+} from '../projectileSupport.js';
 
 /** How long a ground crack decal persists (seconds). */
 const CRACK_LIFETIME = 2.0;
@@ -42,23 +48,28 @@ export class BoneSpear extends Weapon {
     const dy = ty - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const stats = this.computedStats(player);
-    const speed = this.config.projectileSpeed;
+    const supportState = getProjectileSupportState(stats, {
+      playerProjectileBonus: player.projectileCountBonus ?? 0,
+    });
+    const motion = scaleProjectileMotion(this.config.projectileSpeed, this.config.projectileLifetime, supportState);
+    const baseAngle = Math.atan2(dy / dist, dx / dist);
 
-    const proj = entities.acquireProjectile(
-      player.x, player.y,
-      (dx / dist) * speed, (dy / dist) * speed,
-      {
-        damage:          stats.damage,
-        damageBreakdown: stats.damageBreakdown,
-        radius:          this.config.projectileRadius,
-        color:           this.config.color,
-        lifetime:        this.config.projectileLifetime,
-        piercing:        true,
-        onExpire:        (proj) => this._cracks.push({ x: proj.x, y: proj.y, age: 0 }),
-        sourceTags:      this.tags,
-      },
-    );
-    if (proj) this._tracked.set(proj, true);
+    for (const angle of buildSpreadAngles(baseAngle, supportState.totalProjectiles, 0.12)) {
+      const proj = entities.acquireProjectile(
+        player.x, player.y,
+        Math.cos(angle) * motion.speed, Math.sin(angle) * motion.speed,
+        buildProjectileConfig({
+          damage:          stats.damage,
+          damageBreakdown: stats.damageBreakdown,
+          radius:          this.config.projectileRadius,
+          color:           this.config.color,
+          lifetime:        motion.lifetime,
+          piercing:        true,
+          onExpire:        (expiredProj) => this._cracks.push({ x: expiredProj.x, y: expiredProj.y, age: 0 }),
+        }, supportState, this.tags),
+      );
+      if (proj) this._tracked.set(proj, true);
+    }
     if (engine) engine.onSkillFire();
   }
 

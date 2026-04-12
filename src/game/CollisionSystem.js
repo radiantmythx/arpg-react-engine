@@ -1,5 +1,6 @@
 import { SpatialGrid } from './SpatialGrid.js';
 import { applyAilmentsOnHit, resolvePenetrationMap } from './data/skillTags.js';
+import { scaleDamageMap } from './damageUtils.js';
 
 /** Returns true if two circle entities overlap. */
 function circlesOverlap(a, b) {
@@ -49,6 +50,114 @@ export class CollisionSystem {
     return this._enemyGrid.activeCellCount;
   }
 
+  _findChainTarget(proj, sourceEnemy, hostiles) {
+    const maxDistSq = (proj.chainRadius ?? 180) * (proj.chainRadius ?? 180);
+    let best = null;
+    let bestDistSq = Infinity;
+    for (const hostile of hostiles) {
+      if (!hostile.active || hostile === sourceEnemy) continue;
+      if (proj.hitEnemies?.has(hostile)) continue;
+      const dx = hostile.x - sourceEnemy.x;
+      const dy = hostile.y - sourceEnemy.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > maxDistSq || distSq >= bestDistSq) continue;
+      best = hostile;
+      bestDistSq = distSq;
+    }
+    return best;
+  }
+
+  _retargetProjectileToEnemy(proj, sourceEnemy, targetEnemy) {
+    const speed = Math.hypot(proj.vx, proj.vy) || 1;
+    const dx = targetEnemy.x - sourceEnemy.x;
+    const dy = targetEnemy.y - sourceEnemy.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    proj.x = sourceEnemy.x;
+    proj.y = sourceEnemy.y;
+    proj.vx = (dx / dist) * speed;
+    proj.vy = (dy / dist) * speed;
+  }
+
+  _spawnForkProjectiles(proj, sourceEnemy, entities) {
+    if ((proj.forkCount ?? 0) <= 0) return false;
+    const baseAngle = Math.atan2(proj.vy, proj.vx);
+    const remainingLifetime = Math.max(0.1, proj.lifetime - proj.age);
+    const speed = Math.hypot(proj.vx, proj.vy) || 1;
+    const splitCount = Math.max(2, proj.splitProjectiles ?? 2);
+    const angleStep = proj.forkSpread ?? 0.34;
+    for (let index = 0; index < splitCount; index++) {
+      const side = index - (splitCount - 1) / 2;
+      const angle = baseAngle + side * angleStep;
+      const child = entities.acquireProjectile(
+        sourceEnemy.x,
+        sourceEnemy.y,
+        Math.cos(angle) * speed,
+        Math.sin(angle) * speed,
+        {
+          damage: proj.damage,
+          damageBreakdown: scaleDamageMap(proj.damageBreakdown, 1),
+          radius: proj.radius,
+          color: proj.color,
+          lifetime: remainingLifetime,
+          piercing: proj.piercing,
+          pierceCount: Number.isFinite(proj.pierceCount) ? proj.pierceCount : undefined,
+          forkCount: Math.max(0, (proj.forkCount ?? 0) - 1),
+          forkSpread: proj.forkSpread,
+          splitProjectiles: proj.splitProjectiles,
+          chainCount: proj.chainCount,
+          chainRadius: proj.chainRadius,
+          chainDamageMult: proj.chainDamageMult,
+          chainWeapon: proj.chainWeapon,
+          chainConfig: proj.chainConfig,
+          onExpire: proj.onExpire,
+          onHit: proj.onHit,
+          gravity: proj.gravity,
+          _spawnX: sourceEnemy.x,
+          _spawnY: sourceEnemy.y,
+          _homing: false,
+          sourceTags: proj.sourceTags,
+        },
+      );
+      if (child) {
+        if (!child.hitEnemies) child.hitEnemies = new Set();
+        if (proj.hitEnemies) {
+          for (const enemy of proj.hitEnemies) child.hitEnemies.add(enemy);
+        }
+        child.hitEnemies.add(sourceEnemy);
+      }
+    }
+    return true;
+  }
+
+  _continueProjectileAfterHit(proj, enemy, entities) {
+    const hostiles = entities.getHostiles();
+    if (proj.hitEnemies) proj.hitEnemies.add(enemy);
+
+    if ((proj.chainCount ?? 0) > 0) {
+      const target = this._findChainTarget(proj, enemy, hostiles);
+      if (target) {
+        proj.chainCount = Math.max(0, proj.chainCount - 1);
+        proj.damage = Math.max(1, Math.round(proj.damage * (proj.chainDamageMult ?? 0.75)));
+        if (proj.damageBreakdown) {
+          proj.damageBreakdown = scaleDamageMap(proj.damageBreakdown, proj.chainDamageMult ?? 0.75);
+        }
+        this._retargetProjectileToEnemy(proj, enemy, target);
+        return true;
+      }
+    }
+
+    if ((proj.pierceCount ?? 0) > 0 || proj.pierceCount === Number.POSITIVE_INFINITY) {
+      if (Number.isFinite(proj.pierceCount)) proj.pierceCount = Math.max(0, proj.pierceCount - 1);
+      return true;
+    }
+
+    if (this._spawnForkProjectiles(proj, enemy, entities)) {
+      return false;
+    }
+
+    return false;
+  }
+
   /**
    * Projectiles vs Enemies — broad phase via enemy grid.
    * On hit: deal damage; deactivate non-piercing projectiles.
@@ -63,9 +172,9 @@ export class CollisionSystem {
         if (!enemy.active) continue;
         if (proj.hitEnemies && proj.hitEnemies.has(enemy)) continue;
         if (circlesOverlap(proj, enemy)) {
-          engine.onEnemyHit(enemy, proj.damage);
           const penetrationMap = resolvePenetrationMap(proj.sourceTags, engine.player);
-          enemy.takeDamage(proj.damageBreakdown ?? proj.damage, proj.sourceTags, penetrationMap);
+          const dealt = enemy.takeDamage(proj.damageBreakdown ?? proj.damage, proj.sourceTags, penetrationMap);
+          engine.onEnemyHit(enemy, dealt);
 
           // Elemental ailments from projectile source tags
           if (proj.sourceTags.length && engine.player) {
@@ -75,20 +184,19 @@ export class CollisionSystem {
           // onHit burst (e.g. Fireball AoE detonation)
           if (proj.onHit) proj.onHit(proj, entities, engine);
 
-          if (!proj.piercing) {
-            proj.active = false;
-          } else {
-            proj.hitEnemies.add(enemy);
+          if (proj.chainWeapon && typeof proj.chainWeapon.processChain === 'function') {
+            const chainCfg = proj.chainConfig ?? proj.chainWeapon.config;
+            const hopDecay = chainCfg?.chainDecay ?? 0.25;
+            const hopDamage = Math.round(proj.damage * (1 - hopDecay));
+            const hops = chainCfg?.maxChains ?? 0;
+            if (hopDamage > 0 && hops > 0) {
+              proj.chainWeapon.processChain(enemy, entities.getHostiles(), hopDamage, hops, new Set([enemy]), chainCfg);
+            }
           }
+
+          proj.active = this._continueProjectileAfterHit(proj, enemy, entities);
           if (!enemy.active) {
             engine.onEnemyKilled(enemy);
-            // Chain Lightning arc processing
-            if (proj.chainWeapon && typeof proj.chainWeapon.processChain === 'function') {
-              const alreadyHit = new Set([enemy]);
-              const hopDmg = Math.round(proj.damage * (1 - (proj.chainWeapon.config.chainDecay ?? 0.25)));
-              const hops   = proj.chainWeapon.config.maxChains ?? 3;
-              proj.chainWeapon.processChain(enemy, entities.getHostiles(), hopDmg, hops, alreadyHit);
-            }
           }
           if (!proj.active) break;
         }

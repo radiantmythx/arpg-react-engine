@@ -1,5 +1,11 @@
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import {
+  buildProjectileConfig,
+  buildSpreadAngles,
+  getProjectileSupportState,
+  scaleProjectileMotion,
+} from '../projectileSupport.js';
 
 export class PhantomBlade extends Weapon {
   constructor() {
@@ -16,25 +22,23 @@ export class PhantomBlade extends Weapon {
     if (len === 0) return;
 
     const stats = this.computedStats(player);
-    const speed = this.config.projectileSpeed;
-    const total = 1 + (player.projectileCountBonus ?? 0);
-    const spread = 0.20; // radians between projectiles
+    const supportState = getProjectileSupportState(stats, {
+      playerProjectileBonus: player.projectileCountBonus ?? 0,
+    });
+    const motion = scaleProjectileMotion(this.config.projectileSpeed, this.config.projectileLifetime, supportState);
     const baseAngle = Math.atan2(dy / len, dx / len);
-    const startAngle = baseAngle - spread * (total - 1) / 2;
 
-    for (let i = 0; i < total; i++) {
-      const a = startAngle + spread * i;
+    for (const angle of buildSpreadAngles(baseAngle, supportState.totalProjectiles, 0.20)) {
       entities.acquireProjectile(
-        player.x, player.y, Math.cos(a) * speed, Math.sin(a) * speed,
-        {
+        player.x, player.y, Math.cos(angle) * motion.speed, Math.sin(angle) * motion.speed,
+        buildProjectileConfig({
           damage:          stats.damage,
           damageBreakdown: stats.damageBreakdown,
           radius:          this.config.projectileRadius,
           color:           this.config.color,
-          lifetime:        this.config.projectileLifetime,
+          lifetime:        motion.lifetime,
           piercing:        this.config.piercing ?? false,
-          sourceTags:      this.tags,
-        },
+        }, supportState, this.tags),
       );
     }
     if (engine) engine.onSkillFire();

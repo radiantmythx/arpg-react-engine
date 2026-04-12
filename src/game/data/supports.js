@@ -15,6 +15,43 @@
  *   onActivate(player, entities, engine, skill) — optional; called after the skill fires
  */
 
+import { SUPPORT_TUNING } from '../content/tuning/index.js';
+import { SCALING_CONFIG } from '../config/scalingConfig.js';
+
+function clampSupportLevel(level) {
+  return Math.max(1, Math.min(20, Math.floor(Number(level) || 1)));
+}
+
+function lerpByLevel(range = [1, 1], level = 1) {
+  const [a = 1, b = 1] = Array.isArray(range) ? range : [1, 1];
+  const t = (clampSupportLevel(level) - 1) / 19;
+  return a + (b - a) * t;
+}
+
+function supportCategoryById(id) {
+  const throughput = new Set(['pierce', 'fork', 'chain', 'gmp', 'spell_echo', 'spell_cascade', 'controlled_destruction', 'concentrated_effect', 'increased_aoe']);
+  const ailment = new Set(['deadly_ailments', 'swift_affliction', 'hypothermia', 'vile_toxins', 'burning_damage']);
+  if (throughput.has(id)) return 'throughput';
+  if (ailment.has(id)) return 'ailment';
+  return 'utility';
+}
+
+function identityForKey(key) {
+  if (/mult|factor/i.test(key) || key === '_speedMult' || key === '_rangeMult') return 1;
+  return 0;
+}
+
+function applySupportEffectCurve(stats, before, curve) {
+  const keys = new Set([...Object.keys(before), ...Object.keys(stats)]);
+  for (const key of keys) {
+    if (key === 'manaCostMult') continue;
+    const afterValue = stats[key];
+    if (!Number.isFinite(afterValue)) continue;
+    const start = Number.isFinite(before[key]) ? before[key] : identityForKey(key);
+    stats[key] = start + (afterValue - start) * curve;
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function _spellEchoActivate(player, entities, engine, skill) {
   // Delay a second identical activation by 0.15 s at 90% damage
@@ -428,10 +465,24 @@ export const SUPPORT_MAP = Object.fromEntries(SUPPORT_POOL.map((s) => [s.id, s])
 export function makeSupportInstance(gemItemDef) {
   const def = SUPPORT_MAP[gemItemDef?.gemId];
   if (!def) return null;
+  const category = supportCategoryById(def.id);
+  const categoryCurve = SCALING_CONFIG.gem.support[category] ?? SCALING_CONFIG.gem.support.utility;
+  const manaMult = SUPPORT_TUNING.manaCostMultiplierBySupportId?.[def.id]
+    ?? SUPPORT_TUNING.defaultManaCostMultiplier
+    ?? 1;
   return {
     id:           def.id,
     name:         def.name,
-    modify:       def.modify?.bind(def) ?? (() => {}),
+    icon:         def.icon ?? '◆',
+    modify: (stats, skill) => {
+      const supportLevel = skill?.level ?? gemItemDef?.level ?? 1;
+      const effectCurve = lerpByLevel(categoryCurve.effectRange, supportLevel);
+      const manaCurve = lerpByLevel(categoryCurve.manaMult, supportLevel);
+      const before = { ...stats };
+      stats.manaCostMult = (stats.manaCostMult ?? 1) * manaMult * manaCurve;
+      if (def.modify) def.modify.call(def, stats, skill);
+      applySupportEffectCurve(stats, before, effectCurve);
+    },
     onActivate:   def.onActivate?.bind(def) ?? null,
     requiredTags: def.requiredTags,
     incompatibleTags: def.incompatibleTags,
@@ -465,6 +516,8 @@ export function createSupportGemItem(supportDef) {
     id: `support_gem_${supportDef.id}`,
     type: 'support_gem',
     gemId: supportDef.id,
+    level: 1,
+    maxLevel: 20,
     name: `${supportDef.name} Support`,
     rarity: 'magic',
     slot: 'gem',

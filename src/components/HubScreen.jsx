@@ -8,23 +8,14 @@ export function HubScreen({ characterName, nearbyInteractable, onSwitchCharacter
   return (
     <>
       <div className="hub-topbar">
-        <div className="hub-topbar-left">
-          <span className="hub-topbar-label">Hub</span>
-          {characterName ? <span className="hub-topbar-char">{characterName}</span> : null}
-        </div>
+        {!mobileMode && (
+          <div className="hub-topbar-left">
+            <span className="hub-topbar-label">Hub</span>
+            {characterName ? <span className="hub-topbar-char">{characterName}</span> : null}
+          </div>
+        )}
         <button className="hub-switch-btn" onClick={onSwitchCharacter}>{compactMode ? 'Switch' : 'Switch Character'}</button>
       </div>
-
-      {!mobileMode && (
-        <div className="hub-help-strip">
-          <span>Move: WASD</span>
-          <span>Interact: Click</span>
-          <span>Inventory: I</span>
-          <span>Tree: P</span>
-          <span>Vendor: V Spot</span>
-          <span>Sheet: C</span>
-        </div>
-      )}
 
       {!mobileMode && nearbyInteractable ? (
         <div className="hub-interact-prompt">

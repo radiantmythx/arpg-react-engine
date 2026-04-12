@@ -19,7 +19,7 @@ export function MapCompleteScreen({ stats = {}, onReturnHub, onStay }) {
         {stats.bossName ? <div className="mcs-boss">Boss Slain: {stats.bossName}</div> : null}
 
         <div className="mcs-grid">
-          <div className="mcs-cell"><span>Tier</span><strong>{stats.tier ?? 1}</strong></div>
+          <div className="mcs-cell"><span>Area Lv.</span><strong>{stats.areaLevel ?? 1}</strong></div>
           <div className="mcs-cell"><span>Level</span><strong>{stats.level ?? 1}</strong></div>
           <div className="mcs-cell"><span>Kills</span><strong>{stats.kills ?? 0}</strong></div>
           <div className="mcs-cell"><span>Time</span><strong>{fmt(stats.elapsed ?? 0)}</strong></div>

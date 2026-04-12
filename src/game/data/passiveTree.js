@@ -16,6 +16,7 @@
  * Stats use the same keys as PassiveItem:
  *   damageMult, cooldownMult, speedFlat, maxHealthFlat,
  *   healthRegenPerS, pickupRadiusFlat, xpMultiplier,
+ *   maxManaFlat, manaRegenPerS, manaCostMult,
  *   projectileCountBonus (new in Phase 6)
  *
  * SVG coordinate space: 0 0 900 900, origin top-left.
@@ -62,9 +63,54 @@ export function applyStats(player, stats) {
     player.xpMultiplier = (player.xpMultiplier ?? 1) * stats.xpMultiplier;
     snap.xpMultiplier = stats.xpMultiplier;
   }
+  if (stats.maxManaFlat !== undefined) {
+    player.maxMana = (player.maxMana ?? 0) + stats.maxManaFlat;
+    if (stats.maxManaFlat > 0) {
+      player.mana = Math.min((player.mana ?? 0) + stats.maxManaFlat, player.maxMana);
+    } else {
+      player.mana = Math.min(player.mana ?? 0, player.maxMana);
+    }
+    snap.maxManaFlat = stats.maxManaFlat;
+  }
+  if (stats.manaRegenPerS !== undefined) {
+    player.manaRegenPerS = (player.manaRegenPerS ?? 0) + stats.manaRegenPerS;
+    snap.manaRegenPerS = stats.manaRegenPerS;
+  }
+  if (stats.manaCostMult !== undefined) {
+    player.manaCostMult = (player.manaCostMult ?? 1) * stats.manaCostMult;
+    snap.manaCostMult = stats.manaCostMult;
+  }
   if (stats.projectileCountBonus !== undefined) {
     player.projectileCountBonus = (player.projectileCountBonus ?? 0) + stats.projectileCountBonus;
     snap.projectileCountBonus = stats.projectileCountBonus;
+  }
+  if (stats.potionChargeGainMult !== undefined) {
+    player.potionChargeGainMult = (player.potionChargeGainMult ?? 1) * stats.potionChargeGainMult;
+    snap.potionChargeGainMult = stats.potionChargeGainMult;
+  }
+  if (stats.potionChargeGainFlat !== undefined) {
+    player.potionChargeGainFlat = (player.potionChargeGainFlat ?? 0) + stats.potionChargeGainFlat;
+    snap.potionChargeGainFlat = stats.potionChargeGainFlat;
+  }
+  if (stats.potionChargeRegenPerS !== undefined) {
+    player.potionChargeRegenPerS = (player.potionChargeRegenPerS ?? 0) + stats.potionChargeRegenPerS;
+    snap.potionChargeRegenPerS = stats.potionChargeRegenPerS;
+  }
+  if (stats.potionDurationMult !== undefined) {
+    player.potionDurationMult = (player.potionDurationMult ?? 1) * stats.potionDurationMult;
+    snap.potionDurationMult = stats.potionDurationMult;
+  }
+  if (stats.potionEffectMult !== undefined) {
+    player.potionEffectMult = (player.potionEffectMult ?? 1) * stats.potionEffectMult;
+    snap.potionEffectMult = stats.potionEffectMult;
+  }
+  if (stats.potionMaxChargesMult !== undefined) {
+    player.potionMaxChargesMult = (player.potionMaxChargesMult ?? 1) * stats.potionMaxChargesMult;
+    snap.potionMaxChargesMult = stats.potionMaxChargesMult;
+  }
+  if (stats.potionChargesPerUseMult !== undefined) {
+    player.potionChargesPerUseMult = (player.potionChargesPerUseMult ?? 1) * stats.potionChargesPerUseMult;
+    snap.potionChargesPerUseMult = stats.potionChargesPerUseMult;
   }
   return snap;
 }
@@ -91,8 +137,39 @@ export function removeStats(player, snapshot) {
   if (snapshot.xpMultiplier !== undefined) {
     player.xpMultiplier = (player.xpMultiplier ?? 1) / snapshot.xpMultiplier;
   }
+  if (snapshot.maxManaFlat !== undefined) {
+    player.maxMana = Math.max(0, (player.maxMana ?? 0) - snapshot.maxManaFlat);
+    player.mana = Math.min(player.mana ?? 0, player.maxMana);
+  }
+  if (snapshot.manaRegenPerS !== undefined) {
+    player.manaRegenPerS = Math.max(0, (player.manaRegenPerS ?? 0) - snapshot.manaRegenPerS);
+  }
+  if (snapshot.manaCostMult !== undefined) {
+    player.manaCostMult = Math.max(0.1, (player.manaCostMult ?? 1) / snapshot.manaCostMult);
+  }
   if (snapshot.projectileCountBonus !== undefined) {
     player.projectileCountBonus = Math.max(0, (player.projectileCountBonus ?? 0) - snapshot.projectileCountBonus);
+  }
+  if (snapshot.potionChargeGainMult !== undefined) {
+    player.potionChargeGainMult = Math.max(0, (player.potionChargeGainMult ?? 1) / snapshot.potionChargeGainMult);
+  }
+  if (snapshot.potionChargeGainFlat !== undefined) {
+    player.potionChargeGainFlat = (player.potionChargeGainFlat ?? 0) - snapshot.potionChargeGainFlat;
+  }
+  if (snapshot.potionChargeRegenPerS !== undefined) {
+    player.potionChargeRegenPerS = (player.potionChargeRegenPerS ?? 0) - snapshot.potionChargeRegenPerS;
+  }
+  if (snapshot.potionDurationMult !== undefined) {
+    player.potionDurationMult = Math.max(0, (player.potionDurationMult ?? 1) / snapshot.potionDurationMult);
+  }
+  if (snapshot.potionEffectMult !== undefined) {
+    player.potionEffectMult = Math.max(0, (player.potionEffectMult ?? 1) / snapshot.potionEffectMult);
+  }
+  if (snapshot.potionMaxChargesMult !== undefined) {
+    player.potionMaxChargesMult = Math.max(0, (player.potionMaxChargesMult ?? 1) / snapshot.potionMaxChargesMult);
+  }
+  if (snapshot.potionChargesPerUseMult !== undefined) {
+    player.potionChargesPerUseMult = Math.max(0, (player.potionChargesPerUseMult ?? 1) / snapshot.potionChargesPerUseMult);
   }
 }
 
@@ -558,12 +635,12 @@ export const PASSIVE_TREE_NODES = [
 
   {
     id: 'ar_entry',
-    label: '+8% Experience',
-    description: '8% increased experience gained.',
+    label: '+8% XP, +10 Mana',
+    description: '8% increased experience gained and +10 maximum mana.',
     type: 'minor',
     position: { x: 460, y: 562 },
     connections: ['s4', 'ar1', 'ar2'],
-    stats: { xpMultiplier: 1.08 },
+    stats: { xpMultiplier: 1.08, maxManaFlat: 10 },
   },
   {
     id: 'ar1',
@@ -576,12 +653,12 @@ export const PASSIVE_TREE_NODES = [
   },
   {
     id: 'ar2',
-    label: '+5% Experience',
-    description: '5% increased experience gained.',
+    label: '+5% XP, +1 Mana/s',
+    description: '5% increased experience gained and +1 mana regenerated per second.',
     type: 'minor',
     position: { x: 515, y: 600 },
     connections: ['ar_entry', 'ar4', 'ar5'],
-    stats: { xpMultiplier: 1.05 },
+    stats: { xpMultiplier: 1.05, manaRegenPerS: 1 },
   },
   {
     id: 'ar3',
@@ -613,11 +690,11 @@ export const PASSIVE_TREE_NODES = [
   {
     id: 'ar_n1',
     label: 'Arcane Surge',
-    description: '+25% experience gained. The arcane flows freely through you.',
+    description: '+25% experience gained and +40 maximum mana. The arcane flows freely through you.',
     type: 'notable',
     position: { x: 360, y: 692 },
     connections: ['ar3', 'ar4', 'ar6'],
-    stats: { xpMultiplier: 1.25 },
+    stats: { xpMultiplier: 1.25, maxManaFlat: 40 },
   },
   {
     id: 'ar_n2',
@@ -631,11 +708,11 @@ export const PASSIVE_TREE_NODES = [
   {
     id: 'ar_n3',
     label: 'Soul Siphon',
-    description: '+18% experience gained and +30 pickup radius. Take everything.',
+    description: '+18% experience gained, +30 pickup radius, and 12% reduced mana costs.',
     type: 'notable',
     position: { x: 552, y: 692 },
     connections: ['ar5', 'ar_n2', 'ar7'],
-    stats: { xpMultiplier: 1.18, pickupRadiusFlat: 30 },
+    stats: { xpMultiplier: 1.18, pickupRadiusFlat: 30, manaCostMult: 0.88 },
   },
   {
     id: 'ar6',

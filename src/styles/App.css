@@ -116,6 +116,11 @@ body {
   font-size: 0.88rem;
 }
 
+.portal-confirm-subcopy--free {
+  color: #7ed4a0;
+  font-weight: 600;
+}
+
 .portal-confirm-actions {
   margin-top: 16px;
   display: flex;
@@ -772,6 +777,163 @@ body {
   opacity: 0.88;
 }
 
+/* ── Skill-aware combat buttons ─────────────────────────── */
+.mobile-skill-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+  padding: 0.28rem 0.3rem 0.32rem;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.mobile-skill-btn--primary {
+  min-width: 88px;
+  height: 58px;
+}
+
+.mobile-skill-btn--ready {
+  border-color: #4ecdc4;
+  box-shadow: 0 0 10px rgba(78, 205, 196, 0.45);
+}
+
+.mobile-skill-btn--oom {
+  border-color: rgba(239, 68, 68, 0.85);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.3);
+}
+
+.mobile-skill-btn--cooling {
+  border-color: rgba(166, 186, 224, 0.3);
+}
+
+.mobile-skill-key-label {
+  position: absolute;
+  left: 0.26rem;
+  top: 0.18rem;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  color: rgba(208, 224, 255, 0.72);
+  pointer-events: none;
+}
+
+.mobile-skill-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.mobile-skill-empty {
+  font-size: 0.9rem;
+  opacity: 0.4;
+}
+
+.mobile-skill-cd-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mobile-skill-cd-fill {
+  height: 100%;
+  background: rgba(78, 205, 196, 0.7);
+}
+
+/* ── Potion row inside combat grid ──────────────────────── */
+.mobile-potion-row {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.mobile-btn--potion {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0.14rem 0.1rem;
+  position: relative;
+  font-size: 0.72rem;
+}
+
+.mobile-btn--potion-empty {
+  border-color: rgba(166, 186, 224, 0.18);
+  opacity: 0.6;
+}
+
+.mobile-btn--potion-dry {
+  border-color: rgba(209, 91, 91, 0.5);
+}
+
+.mobile-potion-key {
+  position: absolute;
+  left: 0.22rem;
+  top: 0.14rem;
+  font-size: 0.48rem;
+  color: rgba(208, 224, 255, 0.7);
+}
+
+.mobile-potion-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.mobile-potion-hollow {
+  font-size: 1rem;
+  opacity: 0.3;
+}
+
+.mobile-potion-meter {
+  width: 80%;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(14, 24, 43, 0.8);
+}
+
+.mobile-potion-fill {
+  height: 100%;
+}
+
+.mobile-potion-active-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 214, 117, 0.9);
+}
+
+/* ── Minimap toggle above joystick ──────────────────────── */
+.mobile-minimap-toggle {
+  position: absolute;
+  left: max(14px, env(safe-area-inset-left));
+  /* sits above the minimap panel (minimap: 148px) and joystick clearance (152px) */
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 124px + 14px + 148px + 6px);
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+}
+
+.mobile-minimap-toggle .mobile-btn {
+  min-width: 84px;
+}
+
+.mobile-controls-layer--left-handed .mobile-minimap-toggle {
+  left: auto;
+  right: max(14px, env(safe-area-inset-right));
+  align-items: flex-end;
+}
+
 /* ============================================================
    HUD
    ============================================================ */
@@ -863,6 +1025,14 @@ body {
 
 .xp-fill {
   background: #9b59b6;
+}
+
+.mana-fill {
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+}
+
+.mana-label {
+  color: #38bdf8;
 }
 
 .es-fill {
@@ -1042,6 +1212,10 @@ body {
   align-items: center;
   pointer-events: all;
   z-index: 100;
+}
+
+.equip-doll-mini--minimap-corner {
+  right: 15.5rem;
 }
 
 .doll-mini-row {
@@ -1462,6 +1636,12 @@ body {
   line-height: 1.55;
 }
 
+.itt-description {
+  color: #cfd8e6;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
 /* Bottom hint line */
 .itt-hint {
   padding: 0.35rem 1.1rem 0.5rem;
@@ -1604,6 +1784,11 @@ body {
   color: rgba(246, 225, 169, 0.86);
   letter-spacing: 0.02em;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+.inv-header-hint--feedback {
+  max-width: 280px;
+  color: #9ed2ff;
 }
 
 .inv-mobile-view-tabs {
@@ -3054,6 +3239,124 @@ body {
   z-index: 300;
 }
 
+.potion-belt-hud {
+  position: fixed;
+  bottom: 5.9rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.45rem;
+  z-index: 305;
+  pointer-events: none;
+}
+
+.potion-slot {
+  position: relative;
+  width: 86px;
+  min-height: 62px;
+  border: 1px solid rgba(170, 193, 225, 0.35);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(9, 16, 30, 0.92), rgba(7, 13, 24, 0.95));
+  padding: 0.24rem 0.3rem 0.3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.12rem;
+  color: #dce7fb;
+}
+
+.potion-slot-key {
+  position: absolute;
+  left: 0.3rem;
+  top: 0.2rem;
+  font-size: 0.56rem;
+  color: rgba(208, 224, 255, 0.85);
+  letter-spacing: 0.06em;
+}
+
+.potion-slot-icon {
+  margin-top: 0.2rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.potion-slot-name {
+  font-size: 0.56rem;
+  text-align: center;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.potion-slot-meter {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(180, 204, 236, 0.24);
+  background: rgba(14, 24, 43, 0.82);
+}
+
+.potion-slot-fill {
+  height: 100%;
+}
+
+.potion-slot-active {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(255, 214, 117, 0.95);
+  box-shadow: 0 0 8px rgba(255, 214, 117, 0.55);
+}
+
+.potion-slot--empty {
+  opacity: 0.7;
+}
+
+.potion-slot--dry {
+  border-color: rgba(209, 91, 91, 0.55);
+}
+
+.potion-slot--active {
+  border-color: rgba(255, 223, 122, 0.75);
+  box-shadow: 0 0 12px rgba(255, 223, 122, 0.26);
+}
+
+.hud-potion-tooltip {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  width: min(300px, 40vw);
+  min-width: 220px;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid rgba(164, 187, 238, 0.35);
+  border-radius: 8px;
+  background: rgba(6, 10, 18, 0.96);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+  z-index: 420;
+  pointer-events: none;
+}
+
+.hud-potion-tooltip__name {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.hud-potion-tooltip__line {
+  margin-top: 0.18rem;
+  font-size: 0.72rem;
+  color: #d4e1f6;
+}
+
+.hud-potion-tooltip__active {
+  margin-top: 0.28rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: #ffe28f;
+  text-transform: uppercase;
+}
+
 .hud-skill-tooltip {
   position: fixed;
   transform: translate(-50%, -100%);
@@ -3162,6 +3465,248 @@ body {
   background: linear-gradient(90deg, #8bd3ff, #ffd166);
 }
 
+.hover-inspect-panel {
+  position: fixed;
+  top: max(0.6rem, calc(env(safe-area-inset-top) + 0.5rem));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(660px, 80vw);
+  min-width: 260px;
+  max-width: 720px;
+  padding: 0.44rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(154, 196, 255, 0.3);
+  background: linear-gradient(160deg, rgba(6, 12, 22, 0.92), rgba(10, 17, 28, 0.82));
+  color: #d8e9ff;
+  z-index: 315;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hover-inspect-panel--debug {
+  max-width: 900px;
+  border-color: rgba(241, 196, 15, 0.34);
+}
+
+/* ── Horizontal main strip ─────────────────────── */
+.hover-inspect-main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.hover-inspect-head {
+  flex: 0 0 auto;
+  padding-right: 0.9rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+.hover-inspect-kicker {
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #89a8d4;
+}
+
+.hover-inspect-title {
+  margin-top: 0.1rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #eef6ff;
+}
+
+.hover-inspect-subtitle {
+  margin-top: 0.06rem;
+  font-size: 0.76rem;
+  color: #a9bddf;
+}
+
+.hover-inspect-hp {
+  flex: 0 0 140px;
+  padding: 0 0.9rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+.hover-inspect-hp__meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #cde0ff;
+  margin-bottom: 0.18rem;
+}
+
+.hover-inspect-hp__bar {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.hover-inspect-hp__bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #79d4ff, #ffd166);
+}
+
+.hover-inspect-rows {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 0.12rem 0.75rem;
+}
+
+.hover-inspect-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.hover-inspect-row__label {
+  color: #8da6cb;
+}
+
+.hover-inspect-row__value {
+  color: #e6f1ff;
+}
+
+/* ── Debug section (below main strip) ─────────── */
+.hover-inspect-debug-section {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.hover-inspect-debug-title {
+  margin-bottom: 0.2rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #f0cf6a;
+}
+
+.hover-inspect-debug-section .hover-inspect-rows {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 960px) {
+  .hover-inspect-panel,
+  .hover-inspect-panel--debug {
+    width: min(320px, calc(100vw - 1.6rem));
+    max-width: calc(100vw - 1.6rem);
+    top: auto;
+    bottom: max(5.8rem, calc(env(safe-area-inset-bottom) + 5.2rem));
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+  }
+
+  .hover-inspect-panel--mobile-lock,
+  .hover-inspect-panel--mobile-lock.hover-inspect-panel--debug {
+    width: min(520px, calc(100vw - 1.4rem));
+    max-width: calc(100vw - 1.4rem);
+    top: max(0.55rem, calc(env(safe-area-inset-top) + 0.45rem));
+    bottom: auto;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .hover-inspect-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .hover-inspect-head {
+    border-right: none;
+    padding-right: 0;
+  }
+
+  .hover-inspect-hp {
+    flex: unset;
+    width: 100%;
+    padding: 0;
+    border-right: none;
+  }
+
+  .hover-inspect-rows {
+    flex-wrap: wrap;
+  }
+}
+
+.training-hud-card {
+  position: fixed;
+  top: max(6.6rem, calc(env(safe-area-inset-top) + 6rem));
+  left: max(0.85rem, calc(env(safe-area-inset-left) + 0.7rem));
+  min-width: 176px;
+  padding: 0.52rem 0.62rem;
+  border-radius: 10px;
+  border: 1px solid rgba(139, 211, 255, 0.3);
+  background: rgba(7, 12, 22, 0.82);
+  color: #dde9ff;
+  z-index: 310;
+  pointer-events: none;
+  backdrop-filter: blur(3px);
+}
+
+.training-hud-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #8bd3ff;
+  margin-bottom: 0.22rem;
+}
+
+.training-hud-line {
+  font-size: 0.64rem;
+  line-height: 1.35;
+  color: #d0ddf7;
+}
+
+.training-hud-line strong {
+  color: #f3f8ff;
+  font-size: 0.68rem;
+}
+
+.training-hud-card--dev {
+  top: max(11.8rem, calc(env(safe-area-inset-top) + 11.2rem));
+  pointer-events: auto;
+}
+
+.dev-hud-actions {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.34rem;
+}
+
+.dev-hud-btn {
+  border: 1px solid rgba(139, 211, 255, 0.42);
+  background: rgba(14, 27, 45, 0.9);
+  color: #d9ecff;
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dev-hud-btn:hover {
+  border-color: rgba(147, 223, 255, 0.7);
+  background: rgba(20, 39, 63, 0.95);
+}
+
 .hud-controls-hint {
   position: fixed;
   bottom: 6.5rem;
@@ -3221,9 +3766,14 @@ body {
   box-shadow: 0 0 10px rgba(78, 205, 196, 0.4);
 }
 
+.skill-slot--oom {
+  border-color: rgba(239, 68, 68, 0.9);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+}
+
 .hud--mobile .hud-bottom {
   margin-top: max(env(safe-area-inset-top), 0px);
-  max-width: min(58vw, 320px);
+  max-width: min(49vw, 274px);
 }
 
 .app.mobile-mode .shard-badge {
@@ -3254,6 +3804,24 @@ body {
 .app.mobile-mode .skill-hotbar {
   bottom: calc(max(env(safe-area-inset-bottom), 0px) + 6.2rem);
   gap: 0.35rem;
+}
+
+.app.mobile-mode .potion-belt-hud {
+  bottom: calc(max(env(safe-area-inset-bottom), 0px) + 10.8rem);
+  gap: 0.28rem;
+}
+
+.app.mobile-mode .potion-slot {
+  width: 62px;
+  min-height: 50px;
+}
+
+.app.mobile-mode .potion-slot-name {
+  font-size: 0.5rem;
+}
+
+.app.mobile-mode .hud-potion-tooltip {
+  width: min(260px, 72vw);
 }
 
 .app.mobile-mode .skill-slot {

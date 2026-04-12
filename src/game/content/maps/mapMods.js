@@ -5,6 +5,11 @@ export const MAP_MOD_POOL = {
     { id: 'enemy_speed', type: 'prefix', label: 'Enemies are 20% faster', value: 1.2 },
     { id: 'area_of_effect', type: 'prefix', label: 'Enemy area attacks gain +40% radius', value: 1.4 },
     { id: 'extra_champion_packs', type: 'prefix', label: '+3 additional champion packs', value: 3 },
+    { id: 'twisting', type: 'prefix', label: 'Twisting: geometry becomes less linear', value: 1 },
+    { id: 'fortified', type: 'prefix', label: 'Fortified: denser chokepoints and obstacles', value: 1 },
+    { id: 'flooded', type: 'prefix', label: 'Flooded: shallow-water coverage increases', value: 1 },
+    { id: 'overgrown', type: 'prefix', label: 'Overgrown: brambles and growth choke routes', value: 1 },
+    { id: 'volatile', type: 'prefix', label: 'Volatile: hazard-like setpiece pressure', value: 1 },
   ],
   suffix: [
     { id: 'reduced_player_regen', type: 'suffix', label: 'Players cannot regenerate life', value: true },

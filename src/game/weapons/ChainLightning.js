@@ -15,6 +15,12 @@
 
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import {
+  buildProjectileConfig,
+  buildSpreadAngles,
+  getProjectileSupportState,
+  scaleProjectileMotion,
+} from '../projectileSupport.js';
 
 /** How long each chain flash line is visible (seconds). */
 const FLASH_LIFETIME = 0.12;
@@ -47,22 +53,33 @@ export class ChainLightning extends Weapon {
     const dy = ty - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const stats = this.computedStats(player);
-    const speed = this.config.projectileSpeed;
+    const supportState = getProjectileSupportState(stats, {
+      playerProjectileBonus: player.projectileCountBonus ?? 0,
+    });
+    const motion = scaleProjectileMotion(this.config.projectileSpeed, this.config.projectileLifetime, supportState);
+    const baseAngle = Math.atan2(dy / dist, dx / dist);
+    const chainConfig = {
+      ...this.config,
+      maxChains: (this.config.maxChains ?? 0) + (supportState.chainCount ?? 0),
+    };
 
-    entities.acquireProjectile(
-      player.x, player.y,
-      (dx / dist) * speed, (dy / dist) * speed,
-      {
-        damage:          stats.damage,
-        damageBreakdown: stats.damageBreakdown,
-        radius:          this.config.projectileRadius,
-        color:           this.config.color,
-        lifetime:        this.config.projectileLifetime,
-        piercing:        false,
-        chainWeapon:     this,
-        sourceTags:      this.tags,
-      },
-    );
+    for (const angle of buildSpreadAngles(baseAngle, supportState.totalProjectiles, 0.14)) {
+      entities.acquireProjectile(
+        player.x, player.y,
+        Math.cos(angle) * motion.speed, Math.sin(angle) * motion.speed,
+        buildProjectileConfig({
+          damage:          stats.damage,
+          damageBreakdown: stats.damageBreakdown,
+          radius:          this.config.projectileRadius,
+          color:           this.config.color,
+          lifetime:        motion.lifetime,
+          piercing:        false,
+          chainWeapon:     this,
+          chainConfig,
+          chainCount:      0,
+        }, supportState, this.tags, { chainCount: 0 }),
+      );
+    }
     if (engine) engine.onSkillFire();
   }
 
@@ -75,12 +92,12 @@ export class ChainLightning extends Weapon {
    * @param {number} hopsLeft    — remaining arc hops
    * @param {Set}    alreadyHit  — enemies already struck this chain
    */
-  processChain(sourceEnemy, allEnemies, hopDamage, hopsLeft, alreadyHit) {
+  processChain(sourceEnemy, allEnemies, hopDamage, hopsLeft, alreadyHit, chainConfig = this.config) {
     if (hopsLeft <= 0 || hopDamage < 1) return;
 
-    const chainR = this.config.chainRadius;
+    const chainR = chainConfig.chainRadius ?? this.config.chainRadius;
     const chainRSq = chainR * chainR;
-    const decay = this.config.chainDecay;
+    const decay = chainConfig.chainDecay ?? this.config.chainDecay;
 
     // Find all unvisited enemies within chainRadius.
     const candidates = [];
@@ -98,7 +115,7 @@ export class ChainLightning extends Weapon {
       return da - db;
     });
 
-    const targets = candidates.slice(0, this.config.maxChains);
+    const targets = candidates.slice(0, chainConfig.maxChains ?? this.config.maxChains);
     for (const target of targets) {
       alreadyHit.add(target);
       this._flashes.push({ x1: sourceEnemy.x, y1: sourceEnemy.y, x2: target.x, y2: target.y, age: 0 });

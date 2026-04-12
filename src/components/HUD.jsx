@@ -35,6 +35,9 @@ function fmtStat(key, value) {
     maxHealthFlat:    (v) => `+${v} max life`,
     healthRegenPerS:  (v) => `+${v} life regen/s`,
     xpMultiplier:     (v) => `+${Math.round((v - 1) * 100)}% XP gain`,
+    maxManaFlat:      (v) => `+${v} max mana`,
+    manaRegenPerS:    (v) => `+${v} mana regen/s`,
+    manaCostMult:     (v) => `${Math.round((v - 1) * 100)}% mana costs`,
     speedFlat:        (v) => `+${v} move speed`,
     pickupRadiusFlat: (v) => `+${v} pickup radius`,
     armorFlat:        (v) => `+${v} armor`,
@@ -47,7 +50,7 @@ function fmtStat(key, value) {
 function DollTooltip({ slotKey, entry }) {
   const cfg   = DOLL_SLOTS[slotKey] ?? { label: slotKey };
   const color = RARITY_CLRS[entry.rarity] ?? RARITY_CLRS.normal;
-  const stats  = Object.entries(entry.baseStats ?? {}).filter(([k]) => k !== 'mapTier' && k !== 'mapItemLevel');
+  const stats  = Object.entries(entry.baseStats ?? {}).filter(([k]) => k !== 'mapItemLevel');
   const affixes = entry.affixes ?? [];
   return (
     <div className="doll-mini-tooltip">
@@ -119,6 +122,9 @@ function SkillTooltip({ skill, pos }) {
       {skill.castTime > 0 && (
         <div className="hud-skill-tooltip__line">Cast: {skill.castTime.toFixed(2)}s</div>
       )}
+      {skill.manaCost > 0 && (
+        <div className="hud-skill-tooltip__line">Mana: {Math.round(skill.manaCost)}</div>
+      )}
       {skill.tags?.length > 0 && (
         <div className="hud-skill-tooltip__tags">
           {skill.tags.map((t) => (
@@ -148,21 +154,32 @@ function MiniSlot({ slotKey, entry, onHover }) {
   );
 }
 
-export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = false, screenContext = 'RUNNING' }) {
+export function HUD({
+  hud,
+  hideTimer = false,
+  mobileMode = false,
+  compactMode = false,
+  screenContext = 'RUNNING',
+  onDevAddGold = null,
+  onDevLevelUp = null,
+  onDevUnlockAllActs = null,
+}) {
   const [hoveredEquip, setHoveredEquip] = useState(null);
   const [hoveredSkill, setHoveredSkill] = useState(null);
+  const [hoveredPotion, setHoveredPotion] = useState(null);
 
   const { health, maxHealth, xp, xpToNext, level, elapsed, kills, equipment, skillPoints, shardsThisRun,
-          energyShield, maxEnergyShield, primarySkill, activeSkills, portalsRemaining = 0,
-          mapEnemiesKilled = 0, mapEnemiesTotal = 0, mapContext = false, mapMods = [], mapName = '', mapTier = 0,
-          lockedTarget = null } = hud;
+      mana = 0, maxMana = 0, energyShield, maxEnergyShield, primarySkill, activeSkills, portalsRemaining = 0,
+          mapEnemiesKilled = 0, mapEnemiesTotal = 0, mapContext = false, mapMods = [], mapName = '', mapAreaLevel = 0,
+      lockedTarget = null, training = null, debugMode = false, minimapMode = 0, potions = [] } = hud;
   const hpPct = Math.max(0, (health / maxHealth) * 100);
+    const manaPct = maxMana > 0 ? Math.max(0, (mana / maxMana) * 100) : 0;
   const xpPct = Math.max(0, (xp / xpToNext) * 100);
   const esPct = maxEnergyShield > 0 ? Math.max(0, (energyShield / maxEnergyShield) * 100) : 0;
   const hpColor = hpPct > 50 ? '#4ecdc4' : hpPct > 25 ? '#ffe66d' : '#ff6b6b';
   const compactHud = mobileMode && compactMode;
   const hidePaperdoll = mobileMode && (compactMode || screenContext === 'HUB');
-  const showSkillHotbar = (primarySkill || activeSkills) && screenContext === 'RUNNING';
+  const showSkillHotbar = !mobileMode && (primarySkill || activeSkills) && (screenContext === 'RUNNING' || screenContext === 'HUB');
 
   return (
     <div className={`hud${mobileMode ? ' hud--mobile' : ''}${compactHud ? ' hud--compact' : ''}`}>
@@ -172,7 +189,7 @@ export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = 
         {mapContext && mapName && elapsed < 3 && (
           <div className="map-entry-banner" style={{ opacity: Math.max(0, 1 - elapsed / 3) }}>
             <span className="map-entry-name">{mapName}</span>
-            <span className="map-entry-tier">Tier {mapTier || 1}</span>
+            <span className="map-entry-tier">Area Lv. {mapAreaLevel || 1}</span>
           </div>
         )}
       </div>
@@ -201,6 +218,20 @@ export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = 
           )}
         </div>
 
+        {maxMana > 0 && (
+          <div className="bar-row">
+            <span className="bar-label mana-label">{compactHud ? '💧' : 'MP'}</span>
+            <div className="bar-bg">
+              <div className="bar-fill mana-fill" style={{ width: `${manaPct}%` }} />
+            </div>
+            {!compactHud && (
+              <span className="bar-value">
+                {Math.ceil(mana)}/{Math.round(maxMana)}
+              </span>
+            )}
+          </div>
+        )}
+
         {maxEnergyShield > 0 && (
           <div className="bar-row">
             <span className="bar-label es-label">{compactHud ? '🛡️' : 'ES'}</span>
@@ -219,7 +250,7 @@ export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = 
       {/* Skill point ready badge */}
       {skillPoints > 0 && (
         <div className="skill-point-badge">
-          {mobileMode ? `⛆ ${skillPoints}` : `⛆ ${skillPoints} Skill Point${skillPoints > 1 ? 's' : ''} - press [P]`}
+          {mobileMode ? `⛆ ${skillPoints}` : `⛆ ${skillPoints} Skill Point${skillPoints > 1 ? 's' : ''} - press [T]`}
         </div>
       )}
 
@@ -261,7 +292,7 @@ export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = 
         </div>
       )}
 
-      {lockedTarget && (
+      {!mobileMode && lockedTarget && (
         <div className={`target-lock-hud${lockedTarget.isBoss ? ' target-lock-hud--boss' : ''}`}>
           <span className="target-lock-label">LOCK</span>
           <span className="target-lock-name">{lockedTarget.name}</span>
@@ -269,8 +300,35 @@ export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = 
         </div>
       )}
 
+      {!mobileMode && screenContext === 'HUB' && training?.enabled && (
+        <div className="training-hud-card" aria-label="Training metrics">
+          <div className="training-hud-title">Training Dummy</div>
+          <div className="training-hud-line">DPS ({training.windowSeconds}s): <strong>{Math.round(training.dps ?? 0)}</strong></div>
+          <div className="training-hud-line">Mana Spend/s: <strong>{(training.manaSpendPerS ?? 0).toFixed(1)}</strong></div>
+          <div className="training-hud-line">Mana Regen/s: <strong>{(training.manaRegenPerS ?? 0).toFixed(1)}</strong></div>
+        </div>
+      )}
+
+      {debugMode && (
+        <div className="training-hud-card training-hud-card--dev" aria-label="Developer actions">
+          <div className="training-hud-title">Dev Panel (F3)</div>
+          <div className="training-hud-line">Quick test actions</div>
+          <div className="dev-hud-actions">
+            <button type="button" className="dev-hud-btn" onClick={() => onDevAddGold?.()}>
+              Add 100 Gold
+            </button>
+            <button type="button" className="dev-hud-btn" onClick={() => onDevLevelUp?.()}>
+              Level Up Player
+            </button>
+            <button type="button" className="dev-hud-btn" onClick={() => onDevUnlockAllActs?.()}>
+              Unlock All Acts
+            </button>
+          </div>
+        </div>
+      )}
+
       {equipment && !hidePaperdoll && (
-        <div className="equip-doll-mini">
+        <div className={`equip-doll-mini${minimapMode === 1 ? ' equip-doll-mini--minimap-corner' : ''}`}>
           {/* Row 1 — Helmet */}
           <div className="doll-mini-row doll-mini-row--center">
             <MiniSlot slotKey="helmet"    entry={equipment.helmet}    onHover={setHoveredEquip} />
@@ -300,13 +358,65 @@ export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = 
         </div>
       )}
 
+      {!mobileMode && Array.isArray(potions) && potions.length > 0 && (
+        <div className="potion-belt-hud" aria-label="Potion belt">
+          {potions.map((p) => {
+            const chargePct = p.maxCharges > 0 ? Math.max(0, Math.min(100, (p.charges / p.maxCharges) * 100)) : 0;
+            const canUse = p.maxCharges > 0 && p.charges >= (p.chargesPerUse || 1);
+            return (
+              <div
+                key={p.slot}
+                className={`potion-slot${p.empty ? ' potion-slot--empty' : ''}${p.active ? ' potion-slot--active' : ''}${!canUse && !p.empty ? ' potion-slot--dry' : ''}`}
+                title={`${p.name}${p.empty ? '' : ` (${Math.floor(p.charges)}/${p.maxCharges})`}`}
+                onMouseEnter={(e) => {
+                  if (p.empty) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setHoveredPotion({
+                    potion: p,
+                    pos: { x: rect.left + rect.width / 2, y: rect.top - 10 },
+                  });
+                }}
+                onMouseLeave={() => setHoveredPotion(null)}
+              >
+                <span className="potion-slot-key">{p.hotkey}</span>
+                <span className="potion-slot-icon" style={{ color: p.color }}>{p.icon}</span>
+                <span className="potion-slot-name">{p.empty ? 'Empty' : p.name}</span>
+                <div className="potion-slot-meter">
+                  <div className="potion-slot-fill" style={{ width: `${chargePct}%`, background: p.color }} />
+                </div>
+                {p.active && <div className="potion-slot-active" style={{ width: `${Math.round((p.activePct ?? 0) * 100)}%` }} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {hoveredPotion?.potion && (
+        <div className="hud-potion-tooltip" style={{ left: hoveredPotion.pos.x, top: hoveredPotion.pos.y }}>
+          <div className="hud-potion-tooltip__name" style={{ color: hoveredPotion.potion.color }}>
+            {hoveredPotion.potion.name}
+          </div>
+          <div className="hud-potion-tooltip__line">Charges: {Math.floor(hoveredPotion.potion.charges)}/{hoveredPotion.potion.maxCharges}</div>
+          <div className="hud-potion-tooltip__line">Use Cost: {hoveredPotion.potion.chargesPerUse}</div>
+          <div className="hud-potion-tooltip__line">Duration: {hoveredPotion.potion.duration?.toFixed?.(2) ?? '0.00'}s</div>
+          {(hoveredPotion.potion.effectLines ?? []).map((line, idx) => (
+            <div key={`${hoveredPotion.potion.id}_${idx}`} className="hud-potion-tooltip__line">{line}</div>
+          ))}
+          {hoveredPotion.potion.active && <div className="hud-potion-tooltip__active">Active</div>}
+        </div>
+      )}
+
       {!mobileMode && (
         <div className="hud-controls-hint">
+          <span><kbd>Click</kbd> Interact</span>
+          <span><kbd>1</kbd>/<kbd>2</kbd> Potions</span>
           <span><kbd>Space</kbd> Primary</span>
           <span><kbd>Q</kbd>/<kbd>E</kbd>/<kbd>R</kbd> Skills</span>
+          <span><kbd>H</kbd> Minimap</span>
           <span><kbd>V</kbd> Inventory</span>
           <span><kbd>G</kbd> Gems</span>
-          {mapContext && <span><kbd>T</kbd> Portal</span>}
+          {screenContext === 'HUB' && <span><kbd>T</kbd> Passive Tree</span>}
+          {mapContext && <span><kbd>B</kbd> Portal</span>}
         </div>
       )}
 
@@ -321,7 +431,7 @@ export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = 
             return (
               <div
                 key={i}
-                className={`skill-slot${s?.ready ? ' skill-slot--ready' : ''}${!s ? ' skill-slot--empty' : ''}`}
+                className={`skill-slot${s?.ready ? ' skill-slot--ready' : ''}${s && s.canAfford === false ? ' skill-slot--oom' : ''}${!s ? ' skill-slot--empty' : ''}`}
                 onMouseEnter={(e) => {
                   if (!s) return;
                   const rect = e.currentTarget.getBoundingClientRect();
@@ -337,7 +447,7 @@ export function HUD({ hud, hideTimer = false, mobileMode = false, compactMode = 
                   <>
                     <span className="skill-icon">{s.icon}</span>
                     <span className="skill-name">{s.name}</span>
-                    {!s.ready && (
+                    {!s.ready && s.remaining > 0 && (
                       <div className="skill-cd-bar">
                         <div className="skill-cd-fill" style={{ width: `${fillPct}%` }} />
                       </div>

@@ -5,6 +5,7 @@ import { WAVE_SCHEDULE, SPAWN_RADIUS, DESPAWN_RADIUS, BOSS_DEFS, ENEMY_AI } from
 import { generateItem } from '../data/itemGenerator.js';
 import { getEnemyById, listEnemyIds } from '../content/registries/enemyRegistry.js';
 import { listGenericItemDefs, listUniqueItemDefs } from '../content/registries/itemRegistry.js';
+import { enemyDamageMultiplier, enemyLifeMultiplier, enemyXpMultiplier } from '../config/scalingConfig.js';
 
 const GENERIC_ITEM_DEFS = listGenericItemDefs();
 const UNIQUE_ITEM_DEFS = listUniqueItemDefs();
@@ -27,11 +28,11 @@ export class ClusterSpawner {
    * Populate enemies/champions/boss for the generated map.
    * @returns {{ enemiesTotal: number }}
    */
-  populateMap(mapLayout, mapDef = {}, entities = this.entities, difficulty = 1, mapInstance = null) {
+  populateMap(mapLayout, mapDef = {}, entities = this.entities, areaLevel = 1, mapInstance = null) {
     if (!mapLayout) return { enemiesTotal: 0 };
 
     let total = 0;
-    const enemyPool = this._resolveEnemyPool(mapDef, difficulty);
+    const enemyPool = this._resolveEnemyPool(mapDef, areaLevel);
     const modEffects = mapInstance?.modEffects ?? {
       enemyLifeMult: 1,
       enemySpeedMult: 1,
@@ -39,37 +40,47 @@ export class ClusterSpawner {
       packSizeMult: 1,
       extraChampionPacks: 0,
     };
+    const roomSetpieceMap = this._buildRoomSetpieceMap(mapLayout?.encounterMetadata, mapLayout?.clusterRooms ?? []);
     const rooms = mapLayout.clusterRooms ?? [];
     let packSeq = 0;
 
     for (const room of rooms) {
+      const setpieceTags = roomSetpieceMap[room.id] ?? [];
+      const encounterTuning = this._deriveRoomEncounterTuning(room, setpieceTags);
       const roomMult = room.type === 'elite' ? 1.6 : room.type === 'treasure' ? 0.6 : 1.0;
-      const packsPerRoom = Math.max(1, Math.round((mapDef.packsPerRoom ?? 2) * roomMult * modEffects.packSizeMult));
+      const packsPerRoom = Math.max(
+        1,
+        Math.round((mapDef.packsPerRoom ?? 2) * roomMult * modEffects.packSizeMult * encounterTuning.packMult),
+      );
       const roomCount = packsPerRoom + this._rollInt(1, 3);
 
       for (let i = 0; i < roomCount; i++) {
         const packId = `room:${room.id}:pack:${packSeq++}`;
         const enemyType = this._pickWeighted(enemyPool);
-        if (this.placeSingleEnemy(enemyType, room, mapLayout, entities, difficulty, false, modEffects, packId)) total++;
+        if (this.placeSingleEnemy(enemyType, room, mapLayout, entities, areaLevel, false, modEffects, packId)) total++;
       }
 
       // 5% champion pack chance per room (higher in elite rooms)
       const champChance = room.type === 'elite' ? 0.16 : 0.05;
-      if (Math.random() < champChance) {
+      const tunedChampChance = Math.max(0.01, Math.min(0.72, champChance + encounterTuning.championChanceAdd));
+      if (encounterTuning.forceChampionPack || Math.random() < tunedChampChance) {
         const championPackId = `room:${room.id}:champ:${packSeq++}`;
         const championCount = this._rollInt(1, 3);
         for (let i = 0; i < championCount; i++) {
           const enemyType = this._pickWeighted(enemyPool);
-          if (this.placeSingleEnemy(enemyType, room, mapLayout, entities, difficulty, true, modEffects, championPackId)) total++;
+          if (this.placeSingleEnemy(enemyType, room, mapLayout, entities, areaLevel, true, modEffects, championPackId)) total++;
         }
       }
 
       // Treasure rooms get a guaranteed item drop.
-      if (room.type === 'treasure') {
+      const shouldDropReward = room.type === 'treasure' || encounterTuning.guaranteedRewardDrop;
+      if (shouldDropReward) {
         const pool = Math.random() < 0.2 && UNIQUE_ITEM_DEFS.length ? UNIQUE_ITEM_DEFS : GENERIC_ITEM_DEFS;
         const base = pool[Math.floor(Math.random() * pool.length)];
-        const rarity = room.type === 'elite' ? 'rare' : 'magic';
-        const itemDef = generateItem(base, rarity);
+        const rarity = encounterTuning.rewardRarity ?? (room.type === 'elite' ? 'rare' : 'magic');
+        const itemDef = generateItem(base, rarity, {
+          itemLevel: mapDef?.rewards?.itemLevel ?? mapDef?.areaLevel ?? areaLevel,
+        });
         const { x, y } = this._randomPointInRoom(room, mapLayout);
         entities.itemDrops.push(new ItemDrop(x, y, itemDef));
       }
@@ -84,13 +95,13 @@ export class ClusterSpawner {
         const championCount = this._rollInt(2, 4);
         for (let j = 0; j < championCount; j++) {
           const enemyType = this._pickWeighted(enemyPool);
-          if (this.placeSingleEnemy(enemyType, room, mapLayout, entities, difficulty, true, modEffects, championPackId)) total++;
+          if (this.placeSingleEnemy(enemyType, room, mapLayout, entities, areaLevel, true, modEffects, championPackId)) total++;
         }
       }
     }
 
     // Boss spawn in the designated boss room.
-    const bossId = mapDef.bossId ?? this._defaultBossIdForTier(mapDef.tier ?? 1);
+    const bossId = mapDef.bossId ?? this._defaultBossIdForArea(areaLevel);
     const bossRoom = mapLayout.bossRoom;
     let bossName = null;
     if (bossRoom) {
@@ -135,7 +146,7 @@ export class ClusterSpawner {
     this._despawnFar(player);
   }
 
-  placeSingleEnemy(typeId, room, mapLayout, entities = this.entities, difficulty = 1, forceChampion = false, modEffects = null, packId = null) {
+  placeSingleEnemy(typeId, room, mapLayout, entities = this.entities, areaLevel = 1, forceChampion = false, modEffects = null, packId = null) {
     const base = getEnemyById(typeId);
     if (!base) return null;
 
@@ -146,9 +157,9 @@ export class ClusterSpawner {
     };
 
     const { x, y } = this._randomPointInRoom(room, mapLayout);
-    const healthScale = 1 + (difficulty - 1) * 0.22;
-    const damageScale = 1 + (difficulty - 1) * 0.14;
-    const xpScale = 1 + (difficulty - 1) * 0.18;
+    const healthScale = enemyLifeMultiplier(areaLevel);
+    const damageScale = enemyDamageMultiplier(areaLevel);
+    const xpScale = enemyXpMultiplier(areaLevel);
 
     const isChampion = forceChampion;
     const config = {
@@ -236,7 +247,7 @@ export class ClusterSpawner {
     }
   }
 
-  _resolveEnemyPool(mapDef, difficulty) {
+  _resolveEnemyPool(mapDef, areaLevel) {
     if (Array.isArray(mapDef.enemyPool) && mapDef.enemyPool.length > 0) {
       return mapDef.enemyPool.map((entry) => {
         if (typeof entry === 'string') return { id: entry, weight: 1 };
@@ -248,19 +259,24 @@ export class ClusterSpawner {
       { id: 'RHOA', weight: 3 },
       { id: 'RATTLING_REMNANT', weight: 3 },
       { id: 'UNDYING_THRALL', weight: 2 },
-      { id: 'SHRIEKING_BANSHEE', weight: difficulty >= 2 ? 2 : 0 },
-      { id: 'PLAGUE_CRAWLER', weight: difficulty >= 3 ? 2 : 0 },
-      { id: 'VOID_STALKER', weight: difficulty >= 4 ? 2 : 0 },
-      { id: 'SHADE', weight: difficulty >= 5 ? 2 : 0 },
-      { id: 'IRON_COLOSSUS', weight: difficulty >= 5 ? 1 : 0 },
+      { id: 'SHRIEKING_BANSHEE', weight: areaLevel >= 20 ? 2 : 0 },
+      { id: 'PLAGUE_CRAWLER', weight: areaLevel >= 33 ? 2 : 0 },
+      { id: 'VOID_STALKER', weight: areaLevel >= 45 ? 2 : 0 },
+      { id: 'SHADE', weight: areaLevel >= 57 ? 2 : 0 },
+      { id: 'IRON_COLOSSUS', weight: areaLevel >= 57 ? 1 : 0 },
     ];
     return pool.filter((p) => p.weight > 0);
   }
 
-  _defaultBossIdForTier(tier) {
+  _defaultBossIdForArea(areaLevel) {
     const ids = Object.keys(BOSS_DEFS);
     if (ids.length === 0) return null;
-    return ids[Math.min(ids.length - 1, Math.max(0, tier - 1))];
+    const idx = areaLevel >= 65 ? 4
+      : areaLevel >= 50 ? 3
+        : areaLevel >= 35 ? 2
+          : areaLevel >= 20 ? 1
+            : 0;
+    return ids[Math.min(ids.length - 1, Math.max(0, idx))];
   }
 
   _pickWeighted(pool) {
@@ -278,10 +294,87 @@ export class ClusterSpawner {
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
+  _buildRoomSetpieceMap(encounterMetadata = null, rooms = []) {
+    const byRoom = {};
+
+    for (const [roomId, tags] of Object.entries(encounterMetadata?.roomTagsById ?? {})) {
+      if (!Array.isArray(byRoom[roomId])) byRoom[roomId] = [];
+      for (const tag of tags ?? []) {
+        if (!byRoom[roomId].includes(tag)) byRoom[roomId].push(tag);
+      }
+    }
+
+    for (const node of encounterMetadata?.setpieceNodes ?? []) {
+      if (!node?.roomId || !node?.type) continue;
+      if (!Array.isArray(byRoom[node.roomId])) byRoom[node.roomId] = [];
+      if (!byRoom[node.roomId].includes(node.type)) byRoom[node.roomId].push(node.type);
+    }
+
+    for (const room of rooms) {
+      if (!room?.id || !Array.isArray(room.encounterTags)) continue;
+      if (!Array.isArray(byRoom[room.id])) byRoom[room.id] = [];
+      for (const tag of room.encounterTags) {
+        if (!byRoom[room.id].includes(tag)) byRoom[room.id].push(tag);
+      }
+    }
+
+    return byRoom;
+  }
+
+  _deriveRoomEncounterTuning(room, setpieceTags = []) {
+    const tuning = {
+      packMult: 1,
+      championChanceAdd: 0,
+      forceChampionPack: false,
+      guaranteedRewardDrop: false,
+      rewardRarity: null,
+    };
+
+    if (setpieceTags.includes('shrine_room')) {
+      tuning.packMult *= 1.1;
+    }
+    if (setpieceTags.includes('elite_ambush_room')) {
+      tuning.packMult *= 1.35;
+      tuning.forceChampionPack = true;
+      tuning.championChanceAdd += 0.2;
+    }
+    if (setpieceTags.includes('cursed_chest_pocket')) {
+      tuning.guaranteedRewardDrop = true;
+      tuning.rewardRarity = room.type === 'elite' ? 'rare' : 'magic';
+    }
+    if (setpieceTags.includes('trap_antechamber')) {
+      tuning.packMult *= 1.2;
+      tuning.championChanceAdd += 0.08;
+    }
+    if (setpieceTags.includes('vault_side_room')) {
+      tuning.guaranteedRewardDrop = true;
+      tuning.rewardRarity = 'rare';
+    }
+    if (setpieceTags.includes('boss_prelude_hall')) {
+      tuning.packMult *= 1.5;
+      tuning.forceChampionPack = true;
+      tuning.championChanceAdd += 0.15;
+    }
+    if (setpieceTags.includes('boss_approach_final_third')) {
+      tuning.packMult *= 1.18;
+      tuning.championChanceAdd += 0.1;
+    }
+    if (setpieceTags.includes('progress_stage_late') || setpieceTags.includes('setpiece_stage_late')) {
+      tuning.packMult *= 1.12;
+    }
+    if (setpieceTags.includes('progress_stage_early')) {
+      tuning.packMult *= 0.9;
+    }
+
+    return tuning;
+  }
+
   _randomPointInRoom(room, mapLayout) {
-    const margin = 1;
-    const tx = this._rollInt(room.x + margin, room.x + room.w - 1 - margin);
-    const ty = this._rollInt(room.y + margin, room.y + room.h - 1 - margin);
-    return mapLayout.tileToWorld(tx, ty);
+    const candidates = room.floorTiles ?? [];
+    if (candidates.length > 0) {
+      const pick = candidates[this._rollInt(0, candidates.length - 1)];
+      return mapLayout.tileToWorld(pick.tx, pick.ty);
+    }
+    return mapLayout.tileToWorld(room.centerX, room.centerY);
   }
 }

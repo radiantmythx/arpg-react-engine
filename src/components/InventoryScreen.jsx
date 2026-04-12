@@ -155,6 +155,7 @@ export function InventoryScreen({
   inventory,
   equipment,
   gold,
+  feedback,
   cursorItem,
   mousePos,
   onClose,
@@ -170,12 +171,16 @@ export function InventoryScreen({
   activeSkills,
   onSocketGem,
   onUnsocketGem,
+  onEquipSkillGem,
+  onUnequipSkillGem,
   mobileMode = false,
 }) {
   const [hoveredItem, setHoveredItem] = useState(null);
+  const [hoveredGemTooltip, setHoveredGemTooltip] = useState(null);
   const [mobileSection, setMobileSection] = useState('bag');
   const [mobileGemStep, setMobileGemStep] = useState('supports');
   const [selectedSupportGemUid, setSelectedSupportGemUid] = useState(null);
+  const [selectedSkillGemUid, setSelectedSkillGemUid] = useState(null);
   const [selectedMobileItemUid, setSelectedMobileItemUid] = useState(null);
   const touchTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
@@ -193,10 +198,23 @@ export function InventoryScreen({
   const supportGemItems = items.filter((item) => item.type === 'support_gem');
   const skillGemItems = items.filter((item) => item.type === 'skill_gem');
   const selectedSupportGem = items.find((item) => item.uid === selectedSupportGemUid && item.type === 'support_gem') ?? null;
+  const selectedSkillGem = items.find((item) => item.uid === selectedSkillGemUid && item.type === 'skill_gem') ?? null;
   const selectedMobileItem = items.find((item) => item.uid === selectedMobileItemUid) ?? null;
   const canQuickAction = !!selectedMobileItem && (selectedMobileItem.type === 'skill_gem' || EQUIPPABLE_SLOTS.has(selectedMobileItem.slot));
   const canManageInGems = !!selectedMobileItem && isGemItem(selectedMobileItem);
-  const quickActionLabel = selectedMobileItem?.type === 'skill_gem' ? 'Use Skill Gem' : 'Quick Equip';
+  const quickActionLabel = selectedMobileItem?.type === 'skill_gem' ? 'Open Gems' : 'Quick Equip';
+
+  const handleGemTooltipHover = (itemData, evt) => {
+    if (mobileMode || !itemData || !evt) return;
+    setHoveredGemTooltip({
+      itemData,
+      mousePos: { x: evt.clientX, y: evt.clientY },
+    });
+  };
+
+  const clearGemTooltipHover = () => {
+    setHoveredGemTooltip(null);
+  };
 
   const handleSlotActivation = (slot, fromTouch = false) => {
     if (fromTouch) suppressClickUntilRef.current = Date.now() + 300;
@@ -262,6 +280,13 @@ export function InventoryScreen({
   }, [mobileMode, cursorItem, tab, items, selectedMobileItemUid]);
 
   const handleInventoryItemActivation = (itemUid, itemDef) => {
+    if (!mobileMode && isGemItem(itemDef)) {
+      setSelectedSupportGemUid(null);
+      setSelectedSkillGemUid(null);
+      onItemClick(itemUid);
+      return;
+    }
+
     if (mobileMode && tab === 'equipment' && !cursorItem) {
       setSelectedMobileItemUid((prev) => (prev === itemUid ? null : itemUid));
       return;
@@ -277,15 +302,20 @@ export function InventoryScreen({
     // Support gems use selection mode for socketing from any tab.
     if (itemDef?.type === 'support_gem') {
       setSelectedSupportGemUid((prev) => (prev === itemUid ? null : itemUid));
+      setSelectedSkillGemUid(null);
       if (mobileMode) setMobileGemStep('sockets');
       return;
     }
 
-    if (mobileMode && itemDef?.type === 'skill_gem') {
-      setMobileGemStep('sockets');
+    if (itemDef?.type === 'skill_gem') {
+      setSelectedSkillGemUid((prev) => (prev === itemUid ? null : itemUid));
+      setSelectedSupportGemUid(null);
+      if (mobileMode) setMobileGemStep('sockets');
+      return;
     }
 
     setSelectedSupportGemUid(null);
+    setSelectedSkillGemUid(null);
     onItemClick(itemUid);
   };
 
@@ -341,6 +371,7 @@ export function InventoryScreen({
           <div
             key={item.uid}
             className={`inv-item inv-item--${item.rarity}`}
+            draggable={!mobileMode && tab === 'gems' && isGemItem(item)}
             style={{
               position:    'absolute',
               left:        item.gridX * cellSize,
@@ -349,7 +380,7 @@ export function InventoryScreen({
               height:      item.gridH * cellSize,
               borderColor: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal,
             }}
-            data-gem-selected={tab === 'gems' && selectedSupportGemUid === item.uid ? 'true' : undefined}
+            data-gem-selected={tab === 'gems' && (selectedSupportGemUid === item.uid || selectedSkillGemUid === item.uid) ? 'true' : undefined}
             data-mobile-selected={mobileMode && selectedMobileItemUid === item.uid ? 'true' : undefined}
             onClick={(e) => {
               e.stopPropagation();
@@ -362,6 +393,22 @@ export function InventoryScreen({
             onTouchCancel={cancelTouchPress}
             onMouseEnter={() => setHoveredItem(item)}
             onMouseLeave={() => setHoveredItem(null)}
+            onDragStart={(e) => {
+              if (mobileMode || tab !== 'gems' || !isGemItem(item)) return;
+              e.dataTransfer.effectAllowed = 'move';
+              if (item.type === 'skill_gem') {
+                e.dataTransfer.setData('application/x-sre-skill-gem', item.uid);
+                e.dataTransfer.setData('text/plain', `skill_gem:${item.uid}`);
+                setSelectedSkillGemUid(item.uid);
+                setSelectedSupportGemUid(null);
+                return;
+              }
+
+              e.dataTransfer.setData('application/x-sre-support-gem', item.uid);
+              e.dataTransfer.setData('text/plain', `support_gem:${item.uid}`);
+              setSelectedSupportGemUid(item.uid);
+              setSelectedSkillGemUid(null);
+            }}
           >
             <span className="inv-item-icon-glyph">{getItemIcon(item)}</span>
             <span
@@ -377,7 +424,7 @@ export function InventoryScreen({
       {showHint && (
         <p className="inv-hint inv-hint--help">
           {mobileMode
-            ? 'Tap: open actions or place · Hold: quick-equip / consume'
+            ? 'Tap: open actions or place · Hold: quick-equip'
             : 'Left-click: pick up · Right-click: equip'}
         </p>
       )}
@@ -394,6 +441,14 @@ export function InventoryScreen({
     }
 
     if (action === 'quick') {
+      if (selectedMobileItem.type === 'skill_gem') {
+        onTabChange?.('gems');
+        setSelectedSkillGemUid(selectedMobileItem.uid);
+        setSelectedSupportGemUid(null);
+        setMobileGemStep('sockets');
+        setSelectedMobileItemUid(null);
+        return;
+      }
       onItemRightClick(selectedMobileItem.uid);
       setSelectedMobileItemUid(null);
       return;
@@ -403,6 +458,11 @@ export function InventoryScreen({
       onTabChange?.('gems');
       if (selectedMobileItem.type === 'support_gem') {
         setSelectedSupportGemUid(selectedMobileItem.uid);
+        setSelectedSkillGemUid(null);
+      }
+      if (selectedMobileItem.type === 'skill_gem') {
+        setSelectedSkillGemUid(selectedMobileItem.uid);
+        setSelectedSupportGemUid(null);
       }
       setMobileGemStep('sockets');
       setSelectedMobileItemUid(null);
@@ -412,6 +472,7 @@ export function InventoryScreen({
     if (action === 'drop') {
       onDropItem?.(selectedMobileItem.uid);
       setSelectedSupportGemUid((prev) => (prev === selectedMobileItem.uid ? null : prev));
+      setSelectedSkillGemUid((prev) => (prev === selectedMobileItem.uid ? null : prev));
       setSelectedMobileItemUid(null);
     }
   };
@@ -456,7 +517,7 @@ export function InventoryScreen({
             <button
               key={item.uid}
               type="button"
-              className="inv-gem-pick inv-gem-pick--skill"
+              className={`inv-gem-pick inv-gem-pick--skill${selectedSkillGemUid === item.uid ? ' inv-gem-pick--selected' : ''}`}
               onClick={() => handleInventoryItemActivation(item.uid, item)}
               onContextMenu={(e) => { e.preventDefault(); onItemRightClick(item.uid); }}
               onTouchStart={startLongPress(() => onItemRightClick(item.uid))}
@@ -468,7 +529,9 @@ export function InventoryScreen({
                 <span className="inv-gem-pick-name" style={{ color: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal }}>
                   {item.name}
                 </span>
-                <span className="inv-gem-pick-hint">Tap to equip or inspect this skill gem.</span>
+                <span className="inv-gem-pick-hint">
+                  {selectedSkillGemUid === item.uid ? 'Ready to equip — open Link Skills.' : 'Tap to prepare for equipping into Primary/Q/E/R.'}
+                </span>
               </span>
             </button>
           ))}
@@ -512,6 +575,7 @@ export function InventoryScreen({
             )}
           </div>
           <div className="inv-header-hint inv-header-hint--gold">Gold: {gold ?? 0}</div>
+          {feedback && <div className="inv-header-hint inv-header-hint--feedback">{feedback}</div>}
           <button className="btn inv-close-btn" onClick={onClose}>✕</button>
         </div>
 
@@ -574,13 +638,24 @@ export function InventoryScreen({
                 <div className="inv-section-copy">
                   {selectedSupportGem
                     ? <>Selected: <strong>{selectedSupportGem.name}</strong>. Open <strong>Link Skills</strong> and tap a highlighted compatible socket.</>
-                    : 'Start by picking a support gem from your inventory, then move to Link Skills to attach it.'}
+                    : selectedSkillGem
+                      ? <>Selected: <strong>{selectedSkillGem.name}</strong>. Open <strong>Link Skills</strong> and tap a slot action to equip it.</>
+                      : 'Start by picking a support gem or skill gem from your inventory, then move to Link Skills.'}
                 </div>
               </div>
-              {selectedSupportGem && (
+              {(selectedSupportGem || selectedSkillGem) && (
                 <div className="inv-section-actions">
                   <button type="button" className="btn btn-secondary" onClick={() => setMobileGemStep('supports')}>Change</button>
-                  <button type="button" className="btn btn-secondary" onClick={() => setSelectedSupportGemUid(null)}>Clear</button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setSelectedSupportGemUid(null);
+                      setSelectedSkillGemUid(null);
+                    }}
+                  >
+                    Clear
+                  </button>
                 </div>
               )}
             </div>
@@ -642,11 +717,18 @@ export function InventoryScreen({
                 <GemPanel
                   primarySkill={primarySkill ?? null}
                   activeSkills={activeSkills ?? []}
+                  cursorItem={cursorItem}
                   selectedSupportGem={selectedSupportGem}
+                  selectedSkillGem={selectedSkillGem}
                   onClearSelectedGem={() => setSelectedSupportGemUid(null)}
+                  onClearSelectedSkillGem={() => setSelectedSkillGemUid(null)}
                   onSocketGem={onSocketGem}
                   onUnsocketGem={onUnsocketGem}
+                  onEquipSkillGem={onEquipSkillGem}
+                  onUnequipSkillGem={onUnequipSkillGem}
                   mobileMode={mobileMode}
+                  onHoverTooltip={handleGemTooltipHover}
+                  onClearTooltip={clearGemTooltipHover}
                 />
               )
             ) : (
@@ -654,10 +736,17 @@ export function InventoryScreen({
                 <GemPanel
                   primarySkill={primarySkill ?? null}
                   activeSkills={activeSkills ?? []}
+                  cursorItem={cursorItem}
                   selectedSupportGem={selectedSupportGem}
+                  selectedSkillGem={selectedSkillGem}
                   onClearSelectedGem={() => setSelectedSupportGemUid(null)}
+                  onClearSelectedSkillGem={() => setSelectedSkillGemUid(null)}
                   onSocketGem={onSocketGem}
                   onUnsocketGem={onUnsocketGem}
+                  onEquipSkillGem={onEquipSkillGem}
+                  onUnequipSkillGem={onUnequipSkillGem}
+                  onHoverTooltip={handleGemTooltipHover}
+                  onClearTooltip={clearGemTooltipHover}
                 />
                 <div className="inv-divider" />
                 {renderInventoryGrid(false)}
@@ -752,6 +841,7 @@ export function InventoryScreen({
 
       {/* ── Tooltip ─────────────────────────────────── */}
       {hoveredItem && <ItemTooltip itemData={hoveredItem} mousePos={mousePos} />}
+      {hoveredGemTooltip && <ItemTooltip itemData={hoveredGemTooltip.itemData} mousePos={hoveredGemTooltip.mousePos} />}
     </div>
   );
 }

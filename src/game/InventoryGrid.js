@@ -150,7 +150,6 @@ export class InventoryGrid {
         gemId:       itemDef.gemId ?? null,
         gemIcon:     itemDef.gemIcon ?? null,
         skillOfferId: itemDef.skillOfferId ?? null,
-        mapTier:     itemDef.mapTier ?? null,
         mapTheme:    itemDef.mapTheme ?? null,
         mapMods:     itemDef.mapMods ?? [],
         mapItemLevel: itemDef.mapItemLevel ?? null,

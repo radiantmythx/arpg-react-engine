@@ -6,6 +6,13 @@
  */
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import {
+  buildProjectileConfig,
+  buildSpreadAngles,
+  getProjectileSupportState,
+  normalizeDirection,
+  scaleProjectileMotion,
+} from '../projectileSupport.js';
 
 export class MagicBolt extends Weapon {
   constructor() {
@@ -16,37 +23,26 @@ export class MagicBolt extends Weapon {
   }
 
   fire(player, entities, engine) {
-    let dx = player.facingX ?? 1;
-    let dy = player.facingY ?? 0;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 0.0001) {
-      dx = 1;
-      dy = 0;
-    } else {
-      dx /= dist;
-      dy /= dist;
-    }
-
     const stats = this.computedStats(player);
-    const speed = this.config.projectileSpeed;
-    const count = 1 + (player.projectileCountBonus ?? 0);
-    const spread = 0.14;
-    const base = Math.atan2(dy, dx);
+    const direction = normalizeDirection(player.facingX ?? 1, player.facingY ?? 0, 1, 0);
+    const supportState = getProjectileSupportState(stats, {
+      playerProjectileBonus: player.projectileCountBonus ?? 0,
+    });
+    const motion = scaleProjectileMotion(this.config.projectileSpeed, this.config.projectileLifetime, supportState);
+    const baseAngle = Math.atan2(direction.y, direction.x);
 
-    for (let i = 0; i < count; i++) {
-      const a = base - (spread * (count - 1)) / 2 + spread * i;
+    for (const angle of buildSpreadAngles(baseAngle, supportState.totalProjectiles, 0.14)) {
       entities.acquireProjectile(
         player.x, player.y,
-        Math.cos(a) * speed, Math.sin(a) * speed,
-        {
+        Math.cos(angle) * motion.speed, Math.sin(angle) * motion.speed,
+        buildProjectileConfig({
           damage: stats.damage,
           damageBreakdown: stats.damageBreakdown,
           radius: this.config.projectileRadius,
           color: this.config.color,
-          lifetime: this.config.projectileLifetime,
+          lifetime: motion.lifetime,
           piercing: false,
-          sourceTags: this.tags,
-        },
+        }, supportState, this.tags),
       );
     }
     if (engine) engine.onSkillFire();

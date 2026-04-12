@@ -1,6 +1,11 @@
 import { Weapon } from './Weapon.js';
-import { Projectile } from '../entities/Projectile.js';
 import { WEAPONS } from '../config.js';
+import {
+  buildProjectileConfig,
+  buildSpreadAngles,
+  getProjectileSupportState,
+  scaleProjectileMotion,
+} from '../projectileSupport.js';
 
 export class MagicWand extends Weapon {
   constructor() {
@@ -20,17 +25,27 @@ export class MagicWand extends Weapon {
     if (dist === 0) return;
 
     const stats = this.computedStats(player);
-    const speed = this.config.projectileSpeed;
-    entities.add(
-      new Projectile(player.x, player.y, (dx / dist) * speed, (dy / dist) * speed, {
-        damage: stats.damage,
-        damageBreakdown: stats.damageBreakdown,
-        radius: this.config.projectileRadius,
-        color: this.config.color,
-        lifetime: this.config.projectileLifetime,
-        sourceTags: this.tags,
-      }),
-    );
+    const supportState = getProjectileSupportState(stats, {
+      playerProjectileBonus: player.projectileCountBonus ?? 0,
+    });
+    const motion = scaleProjectileMotion(this.config.projectileSpeed, this.config.projectileLifetime, supportState);
+    const baseAngle = Math.atan2(dy / dist, dx / dist);
+    for (const angle of buildSpreadAngles(baseAngle, supportState.totalProjectiles, 0.14)) {
+      entities.acquireProjectile(
+        player.x,
+        player.y,
+        Math.cos(angle) * motion.speed,
+        Math.sin(angle) * motion.speed,
+        buildProjectileConfig({
+          damage: stats.damage,
+          damageBreakdown: stats.damageBreakdown,
+          radius: this.config.projectileRadius,
+          color: this.config.color,
+          lifetime: motion.lifetime,
+          piercing: this.config.piercing ?? false,
+        }, supportState, this.tags),
+      );
+    }
   }
 
   _findNearest(player, enemies) {

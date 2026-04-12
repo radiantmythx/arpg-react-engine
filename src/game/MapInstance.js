@@ -5,14 +5,25 @@
  * In C4 this will also hold the generated MapLayout (rooms, corridors, walls).
  * In C5 the ClusterSpawner will read this to place enemy clusters.
  */
+import { SCALING_CONFIG, clampAreaLevel } from './config/scalingConfig.js';
+
 export class MapInstance {
   /**
   * @param {object} [mapDef]  — registry-resolved runtime map definition
    * @param {number} [seed]    — RNG seed for procedural generation
    */
   constructor(mapDef, seed) {
-    this.mapDef  = mapDef ?? { id: 'placeholder', name: 'Unknown', tier: 1 };
+    this.mapDef  = mapDef ?? { id: 'placeholder', name: 'Unknown' };
     this.seed    = seed ?? Math.floor(Math.random() * 0xffffffff);
+    const fallbackSourceMapItemLevel = this.mapDef?.rewards?.itemLevel ?? 1;
+    this.sourceMapItemLevel = clampAreaLevel(this.mapDef?.sourceMapItemLevel ?? fallbackSourceMapItemLevel);
+    this.areaLevel = clampAreaLevel(this.mapDef?.areaLevel ?? this.sourceMapItemLevel);
+    this.enemyScalarProfileVersion = SCALING_CONFIG.version;
+    this.encounterDebug = {
+      sourceMapItemLevel: this.sourceMapItemLevel,
+      computedAreaLevel: this.areaLevel,
+      enemyScalarProfileVersion: this.enemyScalarProfileVersion,
+    };
 
     /** Portals the player has remaining in this instance. Consumed on death. */
     this.portalsRemaining = 3;
@@ -40,6 +51,13 @@ export class MapInstance {
       playerNoRegen: false,
       playerDamageTakenMult: 1,
       corrupted: false,
+      layoutTwisting: 0,
+      layoutFortified: 0,
+      layoutFlooded: 0,
+      layoutOvergrown: 0,
+      layoutVolatile: 0,
+      hybridRemixHint: null,
+      geometryModIds: [],
     };
 
     this.applyMods(this.mapDef?.mods ?? []);
@@ -62,6 +80,13 @@ export class MapInstance {
       playerNoRegen: false,
       playerDamageTakenMult: 1,
       corrupted: false,
+      layoutTwisting: 0,
+      layoutFortified: 0,
+      layoutFlooded: 0,
+      layoutOvergrown: 0,
+      layoutVolatile: 0,
+      hybridRemixHint: null,
+      geometryModIds: [],
     };
 
     for (const mod of this.mods) {
@@ -91,7 +116,34 @@ export class MapInstance {
         case 'corrupted':
           this.modEffects.corrupted = true;
           break;
+        case 'twisting':
+          this.modEffects.layoutTwisting += Math.max(1, Number(mod.value ?? 1));
+          this.modEffects.geometryModIds.push('twisting');
+          break;
+        case 'fortified':
+          this.modEffects.layoutFortified += Math.max(1, Number(mod.value ?? 1));
+          this.modEffects.geometryModIds.push('fortified');
+          break;
+        case 'flooded':
+          this.modEffects.layoutFlooded += Math.max(1, Number(mod.value ?? 1));
+          this.modEffects.geometryModIds.push('flooded');
+          break;
+        case 'overgrown':
+          this.modEffects.layoutOvergrown += Math.max(1, Number(mod.value ?? 1));
+          this.modEffects.geometryModIds.push('overgrown');
+          break;
+        case 'volatile':
+          this.modEffects.layoutVolatile += Math.max(1, Number(mod.value ?? 1));
+          this.modEffects.geometryModIds.push('volatile');
+          break;
       }
+    }
+
+    const hasTwisting = this.modEffects.layoutTwisting > 0;
+    const hasFlooded = this.modEffects.layoutFlooded > 0;
+    const hasOvergrown = this.modEffects.layoutOvergrown > 0;
+    if (hasTwisting && (hasFlooded || hasOvergrown)) {
+      this.modEffects.hybridRemixHint = hasFlooded ? 'twisting+flooded' : 'twisting+overgrown';
     }
   }
 }

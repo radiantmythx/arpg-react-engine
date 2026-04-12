@@ -164,9 +164,11 @@ export class Enemy extends Entity {
     }
 
     this.health -= mitigated * this.shockedMult;
+    const dealt = mitigated * this.shockedMult;
     if (this.health <= 0) {
       this.active = false;
     }
+    return dealt;
   }
 
   tryAcquireAggro(player) {

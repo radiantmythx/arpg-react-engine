@@ -14,29 +14,58 @@
  *
  * Additive stats: speedFlat, maxHealthFlat, healthRegenPerS, pickupRadiusFlat
  *   value is a flat addend
+ *
+ * Mana stats:
+ *   maxManaFlat, manaRegenPerS are additive; manaCostMult is multiplicative.
  */
-function inferAffixTier(id = '') {
-  if (id.includes('_minor')) return 'minor';
-  if (id.includes('_major')) return 'major';
-  if (id.includes('_epic')) return 'epic';
-  if (id.startsWith('more_')) return 'epic';
-  return 'major';
+import { SCALING_CONFIG, clampAreaLevel } from '../config/scalingConfig.js';
+
+export const AFFIX_TIERS = ['minor', 'major', 'advanced', 'high', 'pinnacle'];
+
+export function affixTierGate(tier, config = SCALING_CONFIG) {
+  const gate = Number(config?.affixGates?.[tier]);
+  return Number.isFinite(gate) ? gate : Number.POSITIVE_INFINITY;
 }
 
-function inferGoldValue(id = '', tier = 'major') {
+export function isAffixTierUnlocked(itemLevel, tier, config = SCALING_CONFIG) {
+  return clampAreaLevel(itemLevel) >= affixTierGate(tier, config);
+}
+
+export function unlockedAffixTiers(itemLevel, config = SCALING_CONFIG) {
+  return AFFIX_TIERS.filter((tier) => isAffixTierUnlocked(itemLevel, tier, config));
+}
+
+function inferAffixTier(id = '') {
+  if (id.startsWith('more_')) return 'pinnacle';
+  if (id.includes('_epic')) return 'high';
+  if (id.includes('_minor')) return 'minor';
+  if (id.includes('_major')) return 'major';
+  return 'advanced';
+}
+
+function inferGoldValue(id = '', tier = 'advanced') {
   if (id.includes('_resist_')) {
     if (tier === 'minor') return 3;
     if (tier === 'major') return 6;
+    if (tier === 'advanced') return 8;
+    if (tier === 'high') return 10;
+    if (tier === 'pinnacle') return 12;
     return 8;
   }
   if (tier === 'minor') return 2;
   if (tier === 'major') return 5;
+  if (tier === 'advanced') return 8;
+  if (tier === 'high') return 10;
+  if (tier === 'pinnacle') return 12;
   return 8;
 }
 
-function inferWeight(tier = 'major') {
+function inferWeight(tier = 'advanced') {
   if (tier === 'minor') return 100;
   if (tier === 'major') return 65;
+  if (tier === 'advanced') return 45;
+  if (tier === 'high') return 30;
+  if (tier === 'pinnacle') return 18;
   return 35;
 }
 
@@ -145,6 +174,14 @@ const RAW_AFFIX_POOL = [
     value: 3,
     label: '+3 HP regen/s',
   },
+  {
+    id: 'arm_mana_major',
+    type: 'prefix',
+    slots: ['armor'],
+    stat: 'maxManaFlat',
+    value: 35,
+    label: '+35 maximum mana',
+  },
 
   // ─── Armor Suffixes ───────────────────────────────────────────────────────
   {
@@ -205,6 +242,14 @@ const RAW_AFFIX_POOL = [
     value: 25,
     label: '+25 movement speed',
   },
+  {
+    id: 'jew_mana_major',
+    type: 'prefix',
+    slots: ['jewelry'],
+    stat: 'maxManaFlat',
+    value: 45,
+    label: '+45 maximum mana',
+  },
 
   // ─── Jewelry Suffixes ─────────────────────────────────────────────────────
   {
@@ -230,6 +275,22 @@ const RAW_AFFIX_POOL = [
     stat: 'maxHealthFlat',
     value: 25,
     label: '+25 max HP',
+  },
+  {
+    id: 'of_focus',
+    type: 'suffix',
+    slots: ['jewelry'],
+    stat: 'manaRegenPerS',
+    value: 3,
+    label: '+3 mana regen/s',
+  },
+  {
+    id: 'of_clarity_mana',
+    type: 'suffix',
+    slots: ['jewelry'],
+    stat: 'manaCostMult',
+    value: 0.9,
+    label: '−10% mana costs',
   },
 
   // ─── Helmet Prefixes ──────────────────────────────────────────────────────

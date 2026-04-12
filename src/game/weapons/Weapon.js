@@ -1,4 +1,5 @@
 import { ELEMENT_TYPES, makeDamageRange, sumAverageDamageMap } from '../damageUtils.js';
+import { MAX_SUPPORT_SOCKETS, openSupportSlotsForLevel } from '../supportSockets.js';
 
 /**
  * Weapon — base class for all auto-fire and active skills implemented as
@@ -16,6 +17,8 @@ export class Weapon {
     this.id = config.id;
     this.name = config.name;
     this.level = 1;
+    this._xp = 0;
+    this.maxLevel = 20;
     this.cooldown = config.cooldown;
     this.damage = config.damage;
     this.config = config;
@@ -28,14 +31,14 @@ export class Weapon {
     this.scaling  = config.scaling  ?? {};
     /** Seconds from activation press to effect delivery (0 = instant for auto-fire). */
     this.castTime = config.castTime ?? 0;
-    /** Reserved for future resource system. */
+    /** Resource cost used by active weapon skills. */
     this.manaCost = config.manaCost ?? 0;
     /**
-     * Support gem sockets.  Starts with 1 slot; gains more at levels 4/7/10/14/18.
-     * Each entry is null (empty) or a SkillSupport instance.
+     * Support gem sockets. Open sockets scale by gem level:
+     * level 1 = 1, 4 = 2, 7 = 3, 10 = 4, 13+ = 5.
      * @type {Array<null|object>}
      */
-    this.supportSlots = [null];
+    this.supportSlots = Array(MAX_SUPPORT_SOCKETS).fill(null);
 
     /**
      * Skill identity tags — set by each subclass.
@@ -65,7 +68,7 @@ export class Weapon {
    */
   computedStats(player) {
     // Start with all config fields as baseline, overriding damage with live value
-    const stats = { ...this.config, damage: this.damage };
+    const stats = { ...this.config, damage: this.damage, manaCost: this.manaCost };
 
     // Apply support gem modifiers
     for (const support of this.supportSlots) {
@@ -130,6 +133,29 @@ export class Weapon {
    * Override in subclasses; no-op by default.
    */
   draw(_renderer, _player) {}
+
+  static xpNeeded(level) {
+    return Math.round(100 * Math.pow(level, 1.8));
+  }
+
+  static slotsForLevel(level) {
+    return openSupportSlotsForLevel(level);
+  }
+
+  addXP(amount) {
+    if (this.level >= this.maxLevel) return false;
+    this._xp += amount;
+    let levelled = false;
+    while (this.level < this.maxLevel) {
+      const needed = Weapon.xpNeeded(this.level);
+      if (this._xp < needed) break;
+      this._xp -= needed;
+      this.levelUp();
+      levelled = true;
+    }
+    if (this.level >= this.maxLevel) this._xp = 0;
+    return levelled;
+  }
 
   levelUp() {
     this.level++;

@@ -1,7 +1,7 @@
 import { AFFIX_POOL } from '../../data/affixes.js';
 
 const ALLOWED_TYPES = new Set(['prefix', 'suffix']);
-const ALLOWED_TIERS = new Set(['minor', 'major', 'epic']);
+const ALLOWED_TIERS = new Set(['minor', 'major', 'advanced', 'high', 'pinnacle']);
 
 function isFiniteNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
@@ -29,7 +29,9 @@ export function validateAffixesPlaceholder() {
     if (!isFiniteNumber(a.value)) errors.push(`${loc} (${a.id}): value must be finite number`);
     if (typeof a.label !== 'string' || !a.label) errors.push(`${loc} (${a.id}): label must be non-empty string`);
 
-    if (!ALLOWED_TIERS.has(a.tier)) errors.push(`${loc} (${a.id}): tier must be minor|major|epic`);
+    if (!ALLOWED_TIERS.has(a.tier)) {
+      errors.push(`${loc} (${a.id}): tier must be minor|major|advanced|high|pinnacle`);
+    }
     if (!isFiniteNumber(a.goldValue) || a.goldValue < 0) errors.push(`${loc} (${a.id}): goldValue must be non-negative number`);
     if (!isFiniteNumber(a.weight) || a.weight <= 0) errors.push(`${loc} (${a.id}): weight must be > 0`);
 

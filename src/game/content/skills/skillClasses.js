@@ -17,12 +17,46 @@
 import { applyAilmentsOnHit, resolvePenetrationMap } from '../../data/skillTags.js';
 import { ELEMENT_TYPES, makeDamageRange, scaleDamageMap, sumAverageDamageMap } from '../../damageUtils.js';
 import { SKILL_TUNING } from '../tuning/index.js';
+import { MAX_SUPPORT_SOCKETS, openSupportSlotsForLevel } from '../../supportSockets.js';
+import { SCALING_CONFIG } from '../../config/scalingConfig.js';
+import {
+  buildProjectileConfig,
+  buildSpreadAngles,
+  getProjectileSupportState,
+  scaleProjectileMotion,
+} from '../../projectileSupport.js';
 
 function tickVisuals(list, dt) {
   if (!Array.isArray(list) || list.length === 0) return;
   for (const fx of list) fx.age += dt;
   for (let i = list.length - 1; i >= 0; i--) {
     if (list[i].age >= list[i].duration) list.splice(i, 1);
+  }
+}
+
+function applyGlobalActiveGemScaling(stats, level) {
+  const l = Math.max(1, Math.min(20, Math.floor(Number(level) || 1)));
+  const steps = l - 1;
+  const cfg = SCALING_CONFIG.gem.active;
+
+  if (Number.isFinite(stats.damage)) {
+    stats.damage = Math.round(stats.damage * Math.pow(1 + cfg.dmgPerLevel, steps));
+  }
+  if (Number.isFinite(stats.manaCost)) {
+    stats.manaCost = Math.max(0, Math.round(stats.manaCost * Math.pow(1 + cfg.manaCostPerLevel, steps)));
+  }
+  if (Number.isFinite(stats.cooldown)) {
+    const mult = Math.max(cfg.cooldownFloor, Math.pow(1 + cfg.cooldownPerLevel, steps));
+    stats.cooldown = Math.max(0.05, stats.cooldown * mult);
+  }
+  if (Number.isFinite(stats.castTime)) {
+    const mult = Math.max(cfg.castTimeFloor, Math.pow(1 + cfg.castTimePerLevel, steps));
+    stats.castTime = Math.max(0, stats.castTime * mult);
+  }
+  for (const key of ['radius', 'pillarRadius', 'meleeRadius', 'impactRadius', 'afterRadius', 'duration']) {
+    if (Number.isFinite(stats[key])) {
+      stats[key] = stats[key] * Math.pow(1 + cfg.aoePerLevel, steps);
+    }
   }
 }
 
@@ -53,11 +87,11 @@ class SkillDef {
     /** Reserved for future resource system. */
     this.manaCost = cfg.manaCost ?? 0;
     /**
-     * Support gem sockets.  Starts with 1 slot; gains more at levels 4/7/10/14/18.
-     * Each entry is null (empty) or a SkillSupport instance.
+     * Support gem sockets. Open sockets scale by gem level:
+     * level 1 = 1, 4 = 2, 7 = 3, 10 = 4, 13+ = 5.
      * @type {Array<null|object>}
      */
-    this.supportSlots = [null];
+    this.supportSlots = Array(MAX_SUPPORT_SOCKETS).fill(null);
 
     /**
      * Skill identity tags — set by each subclass constructor.
@@ -109,7 +143,7 @@ class SkillDef {
    * @returns {object} snapshot of computed stats — safe to read and discard
    */
   computedStats(player) {
-    const stats = {};
+    const stats = { manaCost: this.manaCost, cooldown: this.cooldown, castTime: this.castTime };
 
     // 1. Base values scaled by level
     for (const [key, baseVal] of Object.entries(this.base)) {
@@ -118,6 +152,8 @@ class SkillDef {
         ? baseVal + (this.level - 1) * (r.flat ?? 0) + baseVal * (r.pct ?? 0) * (this.level - 1)
         : baseVal;
     }
+
+    applyGlobalActiveGemScaling(stats, this.level);
 
     // 2. Support gem modifiers
     for (const support of this.supportSlots) {
@@ -163,12 +199,7 @@ class SkillDef {
    * @returns {number}
    */
   static slotsForLevel(level) {
-    if (level >= 18) return 6;
-    if (level >= 14) return 5;
-    if (level >= 10) return 4;
-    if (level >= 7)  return 3;
-    if (level >= 4)  return 2;
-    return 1;
+    return openSupportSlotsForLevel(level);
   }
 
   activate(_player, _entities, _engine) {}
@@ -177,23 +208,10 @@ class SkillDef {
 
   levelUp() {
     this.level++;
-    // Open new support slots when a level threshold is crossed
-    const slotCount = SkillDef.slotsForLevel(this.level);
-    while (this.supportSlots.length < slotCount) this.supportSlots.push(null);
     this._applyLevelStats();
-    if (this.level >= this.maxLevel) this._applyMaxLevelEffect();
   }
 
   _applyLevelStats() {}
-
-  /**
-   * Called once when the skill reaches level 20.
-   * Override in each subclass to apply the max-level bonus.
-   */
-  _applyMaxLevelEffect() {}
-
-  /** A human-readable description of the max-level bonus. Override per skill. */
-  get maxLevelBonus() { return null; }
 }
 
 // ─── Chaos Blink ────────────────────────────────────────────────────────────
@@ -206,6 +224,7 @@ class ChaosBlink extends SkillDef {
       description: 'Teleport 200 px in your facing direction and briefly become invulnerable.',
       cooldown:    4,
       castTime:    0.20,
+      manaCost:    8,
       base:    { distance: 200 },
       scaling: { distance: { flat: 60, pct: 0 } },
     });
@@ -217,10 +236,6 @@ class ChaosBlink extends SkillDef {
     player.x += player.facingX * distance;
     player.y += player.facingY * distance;
     player.invulnerable = Math.max(player.invulnerable, 0.5);
-    if (this._maxLevel20Invisible) {
-      // Become invisible for 0.8 s — enemies lose targeting
-      player.invisibleTimer = Math.max(player.invisibleTimer ?? 0, 0.8);
-    }
   }
 
   _applyLevelStats() {
@@ -228,15 +243,6 @@ class ChaosBlink extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: +50% blink distance and become briefly invisible after blinking
-    const key = 'distance';
-    this.base[key] = Math.round((this.base[key] ?? 0) * 1.5);
-    this._maxLevel20Invisible = true;
-  }
-
-  get maxLevelBonus() { return '+50% distance; brief invisibility on blink'; }
 }
 
 // ─── Frost Nova ─────────────────────────────────────────────────────────────
@@ -250,6 +256,7 @@ class FrostNova extends SkillDef {
       description: 'Release an ice ring that damages and freezes enemies within 250 px for 2 s.',
       cooldown:    tuning.baseCooldown,
       castTime:    0.65,
+      manaCost:    16,
       base:    { damage: tuning.baseDamage, radius: 250, freeze: 2.0 },
       scaling: { damage: { flat: 7.5, pct: 0 }, radius: { flat: 35, pct: 0 }, freeze: { flat: 0.25, pct: 0 } },
     });
@@ -273,25 +280,6 @@ class FrostNova extends SkillDef {
       }
     }
     if (engine) engine.particles.emit('death', player.x, player.y, { color: '#74b9ff', count: 24 });
-    // Level 20: frozen enemies shatter on death, causing AoE from their position
-    if (this._maxLevel20Shatter) {
-      for (const enemy of [...(entities.getHostiles ? entities.getHostiles() : entities.enemies)]) {
-        if (!enemy.active && enemy.frozenTimer > 0) {
-          const shatterDmg = Math.round((enemy.maxHp ?? enemy.hp ?? damage) * 0.5);
-          const sRq = 80 * 80;
-          for (const e2 of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
-            if (!e2.active) continue;
-            const dx2 = e2.x - enemy.x, dy2 = e2.y - enemy.y;
-            if (dx2 * dx2 + dy2 * dy2 <= sRq) {
-              if (engine) engine.onEnemyHit(e2, shatterDmg);
-              e2.takeDamage(shatterDmg, this.tags);
-              if (!e2.active && engine) engine.onEnemyKilled(e2);
-            }
-          }
-          if (engine) engine.particles.emit('death', enemy.x, enemy.y, { color: '#dfe6e9', count: 18 });
-        }
-      }
-    }
   }
 
   update(dt) {
@@ -313,13 +301,6 @@ class FrostNova extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: frozen enemies shatter on death, dealing 50% of their max HP as AoE damage within 80 px
-    this._maxLevel20Shatter = true;
-  }
-
-  get maxLevelBonus() { return 'Frozen enemies shatter on death for 50% max HP AoE'; }
 }
 
 // ─── Gravity Well ───────────────────────────────────────────────────────────
@@ -332,6 +313,7 @@ class GravityWell extends SkillDef {
       description: 'Violently pull all enemies within 350 px toward you.',
       cooldown:    8,
       castTime:    0.80,
+      manaCost:    18,
       base:    { radius: 350, pullForce: 380 },
       scaling: { radius: { flat: 50, pct: 0 }, pullForce: { flat: 60, pct: 0 } },
     });
@@ -351,11 +333,6 @@ class GravityWell extends SkillDef {
         const pull = Math.min(pullForce, dist * 0.75);
         enemy.x += (dx / dist) * pull;
         enemy.y += (dy / dist) * pull;
-        if (this._maxLevel20Stun) {
-          enemy.stunTimer = Math.max(enemy.stunTimer ?? 0, 1.5);
-          enemy.speedMult  = 0;
-          enemy.speedTimer = 1.5;
-        }
       }
     }
   }
@@ -365,13 +342,6 @@ class GravityWell extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: enemies sucked in are stunned for 1.5 s (can't move/attack)
-    this._maxLevel20Stun = true;
-  }
-
-  get maxLevelBonus() { return 'Pulled enemies are stunned for 1.5 s'; }
 }
 
 // ─── Blood Pact ─────────────────────────────────────────────────────────────
@@ -384,6 +354,7 @@ class BloodPact extends SkillDef {
       description: 'Sacrifice 25% of your current HP to boost all weapon damage by +80% for 4 s.',
       cooldown:    10,
       castTime:    0.40,
+      manaCost:    14,
       base:    { buffMult: 1.8, buffDuration: 4.0, hpCostPct: 0.25 },
       scaling: { buffMult: { flat: 0.2, pct: 0 }, buffDuration: { flat: 0.5, pct: 0 } },
     });
@@ -404,11 +375,6 @@ class BloodPact extends SkillDef {
       w._preBuffDamage = w.damage;
       w.damage = Math.round(w.damage * buffMult);
     }
-    // Level 20: regen 5 HP/s for the buff duration
-    if (this._maxLevel20HpRegen) {
-      player.regenBonusTimer = Math.max(player.regenBonusTimer ?? 0, buffDuration);
-      player.regenBonus      = (player.regenBonus ?? 0) + 5;
-    }
   }
 
   _applyLevelStats() {
@@ -416,13 +382,6 @@ class BloodPact extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: buff also heals 5 HP/s for its duration
-    this._maxLevel20HpRegen = true;
-  }
-
-  get maxLevelBonus() { return 'Buff also provides 5 HP/s regeneration'; }
 }
 
 // ─── Wraith Summon ───────────────────────────────────────────────────────────
@@ -435,6 +394,7 @@ class WraithSummon extends SkillDef {
       description: 'Dispatch a wraith to the nearest enemy. It explodes on arrival for 200 damage.',
       cooldown:    12,
       castTime:    1.00,
+      manaCost:    22,
       base:    { damage: 200, burstRadius: 80 },
       scaling: { damage: { flat: 80, pct: 0 }, burstRadius: { flat: 20, pct: 0 } },
     });
@@ -457,19 +417,6 @@ class WraithSummon extends SkillDef {
 
     const tx = nearest ? nearest.x : player.x + (player.facingX ?? 0) * 200;
     const ty = nearest ? nearest.y : player.y + (player.facingY ?? 1) * 200;
-
-    // Level 20: WraithSummon fires 2 extra bolts before exploding
-    if (this._maxLevel20Haunt && nearest) {
-      const bAngle = Math.atan2(ty - player.x, tx - player.y);
-      for (let i = -1; i <= 1; i += 2) {
-        const a = bAngle + i * 0.3;
-        entities.acquireProjectile(
-          player.x, player.y,
-          Math.cos(a) * 320, Math.sin(a) * 320,
-          { damage: Math.round(damage * 0.4), damageBreakdown: null, radius: 5, color: '#a29bfe', lifetime: 1.2, sourceTags: this.tags },
-        );
-      }
-    }
 
     // Burst at target position
     const rSq = burstRadius * burstRadius;
@@ -506,13 +453,6 @@ class WraithSummon extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: wraith haunts the enemy, firing 2 extra bolts before exploding
-    this._maxLevel20Haunt = true;
-  }
-
-  get maxLevelBonus() { return 'Wraith fires 2 additional projectiles before exploding'; }
 }
 
 // ─── Time Warp ───────────────────────────────────────────────────────────────
@@ -525,6 +465,7 @@ class TimeWarp extends SkillDef {
       description: 'Slow all enemies on screen to 20% speed for 3 s.',
       cooldown:    15,
       castTime:    0.50,
+      manaCost:    24,
       base:    { slowFactor: 0.20, duration: 3.0 },
       scaling: { slowFactor: { flat: -0.025, pct: 0 }, duration: { flat: 1.0, pct: 0 } },
     });
@@ -537,9 +478,6 @@ class TimeWarp extends SkillDef {
       if (!e.active) continue;
       e.speedMult  = slowFactor;
       e.speedTimer = duration;
-      if (this._maxLevel20Freeze) {
-        e.frozenTimer = Math.max(e.frozenTimer ?? 0, 0.5);
-      }
     }
   }
 
@@ -548,13 +486,6 @@ class TimeWarp extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: time stop (5%) instead of merely 20% slow
-    this._maxLevel20Freeze = true;
-  }
-
-  get maxLevelBonus() { return 'Enemies are frozen for first 0.5 s of slow'; }
 }
 
 // ─── Iron Bulwark ────────────────────────────────────────────────────────────
@@ -567,6 +498,7 @@ class IronBulwark extends SkillDef {
       description: 'Erect a 3 s shield that absorbs up to 80 damage before breaking.',
       cooldown:    8,
       castTime:    0.30,
+      manaCost:    13,
       base:    { shield: 80, duration: 3.0 },
       scaling: { shield: { flat: 40, pct: 0 }, duration: { flat: 0.5, pct: 0 } },
     });
@@ -584,13 +516,6 @@ class IronBulwark extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: reflect 20% of absorbed damage back to nearby enemies
-    this._maxLevel20Reflect = true;
-  }
-
-  get maxLevelBonus() { return 'Reflects 20% of absorbed damage to nearby enemies'; }
 }
 
 // ─── Arcane Surge ────────────────────────────────────────────────────────────
@@ -603,6 +528,7 @@ class ArcaneSurge extends SkillDef {
       description: 'Instantly refresh all weapon and skill cooldowns; fire at zero cooldown for 2 s. Also grants +30% cast speed for 6 s.',
       cooldown:    6,
       castTime:    0.25,
+      manaCost:    12,
       base:    { arcaneTime: 2.0 },
       scaling: { arcaneTime: { flat: 0.5, pct: 0 } },
     });
@@ -621,19 +547,11 @@ class ArcaneSurge extends SkillDef {
     }
     // Brief zero-cooldown window on the player
     player.arcaneTimer = arcaneTime;
-    // Level 20: +25% cast speed becomes permanent — only apply once
-    if (this._maxLevel20PermanentSpeed) {
-      if (!this._permSpeedApplied) {
-        player.castSpeed = Math.round((player.castSpeed + 0.25) * 100) / 100;
-        this._permSpeedApplied = true;
-      }
-    } else {
-      // +30% castSpeed for 6 s (Phase 12.3); refresh without stacking
-      if (player._arcaneCastSpeedTimer <= 0) {
-        player.castSpeed = Math.round((player.castSpeed + 0.3) * 100) / 100;
-      }
-      player._arcaneCastSpeedTimer = 6.0;
+    // +30% castSpeed for 6 s (Phase 12.3); refresh without stacking
+    if (player._arcaneCastSpeedTimer <= 0) {
+      player.castSpeed = Math.round((player.castSpeed + 0.3) * 100) / 100;
     }
+    player._arcaneCastSpeedTimer = 6.0;
   }
 
   _applyLevelStats() {
@@ -641,13 +559,6 @@ class ArcaneSurge extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: cast speed bonus is permanent (+25%) instead of temporary
-    this._maxLevel20PermanentSpeed = true;
-  }
-
-  get maxLevelBonus() { return '+25% cast speed becomes permanent (no timer)'; }
 }
 
 // ─── Fireball ────────────────────────────────────────────────────────────────
@@ -661,6 +572,7 @@ class Fireball extends SkillDef {
       description: 'Launch an arcing fireball that detonates on impact, dealing fire damage to all enemies within 60 px and igniting them.',
       cooldown:    tuning.baseCooldown,
       castTime:    0.75,
+      manaCost:    17,
       base:    { damage: tuning.baseDamage, radius: 60 },
       scaling: { damage: { flat: 18, pct: 0 }, radius: { flat: 10, pct: 0 } },
     });
@@ -669,7 +581,11 @@ class Fireball extends SkillDef {
   }
 
   activate(player, entities, engine) {
-    const { damage, radius, damageBreakdown } = this.computedStats(player);
+    const computed = this.computedStats(player);
+    const { damage, radius, damageBreakdown } = computed;
+    const supportState = getProjectileSupportState(computed, {
+      playerProjectileBonus: player.projectileCountBonus ?? 0,
+    });
     const tags = this.tags;
     const penMap = resolvePenetrationMap(tags, player);
 
@@ -685,6 +601,8 @@ class Fireball extends SkillDef {
     }
     const dx = tx - player.x, dy = ty - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const motion = scaleProjectileMotion(380, 2.0, supportState);
+    const baseAngle = Math.atan2(dy / dist, dx / dist);
 
     // AoE burst helper — detonates at world position (bx, by)
     const burst = (bx, by) => {
@@ -697,31 +615,28 @@ class Fireball extends SkillDef {
           if (engine) engine.onEnemyHit(e, damage);
           e.takeDamage(damageBreakdown ?? damage, tags, penMap);
           applyAilmentsOnHit(tags, damageBreakdown ?? damage, e, player);
-          // Level 20: guaranteed ignite
-          if (this._maxLevel20GuaranteedIgnite && e.active) {
-            e.ignitedTimer = Math.max(e.ignitedTimer ?? 0, 3.0);
-            e.ignitedDamage = Math.max(e.ignitedDamage ?? 0, damage * 0.2);
-          }
           if (!e.active && engine) engine.onEnemyKilled(e);
         }
       }
       if (engine) engine.particles.emit('death', bx, by, { color: '#e17055', count: 22 });
     };
 
-    entities.acquireProjectile(
-      player.x, player.y,
-      (dx / dist) * 380, (dy / dist) * 380,
-      {
-        damage:          1,    // minimal trigger; real damage handled by burst
-        damageBreakdown: null,
-        radius:          8,
-        color:           '#e17055',
-        lifetime:        2.0,
-        sourceTags:      [],   // no per-hit ailments; burst applies them internally
-        onHit:           (proj) => burst(proj.x, proj.y),
-        onExpire:        (proj) => burst(proj.x, proj.y),
-      },
-    );
+    for (const angle of buildSpreadAngles(baseAngle, supportState.totalProjectiles, 0.14)) {
+      entities.acquireProjectile(
+        player.x, player.y,
+        Math.cos(angle) * motion.speed, Math.sin(angle) * motion.speed,
+        buildProjectileConfig({
+          damage:          1,
+          damageBreakdown: null,
+          radius:          8,
+          color:           '#e17055',
+          lifetime:        motion.lifetime,
+          sourceTags:      [],
+          onHit:           (proj) => burst(proj.x, proj.y),
+          onExpire:        (proj) => burst(proj.x, proj.y),
+        }, supportState, this.tags, { sourceTags: [] }),
+      );
+    }
     if (engine) engine.onSkillFire();
   }
 
@@ -744,13 +659,6 @@ class Fireball extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: explosion ignites all hit enemies (guaranteed ignite)
-    this._maxLevel20GuaranteedIgnite = true;
-  }
-
-  get maxLevelBonus() { return 'Explosion guarantees Ignite on all hit enemies'; }
 }
 
 // ─── Glacial Cascade ─────────────────────────────────────────────────────────
@@ -763,6 +671,7 @@ class GlacialCascade extends SkillDef {
       description: 'Erupt 5 ice pillars in a line, each damaging and chilling enemies within 36 px.',
       cooldown:    7.0,
       castTime:    0.85,
+      manaCost:    19,
       base:    { damage: 30, pillarRadius: 36 },
       scaling: { damage: { flat: 12, pct: 0 }, pillarRadius: { flat: 5, pct: 0 } },
     });
@@ -790,7 +699,7 @@ class GlacialCascade extends SkillDef {
 
     const step = 65;
     const rSq  = pillarRadius * pillarRadius;
-    const pillarCount = this._maxLevel20ExtraPillars ? 7 : 5;
+    const pillarCount = 5;
     for (let i = 1; i <= pillarCount; i++) {
       const px = player.x + dirX * step * i;
       const py = player.y + dirY * step * i;
@@ -831,13 +740,6 @@ class GlacialCascade extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: 7 pillars instead of 5, wider spacing
-    this._maxLevel20ExtraPillars = true;
-  }
-
-  get maxLevelBonus() { return 'Erupts 7 ice pillars (was 5)'; }
 }
 
 // ─── Lightning Strike ────────────────────────────────────────────────────────
@@ -850,6 +752,7 @@ class LightningStrike extends SkillDef {
       description: 'Melee burst within 80 px (1.5× damage), then fire 3 lightning bolts forward.',
       cooldown:    3.5,
       castTime:    0.40,
+      manaCost:    11,
       base:    { damage: 35, meleeRadius: 80, boltDamage: 22 },
       scaling: { damage: { flat: 12, pct: 0 }, boltDamage: { flat: 8, pct: 0 } },
     });
@@ -858,7 +761,12 @@ class LightningStrike extends SkillDef {
   }
 
   activate(player, entities, engine) {
-    const { damage, meleeRadius, boltDamage, damageBreakdown } = this.computedStats(player);
+    const computed = this.computedStats(player);
+    const { damage, meleeRadius, boltDamage, damageBreakdown } = computed;
+    const supportState = getProjectileSupportState(computed, {
+      baseProjectiles: 3,
+      playerProjectileBonus: player.projectileCountBonus ?? 0,
+    });
     const tags = this.tags;
     const penMap = resolvePenetrationMap(tags, player);
     this._bursts.push({ x: player.x, y: player.y, radius: meleeRadius, age: 0, duration: 0.26, color: '#7fd7ff' });
@@ -880,15 +788,18 @@ class LightningStrike extends SkillDef {
 
     // Phase 2 — lightning bolts forward
     const base = Math.atan2(player.facingY ?? 1, player.facingX ?? 0);
-    const spread = Math.PI / 9; // 20°
-    const boltCount = this._maxLevel20ExtraBolts ? 5 : 3;
-    const boltOffset = (boltCount - 1) / 2;
-    for (let i = 0; i < boltCount; i++) {
-      const a = base + (i - boltOffset) * spread;
+    const motion = scaleProjectileMotion(520, 1.0, supportState);
+    for (const angle of buildSpreadAngles(base, supportState.totalProjectiles, Math.PI / 9)) {
       entities.acquireProjectile(
         player.x, player.y,
-        Math.cos(a) * 520, Math.sin(a) * 520,
-        { damage: boltDamage, damageBreakdown: null, radius: 5, color: '#74b9ff', lifetime: 1.0, sourceTags: tags },
+        Math.cos(angle) * motion.speed, Math.sin(angle) * motion.speed,
+        buildProjectileConfig({
+          damage: boltDamage,
+          damageBreakdown: null,
+          radius: 5,
+          color: '#74b9ff',
+          lifetime: motion.lifetime,
+        }, supportState, tags),
       );
     }
     if (engine) engine.onSkillFire();
@@ -915,13 +826,6 @@ class LightningStrike extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: 5 bolts forward instead of 3
-    this._maxLevel20ExtraBolts = true;
-  }
-
-  get maxLevelBonus() { return 'Fires 5 lightning bolts (was 3)'; }
 }
 
 // ─── Blade Flurry ────────────────────────────────────────────────────────────
@@ -934,6 +838,7 @@ class BladeFlurry extends SkillDef {
       description: 'Activate to build stages (up to 6). Auto-releases after 1.2 s for a scaling AoE burst. More stages = more damage & radius.',
       cooldown:    8.0,
       castTime:    0,
+      manaCost:    15,
       base:    { damage: 30, baseRadius: 55 },
       scaling: { damage: { flat: 10, pct: 0 }, baseRadius: { flat: 8, pct: 0 } },
     });
@@ -1026,13 +931,6 @@ class BladeFlurry extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: max stages increases to 8 (was 6)
-    this._maxStages = 8;
-  }
-
-  get maxLevelBonus() { return 'Maximum stages increased to 8 (was 6)'; }
 }
 
 // ─── Earthquake ──────────────────────────────────────────────────────────────
@@ -1045,6 +943,7 @@ class Earthquake extends SkillDef {
       description: 'Instant ground slam (80 px, 80% dmg) + aftershock 1.5 s later (140 px, 100% dmg). Both apply Bleed.',
       cooldown:    9.0,
       castTime:    1.20,
+      manaCost:    21,
       base:    { damage: 70, impactRadius: 80, afterRadius: 140 },
       scaling: { damage: { flat: 25, pct: 0 }, impactRadius: { flat: 10, pct: 0 }, afterRadius: { flat: 15, pct: 0 } },
     });
@@ -1079,11 +978,6 @@ class Earthquake extends SkillDef {
     this._aftershockPending = true;
     this._aftershockTimer   = 1.5;
     this._aftershockCtx     = { originX: player.x, originY: player.y, damage, damageBreakdown, afterRadius, entities, engine, player, tags, penMap };
-    // Level 20: queue a second aftershock 1.5 s after the first
-    if (this._maxLevel20DoubleAfterShock) {
-      this._aftershock2Pending = true;
-      this._aftershock2Timer   = 3.0;
-    }
   }
 
   update(dt) {
@@ -1091,30 +985,6 @@ class Earthquake extends SkillDef {
     if (this._aftershockPending) {
       this._aftershockTimer -= dt;
       if (this._aftershockTimer <= 0) this._doAfterShock();
-    }
-    if (this._aftershock2Pending) {
-      this._aftershock2Timer -= dt;
-      if (this._aftershock2Timer <= 0) {
-        this._aftershock2Pending = false;
-        // Re-fire aftershock from same origin
-        const ctx = this._aftershockCtx;
-        if (ctx) {
-          const { originX, originY, damage, damageBreakdown, afterRadius, entities, engine, player, tags, penMap } = ctx;
-          const rSq = afterRadius * afterRadius;
-          for (const e of (entities.getHostiles ? entities.getHostiles() : entities.enemies)) {
-            if (!e.active) continue;
-            const dx = e.x - originX, dy = e.y - originY;
-            if (dx * dx + dy * dy <= rSq) {
-              if (engine) engine.onEnemyHit(e, damage);
-              e.takeDamage(damageBreakdown ?? damage, tags, penMap);
-              applyAilmentsOnHit(tags, damageBreakdown ?? damage, e, player);
-              if (!e.active && engine) engine.onEnemyKilled(e);
-            }
-          }
-          if (engine) engine.particles.emit('death', originX, originY, { color: '#fdcb6e', count: 40 });
-          this._shockwaves.push({ x: originX, y: originY, radius: afterRadius, age: 0, duration: 0.55, color: '#ffe08a' });
-        }
-      }
     }
   }
 
@@ -1155,13 +1025,6 @@ class Earthquake extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: aftershock fires a second time 1.5 s after the first
-    this._maxLevel20DoubleAfterShock = true;
-  }
-
-  get maxLevelBonus() { return 'Aftershock fires twice (second aftershock at +1.5 s)'; }
 }
 
 // ─── Vortex ───────────────────────────────────────────────────────────────────
@@ -1174,6 +1037,7 @@ class Vortex extends SkillDef {
       description: 'Summon a chilling vortex at the nearest enemy that pulses cold damage every 0.3 s for 3 s.',
       cooldown:    8.0,
       castTime:    0.60,
+      manaCost:    18,
       base:    { damage: 18, radius: 60, duration: 3.0 },
       scaling: { damage: { flat: 6, pct: 0 }, radius: { flat: 8, pct: 0 }, duration: { flat: 0.5, pct: 0 } },
     });
@@ -1206,22 +1070,6 @@ class Vortex extends SkillDef {
       const penMap = resolvePenetrationMap(tags, v.player);
       v.remaining -= dt;
       v.tickAccum  += dt;
-      // Level 20: drift toward nearest enemy
-      if (this._maxLevel20Tracking) {
-        let nearest = null, nearestDSq = Infinity;
-        for (const e of (v.entities.getHostiles ? v.entities.getHostiles() : v.entities.enemies)) {
-          if (!e.active) continue;
-          const dx = e.x - v.x, dy = e.y - v.y;
-          const d = dx * dx + dy * dy;
-          if (d < nearestDSq) { nearestDSq = d; nearest = e; }
-        }
-        if (nearest) {
-          const dx = nearest.x - v.x, dy = nearest.y - v.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          v.x += (dx / dist) * 40 * dt;
-          v.y += (dy / dist) * 40 * dt;
-        }
-      }
       if (v.tickAccum >= 0.30) {
         v.tickAccum -= 0.30;
         const rSq = v.radius * v.radius;
@@ -1256,13 +1104,6 @@ class Vortex extends SkillDef {
     const s = table[this.level];
     if (s?.cooldown) this.cooldown = s.cooldown;
   }
-
-  _applyMaxLevelEffect() {
-    // Level 20: vortex slowly drifts toward nearest enemy instead of staying fixed
-    this._maxLevel20Tracking = true;
-  }
-
-  get maxLevelBonus() { return 'Vortex slowly tracks the nearest enemy'; }
 }
 
 // ─── Skill class exports ────────────────────────────────────────────────────
@@ -1283,4 +1124,6 @@ export {
   Earthquake,
   Vortex,
 };
+
+
 

@@ -4,6 +4,11 @@ import '../styles/MapSelect.css';
 
 const FREE_MAPS = listFreeMaps();
 
+function toRoman(value = 1) {
+  const map = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
+  return map[value] ?? `${value}`;
+}
+
 /**
  * C3 minimal map select opened from the hub map device.
  */
@@ -30,6 +35,27 @@ export function MapSelectScreen({
       return { ...map, unlocked, cleared };
     });
   }, [clearSet]);
+
+  const actGroups = useMemo(() => {
+    const byAct = new Map();
+    for (const map of rows) {
+      const actNumber = Number(map.act ?? 1);
+      const partNumber = Number(map.campaignPart ?? 1);
+      if (!byAct.has(actNumber)) byAct.set(actNumber, []);
+      byAct.get(actNumber).push({
+        ...map,
+        partNumber,
+        partLabel: `Part ${toRoman(partNumber)}`,
+      });
+    }
+
+    return [...byAct.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([act, parts]) => ({
+        act,
+        parts: [...parts].sort((a, b) => a.partNumber - b.partNumber),
+      }));
+  }, [rows]);
 
   const selectedMapItem = useMemo(
     () => mapItems.find((item) => item.uid === socketedUid) ?? null,
@@ -95,25 +121,31 @@ export function MapSelectScreen({
           ) : null}
 
           {tab === 'acts' ? (
-            <div className="mapsel-list">
-              {rows.map((map) => (
-                <button
-                  key={map.id}
-                  className={`mapsel-row ${!map.unlocked ? 'mapsel-row--locked' : ''}`}
-                  onClick={() => map.unlocked && onSelectMap(map)}
-                  disabled={!map.unlocked}
-                >
-                  <span className="mapsel-name">
-                    {map.cleared ? '✔ ' : ''}
-                    {map.name}
-                  </span>
-                  <span className="mapsel-tier">T{map.tier}</span>
-                  <span className="mapsel-desc">
-                    {map.unlocked
-                      ? map.description
-                      : `Locked: clear ${FREE_MAPS.find((m) => m.id === map.unlockReq)?.name ?? map.unlockReq}`}
-                  </span>
-                </button>
+            <div className="mapsel-act-groups">
+              {actGroups.map((group) => (
+                <section key={group.act} className="mapsel-act-group">
+                  <div className="mapsel-act-header">
+                    <span className="mapsel-act-title">Act {toRoman(group.act)}</span>
+                    <span className="mapsel-act-subtitle">Select a sub-area</span>
+                  </div>
+                  <div className="mapsel-part-grid">
+                    {group.parts.map((map) => (
+                      <button
+                        key={map.id}
+                        className={`mapsel-part-btn ${map.unlocked ? '' : 'mapsel-part-btn--locked'} ${map.cleared ? 'mapsel-part-btn--cleared' : ''}`}
+                        onClick={() => map.unlocked && onSelectMap(map)}
+                        disabled={!map.unlocked}
+                        title={map.unlocked
+                          ? `${map.name} (Area Lv. ${map.areaLevel ?? '?'})`
+                          : `Locked: clear ${FREE_MAPS.find((m) => m.id === map.unlockReq)?.name ?? map.unlockReq}`}
+                      >
+                        <span className="mapsel-part-label">{map.partLabel}</span>
+                        <span className="mapsel-part-level">Lv. {map.areaLevel ?? '?'}</span>
+                        <span className="mapsel-part-name">{map.name.replace(/^Act\s+[IVX]+\s+-\s+Part\s+[IVX]+:\s+/, '')}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           ) : (
@@ -124,7 +156,7 @@ export function MapSelectScreen({
                   <>
                     <div className="mapsel-device-item mapsel-device-item--active">
                       <span className="mapsel-name">{selectedMapItem.name}</span>
-                      <span className="mapsel-tier">T{selectedMapItem.mapTier ?? 1}</span>
+                      <span className="mapsel-tier">iLvl {selectedMapItem.mapItemLevel ?? 1}</span>
                       <span className="mapsel-desc">
                         Theme: {selectedMapItem.mapTheme ?? 'unknown'} · iLvl {selectedMapItem.mapItemLevel ?? 1}
                       </span>
@@ -146,7 +178,7 @@ export function MapSelectScreen({
 
                 {primedPortal ? (
                   <div className="mapsel-primed-note">
-                    Portal primed for <strong>{primedPortal.name}</strong> (T{primedPortal.tier}). Return to hub and press F near the portal to enter.
+                    Portal primed for <strong>{primedPortal.name}</strong> (Lv.{primedPortal.areaLevel ?? 1}). Return to hub and press F near the portal to enter.
                   </div>
                 ) : null}
               </div>
@@ -166,7 +198,7 @@ export function MapSelectScreen({
                         onClick={() => setSocketedUid(item.uid)}
                       >
                         <span className="mapsel-name">{item.name}</span>
-                        <span className="mapsel-tier">T{item.mapTier ?? 1}</span>
+                        <span className="mapsel-tier">iLvl {item.mapItemLevel ?? 1}</span>
                         <span className="mapsel-desc">
                           {item.mapMods?.length ?? 0} mods · {item.rarity?.toUpperCase() ?? 'MAGIC'} · Theme: {item.mapTheme ?? 'unknown'}
                         </span>

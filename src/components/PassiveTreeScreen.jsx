@@ -204,9 +204,16 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
     if (s.maxHealthFlat !== undefined) {
       lines.push(s.maxHealthFlat >= 0 ? `+${s.maxHealthFlat} maximum life` : `${s.maxHealthFlat} maximum life`);
     }
+    if (s.maxManaFlat !== undefined) {
+      lines.push(s.maxManaFlat >= 0 ? `+${s.maxManaFlat} maximum mana` : `${s.maxManaFlat} maximum mana`);
+    }
     if (s.healthRegenPerS !== undefined) {
       const v = s.healthRegenPerS;
       lines.push(v >= 0 ? `+${v} HP regenerated per second` : `${v} HP per second (drain)`);
+    }
+    if (s.manaRegenPerS !== undefined) {
+      const v = s.manaRegenPerS;
+      lines.push(v >= 0 ? `+${v} mana regenerated per second` : `${v} mana per second`);
     }
     if (s.pickupRadiusFlat !== undefined) {
       lines.push(`+${s.pickupRadiusFlat} pickup radius`);
@@ -214,6 +221,10 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
     if (s.xpMultiplier !== undefined) {
       const pct = Math.round((s.xpMultiplier - 1) * 100);
       lines.push(pct >= 0 ? `+${pct}% experience gained` : `${pct}% experience gained`);
+    }
+    if (s.manaCostMult !== undefined) {
+      const pct = Math.round((1 - s.manaCostMult) * 100);
+      lines.push(pct >= 0 ? `−${pct}% mana costs` : `+${Math.abs(pct)}% mana costs`);
     }
     if (s.projectileCountBonus !== undefined) {
       lines.push(`+${s.projectileCountBonus} projectile${s.projectileCountBonus > 1 ? 's' : ''}`);
@@ -356,7 +367,7 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
             </span>
           ) : (
             <span className="tree-points-zero">
-              {mobileMode ? 'No points available - level up to earn more.' : 'No points available - press [P] or level up'}
+              {mobileMode ? 'No points available - level up to earn more.' : 'No points available - press [T] or level up'}
               {mobileMode && (
                 <span className="tree-points-guide">Tap a node to focus it. Drag on the tree to pan.</span>
               )}
@@ -369,7 +380,7 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
             onClick={onClose}
             aria-label={mobileMode ? 'Close passive tree' : undefined}
           >
-            {mobileMode ? '✕' : '✕ Close [P]'}
+            {mobileMode ? '✕' : '✕ Close [T]'}
           </button>
         </div>
       </div>

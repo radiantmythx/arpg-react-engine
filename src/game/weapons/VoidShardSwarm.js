@@ -13,6 +13,12 @@
 
 import { Weapon } from './Weapon.js';
 import { WEAPONS } from '../config.js';
+import {
+  buildProjectileConfig,
+  buildSpreadAngles,
+  getProjectileSupportState,
+  scaleProjectileMotion,
+} from '../projectileSupport.js';
 
 /** Distance at which shards begin homing in (px from spawn origin). */
 const ORBIT_RADIUS = 90;
@@ -31,27 +37,28 @@ export class VoidShardSwarm extends Weapon {
 
   fire(player, entities, engine) {
     const stats = this.computedStats(player);
+    const supportState = getProjectileSupportState(stats, {
+      baseProjectiles: 3,
+      playerProjectileBonus: player.projectileCountBonus ?? 0,
+    });
+    const motion = scaleProjectileMotion(this.config.projectileSpeed, this.config.projectileLifetime, supportState);
     const facing = Math.atan2(player.facingY ?? 1, player.facingX ?? 0);
-    const spreadAngles = [-0.20, 0, 0.20]; // radians
-    const speed = this.config.projectileSpeed;
 
-    for (const spread of spreadAngles) {
-      const angle = facing + spread;
+    for (const angle of buildSpreadAngles(facing, supportState.totalProjectiles, 0.20)) {
       const proj = entities.acquireProjectile(
         player.x, player.y,
-        Math.cos(angle) * speed, Math.sin(angle) * speed,
-        {
+        Math.cos(angle) * motion.speed, Math.sin(angle) * motion.speed,
+        buildProjectileConfig({
           damage:          stats.damage,
           damageBreakdown: stats.damageBreakdown,
           radius:          this.config.projectileRadius,
           color:           this.config.color,
-          lifetime:        this.config.projectileLifetime,
+          lifetime:        motion.lifetime,
           piercing:        false,
           _spawnX:         player.x,
           _spawnY:         player.y,
           _homing:         false,
-          sourceTags:      this.tags,
-        },
+        }, supportState, this.tags),
       );
       if (proj) this._shards.add(proj);
     }

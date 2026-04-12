@@ -21,14 +21,20 @@ import { VendorScreen } from './components/VendorScreen.jsx';
 import { BossAnnouncement } from './components/BossAnnouncement.jsx';
 import { PortalConfirmDialog } from './components/PortalConfirmDialog.jsx';
 import { MobileControls } from './components/MobileControls.jsx';
+import { HoverInspectPanel } from './components/HoverInspectPanel.jsx';
 import { CHARACTER_MAP } from './game/data/characters.js';
 import { MetaProgression } from './game/MetaProgression.js';
 import { CharacterSave } from './game/CharacterSave.js';
+import { listFreeMaps } from './game/content/registries/index.js';
 import './styles/App.css';
+
+const FREE_MAPS = listFreeMaps();
 
 const INITIAL_HUD = {
   health: 100,
   maxHealth: 100,
+  mana: 100,
+  maxMana: 100,
   xp: 0,
   xpToNext: 10,
   level: 1,
@@ -43,9 +49,24 @@ const INITIAL_HUD = {
   mapEnemiesTotal: 0,
   hasActiveMap: false,
   mapContext: false,
+  debugMode: false,
+  minimapMode: 0,
   mapName: '',
-  mapTier: 0,
+  mapAreaLevel: 0,
   mapMods: [],
+  potions: [
+    { slot: 1, hotkey: '1', empty: true, id: null, name: 'Empty', icon: '·', color: '#5a6070', charges: 0, maxCharges: 0, chargesPerUse: 0, active: false, activePct: 0 },
+    { slot: 2, hotkey: '2', empty: true, id: null, name: 'Empty', icon: '·', color: '#5a6070', charges: 0, maxCharges: 0, chargesPerUse: 0, active: false, activePct: 0 },
+    { slot: 3, hotkey: '3', empty: true, id: null, name: 'Empty', icon: '·', color: '#5a6070', charges: 0, maxCharges: 0, chargesPerUse: 0, active: false, activePct: 0 },
+    { slot: 4, hotkey: '4', empty: true, id: null, name: 'Empty', icon: '·', color: '#5a6070', charges: 0, maxCharges: 0, chargesPerUse: 0, active: false, activePct: 0 },
+  ],
+  training: {
+    enabled: false,
+    windowSeconds: 8,
+    dps: 0,
+    manaSpendPerS: 0,
+    manaRegenPerS: 0,
+  },
   equipment: {
     mainhand:  null,
     offhand:   null,
@@ -203,6 +224,7 @@ export default function App() {
   // D2/PoE inventory state
   const [cursorItem, setCursorItem]   = useState(null);
   const [hoveredDrop, setHoveredDrop] = useState(null);
+  const [hoveredInspect, setHoveredInspect] = useState(null);
   const [mousePos, setMousePos]       = useState({ x: 0, y: 0 });
   // Character selection
   const [unlockedChars, setUnlockedChars] = useState(() => AchievementSystem.loadUnlocks());
@@ -282,6 +304,10 @@ export default function App() {
     setHoveredDrop(itemData ?? null);
   }, []);
 
+  const handleHoverInspectChange = useCallback((payload) => {
+    setHoveredInspect(payload ?? null);
+  }, []);
+
   const handleBossAnnounce = useCallback((bossName) => {
     setBossAnnouncement(bossName);
   }, []);
@@ -358,8 +384,9 @@ export default function App() {
       handlePlayerDied,
       handleHubInteractableChange,
       handleMapComplete,
+      handleHoverInspectChange,
     );
-    engine.setMobileAssistOptions?.({ autoPickup: mobileMode && mobileUi.autoPickup });
+    engine.setMobileAssistOptions?.({ autoPickup: mobileMode && mobileUi.autoPickup, enabled: mobileMode });
     engine.setPerformanceProfile?.(buildPerformanceProfile(mobilePerf.preset, mobileMode));
     engineRef.current = engine;
 
@@ -367,6 +394,7 @@ export default function App() {
     setFinalStats(null);
     setCursorItem(null);
     setHoveredDrop(null);
+    setHoveredInspect(null);
     setDeathInfo(null);
     setBossAnnouncement(null);
     setNearbyHubInteractable(null);
@@ -388,6 +416,7 @@ export default function App() {
     handlePlayerDied,
     handleHubInteractableChange,
     handleMapComplete,
+    handleHoverInspectChange,
     mobileMode,
     mobileUi.autoPickup,
     mobilePerf.preset,
@@ -581,6 +610,45 @@ export default function App() {
     engine._flushHudUpdate();
   }, [screen]);
 
+  const handleDevAddGold = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine?.player) return;
+    engine.player.gold = (engine.player.gold ?? 0) + 100;
+    if (engine.currentCharId) engine.checkpoint();
+    engine._flushHudUpdate?.();
+  }, []);
+
+  const handleDevLevelUp = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine?.player || !engine?.xpSystem) return;
+    const needed = (engine.player.xpToNext ?? 1) - (engine.player.xp ?? 0);
+    engine.xpSystem.collect(needed > 0 ? needed : 1);
+  }, []);
+
+  const handleDevUnlockAllActs = useCallback(() => {
+    const engine = engineRef.current;
+    const charId = engine?.currentCharId ?? activeCharIdRef.current;
+    if (!charId) return;
+
+    const existing = CharacterSave.load(charId) ?? {};
+    const now = new Date().toISOString();
+    const unlockedIds = FREE_MAPS.map((map) => map.id);
+    const clearedSet = new Set([...(existing.actsCleared ?? []), ...unlockedIds]);
+    const actsClearedAt = { ...(existing.actsClearedAt ?? {}) };
+    for (const mapId of unlockedIds) {
+      if (!actsClearedAt[mapId]) actsClearedAt[mapId] = now;
+    }
+
+    const updatedActs = [...clearedSet];
+    CharacterSave.save(charId, {
+      ...existing,
+      actsCleared: updatedActs,
+      actsClearedAt,
+    });
+    setActsCleared(updatedActs);
+    engine?._flushHudUpdate?.();
+  }, []);
+
   const handleSwitchCharacterFromHub = useCallback(() => {
     const engine = engineRef.current;
     if (engine) engine.destroy();
@@ -688,7 +756,9 @@ export default function App() {
   const openPortalConfirm = useCallback(() => {
     const engine = engineRef.current;
     if (!engine || screen !== 'RUNNING') return;
-    if (!engine.canSpendPortalToHub?.()) return;
+    const canSpend = engine.canSpendPortalToHub?.();
+    const canFree  = engine.canReturnToHubFree?.();
+    if (!canSpend && !canFree) return;
     engine.pause();
     setScreen('PORTAL_CONFIRM');
   }, [screen]);
@@ -703,6 +773,10 @@ export default function App() {
   const confirmPortalToHub = useCallback(() => {
     const engine = engineRef.current;
     if (!engine || screen !== 'PORTAL_CONFIRM') return;
+    if (engine.canReturnToHubFree?.()) {
+      engine.returnToHubFree?.();
+      return;
+    }
     const used = engine.spendPortalToHub?.();
     if (!used) {
       engine.resume();
@@ -776,7 +850,8 @@ export default function App() {
     if (!engine) return;
     const invItem = hud.inventory.items.find((item) => item.uid === uid);
     if (invItem?.type === 'skill_gem') {
-      engine.consumeSkillGem(uid);
+      setInvTab('gems');
+      setVendorFeedback('Select this skill gem in the Gems tab, then choose a Primary/Q/E/R slot to equip it.');
       return;
     }
     const equippable = ['weapon', 'armor', 'jewelry', 'helmet', 'boots', 'offhand', 'ring', 'amulet', 'mainhand', 'bodyarmor', 'gloves', 'belt'];
@@ -829,12 +904,109 @@ export default function App() {
 
   // ── Gem socket callbacks (passed to InventoryScreen) ─────────────
 
-  const handleSocketGem = useCallback((skillId, slotIndex, gemUid) => {
-    engineRef.current?.socketGem(skillId, slotIndex, gemUid);
+  const handleSocketGem = useCallback((skillId, slotIndex, gemSource, options = {}) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const usedCursorGem = typeof gemSource === 'object' && gemSource?.uid && gemSource.uid === cursorItem?.uid;
+    const result = engine.socketGem(skillId, slotIndex, gemSource, options);
+    if (!result?.ok) {
+      const messageByReason = {
+        no_skill: 'That skill slot is empty. Equip a skill gem first.',
+        no_sockets: 'This skill cannot use support gems.',
+        invalid_slot: 'Invalid socket index.',
+        slot_locked: 'That socket is locked. Level the skill gem to unlock it.',
+        gem_not_found: 'That support gem was not available to socket.',
+        invalid_gem: 'That item is not a valid support gem.',
+        incompatible: 'That support gem is incompatible with this skill.',
+      };
+      setVendorFeedback(messageByReason[result?.reason] ?? 'Could not socket support gem.');
+      return;
+    }
+    if (usedCursorGem) {
+      setCursorItem(result?.replacedGemItem ?? null);
+    } else if (result?.replacedGemItem) {
+      const placed = engine.addToInventory(result.replacedGemItem);
+      if (!placed) engine.dropItemToWorld(result.replacedGemItem);
+    }
+    setVendorFeedback('Support gem socketed.');
+  }, [cursorItem]);
+
+  const handleUnsocketGem = useCallback((skillId, slotIndex, options = {}) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const toCursor = options?.toCursor === true;
+    const result = engine.unsocketGem(skillId, slotIndex, { toCursor });
+    if (!result?.ok) {
+      const messageByReason = {
+        no_skill: 'That skill slot is empty.',
+        invalid_slot: 'Invalid socket index.',
+        empty_slot: 'That socket is already empty.',
+      };
+      setVendorFeedback(messageByReason[result?.reason] ?? 'Could not unsocket support gem.');
+      return;
+    }
+    if (toCursor) {
+      setCursorItem(result?.gemItem ?? null);
+      setVendorFeedback('Support gem picked up.');
+      return;
+    }
+    setVendorFeedback('Support gem removed.');
   }, []);
 
-  const handleUnsocketGem = useCallback((skillId, slotIndex) => {
-    engineRef.current?.unsocketGem(skillId, slotIndex);
+  const handleEquipSkillGem = useCallback((slotKey, gemSource) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const usedCursorGem = typeof gemSource === 'object' && gemSource?.uid && gemSource.uid === cursorItem?.uid;
+    const result = engine.equipSkillGemToSlot(slotKey, gemSource);
+    if (!result?.ok) {
+      const messageByReason = {
+        no_player: 'No active character is loaded.',
+        invalid_slot: 'Invalid skill slot.',
+        gem_not_found: 'That skill gem was not available to equip.',
+        invalid_gem: 'That item is not a valid skill gem.',
+        offer_not_found: 'Unknown skill gem type.',
+        primary_requires_weapon: 'Primary slot only accepts weapon skill gems.',
+        already_equipped: 'That skill is already equipped in another slot.',
+        slot_occupied: 'That slot is occupied. Unequip it first.',
+        create_failed: 'Failed to equip that skill gem.',
+      };
+      setVendorFeedback(messageByReason[result?.reason] ?? 'Could not equip skill gem.');
+      return;
+    }
+    if (usedCursorGem) {
+      setCursorItem(result?.replacedGemItem ?? null);
+    } else if (result?.replacedGemItem) {
+      const placed = engine.addToInventory(result.replacedGemItem);
+      if (!placed) engine.dropItemToWorld(result.replacedGemItem);
+    }
+    setVendorFeedback(`Equipped skill gem in ${String(slotKey).toUpperCase()} slot.`);
+  }, [cursorItem]);
+
+  const handleUnequipSkillGem = useCallback((slotKey, options = {}) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const toCursor = options?.toCursor === true;
+    const result = engine.unequipSkillGemFromSlot(slotKey, { toCursor });
+    if (!result?.ok) {
+      const messageByReason = {
+        no_player: 'No active character is loaded.',
+        invalid_slot: 'Invalid skill slot.',
+        no_skill: 'That slot has no equipped skill.',
+        no_gem_item: 'Could not convert this skill back into a gem item.',
+      };
+      setVendorFeedback(messageByReason[result?.reason] ?? 'Could not unequip skill gem.');
+      return;
+    }
+    if (toCursor) {
+      setCursorItem(result?.gemItem ?? null);
+      setVendorFeedback('Skill gem picked up. Linked supports were returned to inventory.');
+      return;
+    }
+    if (result?.dropped) {
+      setVendorFeedback('Skill gem unequipped. Inventory full, so it was dropped nearby.');
+      return;
+    }
+    setVendorFeedback('Skill gem unequipped and returned to inventory.');
   }, []);
 
   // ── Canvas mouse events ──────────────────────────────────────────
@@ -923,6 +1095,14 @@ export default function App() {
     engineRef.current?.toggleTargetLock?.();
   }, [screen]);
 
+  const handleMobileUsePotion = useCallback((slotIndex) => {
+    engineRef.current?._usePotion?.(slotIndex);
+  }, []);
+
+  const handleMobileCycleMinimap = useCallback(() => {
+    engineRef.current?.cycleMobileMinimapMode?.();
+  }, []);
+
   const handleToggleMobileMode = useCallback(() => {
     setHasExplicitMobilePref(true);
     setMobileMode((prev) => !prev);
@@ -948,7 +1128,7 @@ export default function App() {
   }, [mobilePerf]);
 
   useEffect(() => {
-    engineRef.current?.setMobileAssistOptions?.({ autoPickup: mobileMode && mobileUi.autoPickup });
+    engineRef.current?.setMobileAssistOptions?.({ autoPickup: mobileMode && mobileUi.autoPickup, enabled: mobileMode });
   }, [mobileMode, mobileUi.autoPickup]);
 
   useEffect(() => {
@@ -988,14 +1168,14 @@ export default function App() {
     return () => window.removeEventListener('mousemove', onMove);
   }, []);
 
-  // Key handlers: Escape = close/back, V = inventory, G = gems, T = portal prompt, P = passive tree
+  // Key handlers: Escape = close/back, V = inventory, G = gems, T = passive tree, P = portal prompt
   useEffect(() => {
     const onKey = (e) => {
-      if (e.code === 'KeyP') {
+      if (e.code === 'KeyT') {
         if (screen === 'RUNNING' || screen === 'HUB') openTree();
         else if (screen === 'TREE') closeTree();
       }
-      if (e.code === 'KeyT') {
+      if (e.code === 'KeyB') {
         if (screen === 'RUNNING') openPortalConfirm();
       }
       if (e.code === 'KeyG') {
@@ -1091,6 +1271,18 @@ export default function App() {
   const perfClass = ` perf-${mobilePerf.preset}-mode`;
   const phonePortraitClass = isPortraitPhone ? ' phone-portrait-mode' : '';
   const compactPhoneClass = isCompactPhoneUi ? ' mobile-compact-ui' : '';
+  const lockedInspectTarget = mobileMode && screen === 'RUNNING' && hud.lockedTarget
+    ? {
+        name: hud.lockedTarget.name ?? 'Target',
+        subtitle: hud.lockedTarget.isBoss ? 'Boss' : 'Enemy',
+        health: {
+          current: hud.lockedTarget.health ?? Math.round((hud.lockedTarget.healthPct ?? 0) * 100),
+          max: hud.lockedTarget.maxHealth ?? 100,
+        },
+        details: [],
+      }
+    : null;
+  const inspectPanelTarget = lockedInspectTarget ?? hoveredInspect;
 
   return (
     <div className={`app${mobileMode ? ' mobile-mode' : ''}${mobileUi.leftHanded ? ' mobile-left-handed' : ''}${mobileUi.largeButtons ? ' mobile-large-controls' : ''}${perfClass}${phonePortraitClass}${compactPhoneClass}`}>
@@ -1209,7 +1401,18 @@ export default function App() {
         />
       )}
 
-      {showHud && <HUD hud={hud} hideTimer={hideHudTimer} mobileMode={mobileMode} compactMode={isCompactPhoneUi} screenContext={screen} />}
+      {showHud && (
+        <HUD
+          hud={hud}
+          hideTimer={hideHudTimer}
+          mobileMode={mobileMode}
+          compactMode={isCompactPhoneUi}
+          screenContext={screen}
+          onDevAddGold={handleDevAddGold}
+          onDevLevelUp={handleDevLevelUp}
+          onDevUnlockAllActs={handleDevUnlockAllActs}
+        />
+      )}
 
       {showMobileControls && (
         <MobileControls
@@ -1232,14 +1435,29 @@ export default function App() {
           onToggleButtonSize={() => setMobileUi((prev) => ({ ...prev, largeButtons: !prev.largeButtons }))}
           onToggleHaptics={() => setMobileUi((prev) => ({ ...prev, haptics: !prev.haptics }))}
           onToggleAutoPickup={() => setMobileUi((prev) => ({ ...prev, autoPickup: !prev.autoPickup }))}
-          showCombatButtons={screen === 'RUNNING'}
+          showCombatButtons={screen === 'RUNNING' || screen === 'HUB'}
           showSheetButton={screen === 'HUB'}
           compactMode={isCompactPhoneUi}
+          primarySkill={hud.primarySkill ?? null}
+          activeSkills={hud.activeSkills ?? []}
+          potions={hud.potions ?? []}
+          onUsePotion={handleMobileUsePotion}
+          minimapMode={hud.minimapMode ?? 0}
+          onCycleMinimap={handleMobileCycleMinimap}
         />
       )}
 
       {screen === 'RUNNING' && hoveredDrop && (
         <ItemTooltip itemData={hoveredDrop} mousePos={mousePos} hint={mobileMode ? 'Tap to pick up' : 'Click to pick up'} />
+      )}
+
+      {(screen === 'RUNNING' || screen === 'HUB' || screen === 'PAUSED') && (
+        <HoverInspectPanel
+          target={inspectPanelTarget}
+          debugMode={!!hud.debugMode}
+          mobileMode={mobileMode}
+          allowMobile={!!lockedInspectTarget}
+        />
       )}
 
       {screen === 'TREE' && (
@@ -1257,6 +1475,7 @@ export default function App() {
           inventory={hud.inventory}
           equipment={hud.equipment}
           gold={hud.gold ?? 0}
+          feedback={vendorFeedback}
           cursorItem={cursorItem}
           mousePos={mousePos}
           mobileMode={mobileMode}
@@ -1272,6 +1491,8 @@ export default function App() {
           activeSkills={hud.activeSkills ?? []}
           onSocketGem={handleSocketGem}
           onUnsocketGem={handleUnsocketGem}
+          onEquipSkillGem={handleEquipSkillGem}
+          onUnequipSkillGem={handleUnequipSkillGem}
         />
       )}
 
@@ -1287,6 +1508,7 @@ export default function App() {
       {screen === 'PORTAL_CONFIRM' && (
         <PortalConfirmDialog
           portalsRemaining={hud.portalsRemaining ?? 0}
+          isFree={!!(engineRef.current?.canReturnToHubFree?.())}
           onConfirm={confirmPortalToHub}
           onCancel={closePortalConfirm}
         />

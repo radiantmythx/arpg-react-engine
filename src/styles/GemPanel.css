@@ -156,6 +156,11 @@
   box-shadow: 0 0 0 1px rgba(78, 205, 196, 0.14), 0 0 16px rgba(78, 205, 196, 0.12);
 }
 
+.gem-skill-socket-block--drop-target {
+  border-color: rgba(123, 190, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(123, 190, 255, 0.3), 0 0 18px rgba(123, 190, 255, 0.24);
+}
+
 .gem-skill-socket-block:hover {
   border-color: rgba(78, 205, 196, 0.25);
 }
@@ -170,11 +175,46 @@
   align-items: flex-start;
 }
 
-.gem-skill-icon {
+.gem-skill-icon-slot {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  border: 2px solid rgba(141, 191, 255, 0.45);
+  background: rgba(58, 78, 108, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, box-shadow 120ms;
+}
+
+.gem-skill-icon-slot--empty {
+  border-color: rgba(78, 205, 196, 0.3);
+  background: rgba(78, 205, 196, 0.04);
+}
+
+.gem-skill-icon-slot--filled {
+  border-color: rgba(141, 191, 255, 0.45);
+  background: rgba(58, 78, 108, 0.28);
+}
+
+.gem-skill-icon-slot--ready {
+  border-color: rgba(78, 205, 196, 0.72);
+  box-shadow: 0 0 0 1px rgba(78, 205, 196, 0.2);
+}
+
+.gem-skill-icon-slot--target {
+  border-color: rgba(123, 190, 255, 0.85);
+  background: rgba(123, 190, 255, 0.16);
+  box-shadow: 0 0 0 1px rgba(123, 190, 255, 0.3), 0 0 14px rgba(123, 190, 255, 0.24);
+}
+
+.gem-skill-icon-slot-glyph {
   font-size: 1.25rem;
   flex-shrink: 0;
   line-height: 1;
-  margin-top: 1px;
+  color: #bfe4ff;
 }
 
 .gem-skill-info {
@@ -183,6 +223,13 @@
   gap: 3px;
   min-width: 0;
   flex: 1;
+}
+
+.gem-skill-slot-label {
+  font-size: 0.52rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(142, 205, 255, 0.88);
 }
 
 .gem-skill-name {
@@ -290,6 +337,28 @@
   gap: 6px;
 }
 
+.gem-skill-action-btn {
+  width: 100%;
+  border: 1px solid rgba(126, 204, 255, 0.35);
+  background: rgba(21, 36, 56, 0.92);
+  color: #d8ecff;
+  border-radius: 7px;
+  padding: 0.36rem 0.5rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.gem-skill-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.gem-skill-action-btn--danger {
+  border-color: rgba(255, 142, 142, 0.5);
+  color: #ffd1d1;
+  background: rgba(58, 23, 23, 0.9);
+}
 .gem-socket {
   display: flex;
   flex-direction: column;

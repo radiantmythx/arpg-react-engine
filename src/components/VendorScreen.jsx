@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { calcSellPrice } from '../game/ItemPricing.js';
+import { ItemTooltip } from './ItemTooltip.jsx';
 
 const RARITY_COLORS = {
   normal: '#9e9e9e',
@@ -52,10 +53,15 @@ function deriveSkillTags(row) {
   return tags;
 }
 
-function VendorRow({ row, canAfford, onBuy }) {
+function VendorRow({ row, canAfford, onBuy, onHoverItem, onClearHover }) {
   const nameColor = row.rarity ? (RARITY_COLORS[row.rarity] ?? undefined) : undefined;
   return (
-    <div className={`vendor-row vendor-row--${row.rarity ?? 'default'}`}>
+    <div
+      className={`vendor-row vendor-row--${row.rarity ?? 'default'}`}
+      onMouseEnter={(e) => onHoverItem?.(row.itemDef ?? null, e)}
+      onMouseMove={(e) => onHoverItem?.(row.itemDef ?? null, e)}
+      onMouseLeave={() => onClearHover?.()}
+    >
       <div className="vendor-item-main">
         <span className="vendor-item-icon">{row.icon}</span>
         <div className="vendor-item-meta">
@@ -119,6 +125,23 @@ export function VendorScreen({
 }) {
   const [tab, setTab] = useState('skill');
   const [skillFilter, setSkillFilter] = useState('all');
+  const [hoveredItem, setHoveredItem] = useState(null);
+  const [hoverPos, setHoverPos] = useState(null);
+
+  const handleHoverItem = (itemDef, event) => {
+    if (!itemDef || !event) {
+      setHoveredItem(null);
+      setHoverPos(null);
+      return;
+    }
+    setHoveredItem(itemDef);
+    setHoverPos({ x: event.clientX, y: event.clientY });
+  };
+
+  const clearHoverItem = () => {
+    setHoveredItem(null);
+    setHoverPos(null);
+  };
 
   // Handle sell tab separately since it uses inventory instead of stock
   const inventoryItems = useMemo(() => {
@@ -198,6 +221,8 @@ export function VendorScreen({
                 row={row}
                 canAfford={(gold ?? 0) >= (row.price ?? 0)}
                 onBuy={onBuy}
+                onHoverItem={handleHoverItem}
+                onClearHover={clearHoverItem}
               />
             ))
           )}
@@ -225,6 +250,8 @@ export function VendorScreen({
           </div>
         </div>
       </div>
+
+      {hoveredItem && hoverPos && <ItemTooltip itemData={hoveredItem} mousePos={hoverPos} />}
     </div>
   );
 }

@@ -144,7 +144,7 @@ export function CharacterSelect({ unlocked, highScores = {}, onSelect, onBack })
         </div>
 
         <p className="char-select-footer">
-          Press [P] in-game to open the passive skill tree &mdash; each character starts near their specialization.
+          Press [T] in-game to open the passive skill tree &mdash; each character starts near their specialization.
         </p>
       </div>
     </div>

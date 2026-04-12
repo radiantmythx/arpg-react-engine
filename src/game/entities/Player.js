@@ -39,8 +39,13 @@ export class Player extends Entity {
     this.characterId = characterDef?.id ?? 'sage';
     this.radius = PLAYER.RADIUS;
     this.speed = characterDef?.baseStats?.speed ?? PLAYER.SPEED;
+    this.terrainSpeedMult = 1;
     this.health = characterDef?.baseStats?.maxHealth ?? PLAYER.MAX_HEALTH;
     this.maxHealth = characterDef?.baseStats?.maxHealth ?? PLAYER.MAX_HEALTH;
+    this.maxMana = characterDef?.baseStats?.maxMana ?? PLAYER.MAX_MANA;
+    this.mana = this.maxMana;
+    this._manaSpentCounter = 0;
+    this._manaRegenCounter = 0;
     this.xp = 0;
     this.level = 1;
     this.xpToNext = 10; // synced with LEVEL_XP_TABLE[1]
@@ -55,9 +60,19 @@ export class Player extends Entity {
 
     // Bonus stats applied by passive items (initialised to neutral values).
     this.healthRegenPerS   = 0;   // HP restored per second (negative = drain)
+    this.manaRegenPerS     = PLAYER.MANA_REGEN;
+    this.manaCostMult      = 1;
     this.pickupRadiusBonus = 0;   // added to PLAYER.PICKUP_RADIUS
     this.xpMultiplier      = 1;   // multiplied into XP gains
     this.projectileCountBonus = 0; // extra projectiles fired by applicable weapons
+    this.potionChargeGainMult = 1;
+    this.potionChargeGainFlat = 0;
+    this.potionChargeRegenPerS = 0;
+    this.potionDurationMult = 1;
+    this.potionEffectMult = 1;
+    this.potionMaxChargesMult = 1;
+    this.potionChargesPerUseMult = 1;
+    this.moveSpeedMult = 1;
     /** Multiplicative incoming damage taken (map mods can temporarily change this). */
     this.incomingDamageMult = 1;
 
@@ -200,9 +215,10 @@ export class Player extends Entity {
 
   update(dt, input) {
     const { dx, dy } = input.getMovement();
+    const terrainSpeedMult = Math.max(0.85, Math.min(1.02, this.terrainSpeedMult ?? 1));
 
-    this.x += dx * this.speed * dt;
-    this.y += dy * this.speed * dt;
+    this.x += dx * this.speed * (this.moveSpeedMult ?? 1) * terrainSpeedMult * dt;
+    this.y += dy * this.speed * (this.moveSpeedMult ?? 1) * terrainSpeedMult * dt;
 
     if (this.invulnerable > 0) {
       this.invulnerable -= dt;
@@ -211,6 +227,13 @@ export class Player extends Entity {
     // Health regen (positive = heal; negative = drain e.g. from Void Pact keystone)
     if (this.healthRegenPerS !== 0) {
       this.health = Math.max(0, Math.min(this.maxHealth, this.health + this.healthRegenPerS * dt));
+    }
+
+    if (this.manaRegenPerS !== 0) {
+      const prevMana = this.mana;
+      this.mana = Math.max(0, Math.min(this.maxMana, this.mana + this.manaRegenPerS * dt));
+      const gained = this.mana - prevMana;
+      if (gained > 0) this._manaRegenCounter += gained;
     }
 
     // Energy shield recharge — 20% of max ES per second, delayed 2 s after last ES hit
@@ -303,6 +326,34 @@ export class Player extends Entity {
 
   addXP(amount) {
     this.xp += Math.round(amount * this.xpMultiplier);
+  }
+
+  canSpendMana(amount) {
+    const cost = Math.max(0, amount ?? 0);
+    return (this.mana ?? 0) >= cost;
+  }
+
+  spendMana(amount) {
+    const cost = Math.max(0, amount ?? 0);
+    if (!this.canSpendMana(cost)) return false;
+    this.mana = Math.max(0, this.mana - cost);
+    this._manaSpentCounter += cost;
+    return true;
+  }
+
+  consumeManaFlowCounters() {
+    const flow = {
+      spent: this._manaSpentCounter ?? 0,
+      regenerated: this._manaRegenCounter ?? 0,
+    };
+    this._manaSpentCounter = 0;
+    this._manaRegenCounter = 0;
+    return flow;
+  }
+
+  resetManaFlowCounters() {
+    this._manaSpentCounter = 0;
+    this._manaRegenCounter = 0;
   }
 
   /**

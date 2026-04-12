@@ -13,7 +13,7 @@ export class HubWorld {
      */
     this.interactables = [
       { id: 'stash',        x: -760, y: -260, radius: 70, label: 'League Stash',    key: 'F', color: '#5db6ff' },
-      { id: 'passive_tree', x: -780, y:  380, radius: 70, label: 'Passive Tree',    key: 'P', color: '#f1c40f' },
+      { id: 'passive_tree', x: -780, y:  380, radius: 70, label: 'Passive Tree',    key: 'T', color: '#f1c40f' },
       { id: 'map_device',   x:    0, y: -300, radius: 78, label: 'Map Device',      key: 'M', color: '#8e7dff' },
       { id: 'vendor',       x:  760, y: -260, radius: 70, label: 'Vendor',          key: 'V', color: '#9ad26a' },
       { id: 'crafting',     x:  740, y:  380, radius: 70, label: 'Crafting Bench',  key: 'C', color: '#ff9f5c' },

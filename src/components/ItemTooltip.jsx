@@ -31,6 +31,9 @@ const SLOT_LABELS = {
   helmet:  'Helmet',
   boots:   'Boots',
   jewelry: 'Jewelry',
+  skill_gem: 'Skill Gem',
+  support_gem: 'Support Gem',
+  gem: 'Gem',
   map: 'Map',
 };
 const DEFENSE_TYPE_LABELS = {
@@ -65,7 +68,9 @@ function fmtStat(key, val) {
       return p >= 0 ? `\u2212${p}% weapon cooldown` : `+${Math.abs(p)}% weapon cooldown`;
     }
     case 'maxHealthFlat':    return `${sign(val)} maximum life`;
+    case 'maxManaFlat':      return `${sign(val)} maximum mana`;
     case 'healthRegenPerS':  return `${sign(val)} life regenerated per second`;
+    case 'manaRegenPerS':    return `${sign(val)} mana regenerated per second`;
     case 'speedFlat':        return `${sign(val)} movement speed`;
     case 'pickupRadiusFlat': return `${sign(val)} pickup radius`;
     case 'xpMultiplier': {
@@ -75,8 +80,23 @@ function fmtStat(key, val) {
     case 'armorFlat':        return `${val} armour`;
     case 'evasionFlat':      return `${val} evasion`;
     case 'energyShieldFlat': return `${val} energy shield`;
-    case 'mapTier':          return `Map tier ${val}`;
+    case 'manaCostMult': {
+      const p = Math.round((1 - val) * 100);
+      return p >= 0 ? `\u2212${p}% mana costs` : `+${Math.abs(p)}% mana costs`;
+    }
+    case 'reservationMult': {
+      const p = Math.round((val - 1) * 100);
+      return p >= 0 ? `+${p}% reservation` : `\u2212${Math.abs(p)}% reservation`;
+    }
+    case 'manaCost':
+      return `Mana cost: ${Math.round(val)}`;
     case 'mapItemLevel':     return `Item level ${val}`;
+    case 'mapType':          return `Map type: ${val}`;
+    case 'mapTheme':         return `Theme: ${val}`;
+    case 'layoutFamily':     return `Layout family: ${val}`;
+    case 'pathStyle':        return `Path style: ${val}`;
+    case 'terrainProfile':   return `Terrain profile: ${val}`;
+    case 'modCount':         return `${val} map modifier${val === 1 ? '' : 's'}`;
     default:                 return `${key}: ${val}`;
   }
 }
@@ -90,6 +110,7 @@ export function ItemTooltip({ itemData, mousePos, hint }) {
   const affixes     = itemData.affixes ?? [];
   const baseStats   = itemData.baseStats ?? {};
   const statLines   = Object.entries(baseStats).map(([k, v]) => fmtStat(k, v));
+  const description = itemData.description ?? null;
   const flavorText  = itemData.flavorText ?? null;
   const defType     = itemData.defenseType ?? null;
 
@@ -129,6 +150,16 @@ export function ItemTooltip({ itemData, mousePos, hint }) {
             {statLines.map((line, i) => (
               <div key={i} className="itt-stat">{highlightElementalText(line)}</div>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Description ───────────────────────────────────────────── */}
+      {description && (
+        <>
+          <div className="itt-divider" />
+          <div className="itt-section">
+            <div className="itt-description">{highlightElementalText(description)}</div>
           </div>
         </>
       )}

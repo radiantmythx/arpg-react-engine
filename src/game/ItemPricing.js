@@ -20,6 +20,9 @@ const DEFAULT_BASE_PRICES = {
 const DEFAULT_AFFIX_PRICES = {
   minor: 2,
   major: 5,
+  advanced: 8,
+  high: 10,
+  pinnacle: 12,
 };
 
 /** Get base sell price for an item. */
@@ -64,13 +67,21 @@ export function getAffixPrice(affix) {
   // Fall back to tier-based defaults.
   if (affix.tier === 'minor') return DEFAULT_AFFIX_PRICES.minor;
   if (affix.tier === 'major') return DEFAULT_AFFIX_PRICES.major;
-  if (affix.tier === 'epic') return 8;
+  if (affix.tier === 'advanced') return DEFAULT_AFFIX_PRICES.advanced;
+  if (affix.tier === 'high') return DEFAULT_AFFIX_PRICES.high;
+  if (affix.tier === 'pinnacle') return DEFAULT_AFFIX_PRICES.pinnacle;
   // Legacy id-based fallback for older saves/content.
   if (affix.id && affix.id.includes('_minor')) {
     return DEFAULT_AFFIX_PRICES.minor;
   }
   if (affix.id && affix.id.includes('_major')) {
     return DEFAULT_AFFIX_PRICES.major;
+  }
+  if (affix.id && affix.id.includes('_epic')) {
+    return DEFAULT_AFFIX_PRICES.high;
+  }
+  if (affix.id && affix.id.startsWith('more_')) {
+    return DEFAULT_AFFIX_PRICES.pinnacle;
   }
   return DEFAULT_AFFIX_PRICES.major; // Default to major
 }
