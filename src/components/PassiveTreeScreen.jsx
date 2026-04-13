@@ -1,17 +1,19 @@
 /**
  * PassiveTreeScreen — full-screen SVG passive skill tree overlay.
  *
- * The tree renders in a 900×900 SVG viewBox scaled to fit the screen.
+ * The tree renders in a 3600×3600 SVG viewBox with desktop wheel-zoom/drag-pan
+ * and mobile pinch/drag-to-pan.
  *
  * Node visual states:
  *   allocated — gold/bright, shows allocation glow
  *   available — steel-blue, pulsing ring (adjacent to allocated + cost <= skillPoints)
  *   locked    — dark gray, not clickable
  *
- * Node shapes:
- *   minor    — circle r=10
- *   notable  — circle r=16
- *   keystone — rotated square (diamond) r≈22
+ * Node shapes (all radii in 3600×3600 SVG coordinate space):
+ *   minor    — circle r=40
+ *   notable  — circle r=64
+ *   mastery  — octagon r=76
+ *   keystone — rotated square (diamond) r≈88
  *
  * Props:
  *   allocatedIds  — array of allocated node ids (converted to Set internally)
@@ -22,12 +24,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { PASSIVE_TREE_NODES, TREE_NODE_MAP, TREE_EDGES } from '../game/data/passiveTree.js';
 
-const NODE_RADIUS = { minor: 10, notable: 16, keystone: 22 };
+// Node radii in SVG coordinate space (3600×3600 viewBox — all values ×4 from original 900×900)
+const NODE_RADIUS = { minor: 40, notable: 64, mastery: 76, keystone: 88 };
 
 // State → fill color per type
 const FILL = {
   minor:    { allocated: '#f1c40f', available: '#4a7fb5', locked: '#1e1e2e' },
   notable:  { allocated: '#f39c12', available: '#2980b9', locked: '#16162a' },
+  mastery:  { allocated: '#c084fc', available: '#7e3ba2', locked: '#1a142e' },
   keystone: { allocated: '#e74c3c', available: '#c0392b', locked: '#14142a' },
 };
 
@@ -37,12 +41,24 @@ const STROKE = {
   locked:    'transparent',
 };
 
-const MIN_MOBILE_ZOOM = 0.8;
-const MAX_MOBILE_ZOOM = 5;
+const MIN_MOBILE_ZOOM   = 0.8;
+const MAX_MOBILE_ZOOM   = 5;
 const DEFAULT_MOBILE_ZOOM = 3.5;
+const MIN_DESKTOP_ZOOM  = 0.3;
+const MAX_DESKTOP_ZOOM  = 3.0;
+const DEFAULT_DESKTOP_ZOOM = 1.0;
 
-function clampMobileZoom(value) {
-  return Math.max(MIN_MOBILE_ZOOM, Math.min(MAX_MOBILE_ZOOM, value));
+function clampMobileZoom(v)  { return Math.max(MIN_MOBILE_ZOOM,  Math.min(MAX_MOBILE_ZOOM,  v)); }
+function clampDesktopZoom(v) { return Math.max(MIN_DESKTOP_ZOOM, Math.min(MAX_DESKTOP_ZOOM, v)); }
+
+/** Generate SVG points string for an octagon centred at (cx, cy) with circumradius r. */
+function octagonPoints(cx, cy, r) {
+  const pts = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (Math.PI / 4) * i + Math.PI / 8;
+    pts.push(`${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`);
+  }
+  return pts.join(' ');
 }
 
 function getNodeState(id, allocatedSet, skillPoints) {
@@ -55,27 +71,37 @@ function getNodeState(id, allocatedSet, skillPoints) {
 }
 
 function NodeShape({ node, state }) {
-  const r   = NODE_RADIUS[node.type];
-  const fill   = FILL[node.type][state];
+  const r      = NODE_RADIUS[node.type] ?? NODE_RADIUS.minor;
+  const fill   = (FILL[node.type] ?? FILL.minor)[state];
   const stroke = STROKE[state];
   const { x, y } = node.position;
 
+  if (node.type === 'mastery') {
+    return (
+      <polygon
+        points={octagonPoints(x, y, r)}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={6}
+      />
+    );
+  }
   if (node.type === 'keystone') {
     const s = r * 1.35;
     return (
       <rect
         x={x - s / 2} y={y - s / 2}
         width={s}      height={s}
-        rx={3}
+        rx={12}
         fill={fill}
         stroke={stroke}
-        strokeWidth={1.5}
+        strokeWidth={6}
         transform={`rotate(45, ${x}, ${y})`}
       />
     );
   }
   return (
-    <circle cx={x} cy={y} r={r} fill={fill} stroke={stroke} strokeWidth={1.5} />
+    <circle cx={x} cy={y} r={r} fill={fill} stroke={stroke} strokeWidth={6} />
   );
 }
 
@@ -91,6 +117,15 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
   const dragRef = useRef(null);
   const suppressNodeTapUntilRef = useRef(0);
 
+  // Desktop pan / zoom state
+  const [desktopZoom, setDesktopZoom] = useState(DEFAULT_DESKTOP_ZOOM);
+  const [desktopPan,  setDesktopPan]  = useState({ x: 0, y: 0 });
+  const [isDesktopDragging, setIsDesktopDragging] = useState(false);
+  const desktopDragRef  = useRef(null);
+  // Refs so the non-passive wheel handler can read latest values without re-registering
+  const desktopZoomRef  = useRef(DEFAULT_DESKTOP_ZOOM);
+  const desktopPanRef   = useRef({ x: 0, y: 0 });
+
   useEffect(() => {
     if (!mobileMode) return;
     const fallbackId = TREE_NODE_MAP.start ? 'start' : (PASSIVE_TREE_NODES[0]?.id ?? null);
@@ -99,14 +134,43 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
     }
   }, [mobileMode, selectedNodeId]);
 
+  // Keep refs in sync so the non-passive wheel handler always sees latest values
+  useEffect(() => { desktopZoomRef.current = desktopZoom; }, [desktopZoom]);
+  useEffect(() => { desktopPanRef.current  = desktopPan;  }, [desktopPan]);
+
+  // Non-passive wheel zoom for desktop (must be registered imperatively)
+  useEffect(() => {
+    if (mobileMode) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const zoomNow = desktopZoomRef.current;
+      const panNow  = desktopPanRef.current;
+      const factor  = e.deltaY < 0 ? 1.1 : 0.9;
+      const newZoom = clampDesktopZoom(zoomNow * factor);
+      const rect    = el.getBoundingClientRect();
+      const cx      = e.clientX - rect.left  - rect.width  / 2;
+      const cy      = e.clientY - rect.top   - rect.height / 2;
+      const scale   = newZoom / zoomNow;
+      setDesktopZoom(newZoom);
+      setDesktopPan({
+        x: cx - scale * (cx - panNow.x),
+        y: cy - scale * (cy - panNow.y),
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [mobileMode]);
+
   const centerOnNode = (node, nextZoom = zoom) => {
     const container = containerRef.current;
     if (!container || !node) return;
     const rect = container.getBoundingClientRect();
     const baseSize = Math.min(rect.width - 12, rect.height - 12, 820);
     const offsetY = mobileMode ? Math.round(rect.height * -0.08) : 0;
-    const relativeX = ((node.position.x / 900) - 0.5) * baseSize;
-    const relativeY = ((node.position.y / 900) - 0.5) * baseSize;
+    const relativeX = ((node.position.x / 3600) - 0.5) * baseSize;
+    const relativeY = ((node.position.y / 3600) - 0.5) * baseSize;
     setPan({
       x: Math.round(-(relativeX * nextZoom)),
       y: Math.round(offsetY - (relativeY * nextZoom)),
@@ -133,6 +197,45 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
     setSelectedNodeId(TREE_NODE_MAP.start ? 'start' : (PASSIVE_TREE_NODES[0]?.id ?? null));
     setPan({ x: 0, y: 0 });
   };
+
+  // Desktop pan handlers
+  const handleDesktopPanStart = (e) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    desktopDragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      panX: desktopPan.x,
+      panY: desktopPan.y,
+      moved: false,
+    };
+    setIsDesktopDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleDesktopPanMove = (e) => {
+    const drag = desktopDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
+    setDesktopPan({ x: drag.panX + dx, y: drag.panY + dy });
+  };
+
+  const handleDesktopPanEnd = (e) => {
+    const drag = desktopDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (drag.moved) suppressNodeTapUntilRef.current = Date.now() + 150;
+    desktopDragRef.current = null;
+    setIsDesktopDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  // Unified container pointer handlers (dispatch to mobile or desktop)
+  const handleContainerPointerDown   = (e) => mobileMode ? handlePanStart(e)  : handleDesktopPanStart(e);
+  const handleContainerPointerMove   = (e) => mobileMode ? handlePanMove(e)   : handleDesktopPanMove(e);
+  const handleContainerPointerUp     = (e) => mobileMode ? handlePanEnd(e)    : handleDesktopPanEnd(e);
+  const handleContainerPointerCancel = (e) => mobileMode ? handlePanEnd(e)    : handleDesktopPanEnd(e);
 
   const handlePanStart = (e) => {
     if (!mobileMode) return;
@@ -172,7 +275,7 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
   };
 
   const handleNodeClick = (id) => {
-    if (mobileMode && Date.now() < suppressNodeTapUntilRef.current) return;
+    if (Date.now() < suppressNodeTapUntilRef.current) return;
     const node = TREE_NODE_MAP[id];
     if (!node) return;
     setSelectedNodeId(id);
@@ -229,6 +332,71 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
     if (s.projectileCountBonus !== undefined) {
       lines.push(`+${s.projectileCountBonus} projectile${s.projectileCountBonus > 1 ? 's' : ''}`);
     }
+    // ── New stat keys (PT-0B) ────────────────────────────────────────────
+    if (s.armorFlat !== undefined) {
+      lines.push(s.armorFlat >= 0 ? `+${s.armorFlat} armor` : `${s.armorFlat} armor`);
+    }
+    if (s.evasionFlat !== undefined) {
+      lines.push(s.evasionFlat >= 0 ? `+${s.evasionFlat} evasion` : `${s.evasionFlat} evasion`);
+    }
+    if (s.critChanceFlat !== undefined) {
+      lines.push(s.critChanceFlat >= 0 ? `+${s.critChanceFlat}% critical chance` : `${s.critChanceFlat}% critical chance`);
+    }
+    if (s.critMultFlat !== undefined) {
+      lines.push(s.critMultFlat >= 0 ? `+${s.critMultFlat}% critical multiplier` : `${s.critMultFlat}% critical multiplier`);
+    }
+    if (s.blazeDamageMult !== undefined) {
+      const pct = Math.round((s.blazeDamageMult - 1) * 100);
+      lines.push(pct >= 0 ? `+${pct}% Blaze damage` : `${pct}% Blaze damage`);
+    }
+    if (s.thunderDamageMult !== undefined) {
+      const pct = Math.round((s.thunderDamageMult - 1) * 100);
+      lines.push(pct >= 0 ? `+${pct}% Thunder damage` : `${pct}% Thunder damage`);
+    }
+    if (s.frostDamageMult !== undefined) {
+      const pct = Math.round((s.frostDamageMult - 1) * 100);
+      lines.push(pct >= 0 ? `+${pct}% Frost damage` : `${pct}% Frost damage`);
+    }
+    if (s.holyDamageMult !== undefined) {
+      const pct = Math.round((s.holyDamageMult - 1) * 100);
+      lines.push(pct >= 0 ? `+${pct}% Holy damage` : `${pct}% Holy damage`);
+    }
+    if (s.unholyDamageMult !== undefined) {
+      const pct = Math.round((s.unholyDamageMult - 1) * 100);
+      lines.push(pct >= 0 ? `+${pct}% Unholy damage` : `${pct}% Unholy damage`);
+    }
+    if (s.physDamageMult !== undefined) {
+      const pct = Math.round((s.physDamageMult - 1) * 100);
+      lines.push(pct >= 0 ? `+${pct}% Physical damage` : `${pct}% Physical damage`);
+    }
+    if (s.igniteChanceFlat !== undefined) lines.push(`+${s.igniteChanceFlat}% Ignite chance`);
+    if (s.shockChanceFlat  !== undefined) lines.push(`+${s.shockChanceFlat}% Shock chance`);
+    if (s.chillChanceFlat  !== undefined) lines.push(`+${s.chillChanceFlat}% Chill chance`);
+    if (s.freezeChanceFlat !== undefined) lines.push(`+${s.freezeChanceFlat}% Freeze chance`);
+    if (s.aoeSizeFlat !== undefined) {
+      lines.push(s.aoeSizeFlat >= 0 ? `+${s.aoeSizeFlat} AoE radius` : `${s.aoeSizeFlat} AoE radius`);
+    }
+    if (s.skillDurationMult !== undefined) {
+      const pct = Math.round((s.skillDurationMult - 1) * 100);
+      lines.push(pct >= 0 ? `+${pct}% skill duration` : `${pct}% skill duration`);
+    }
+    if (s.lifeOnKillFlat !== undefined) lines.push(`+${s.lifeOnKillFlat} life on kill`);
+    if (s.manaOnKillFlat !== undefined) lines.push(`+${s.manaOnKillFlat} mana on kill`);
+    if (s.goldDropMult !== undefined) {
+      const pct = Math.round((s.goldDropMult - 1) * 100);
+      lines.push(pct >= 0 ? `+${pct}% gold dropped` : `${pct}% gold dropped`);
+    }
+    if (s.dashCooldownMult !== undefined) {
+      const pct = Math.round((1 - s.dashCooldownMult) * 100);
+      lines.push(pct >= 0 ? `\u2212${pct}% dash cooldown` : `+${Math.abs(pct)}% dash cooldown`);
+    }
+    if (s.energyShieldFlat !== undefined) {
+      lines.push(s.energyShieldFlat >= 0 ? `+${s.energyShieldFlat} energy shield` : `${s.energyShieldFlat} energy shield`);
+    }
+    if (s.energyShieldRegenPerS !== undefined) {
+      const v = s.energyShieldRegenPerS;
+      lines.push(v >= 0 ? `+${v} energy shield per second` : `${v} energy shield per second`);
+    }
     return lines;
   };
 
@@ -242,23 +410,42 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
   const treeSvgView = (
     <div
       ref={containerRef}
-      className={`tree-svg-container${mobileMode ? ' tree-svg-container--mobile' : ''}${isDragging ? ' tree-svg-container--dragging' : ''}`}
+      className={`tree-svg-container${mobileMode ? ' tree-svg-container--mobile' : ''}${isDragging || isDesktopDragging ? ' tree-svg-container--dragging' : ''}`}
       onMouseMove={mobileMode ? undefined : handleSvgMouseMove}
-      onPointerDown={mobileMode ? handlePanStart : undefined}
-      onPointerMove={mobileMode ? handlePanMove : undefined}
-      onPointerUp={mobileMode ? handlePanEnd : undefined}
-      onPointerCancel={mobileMode ? handlePanEnd : undefined}
+      onPointerDown={handleContainerPointerDown}
+      onPointerMove={handleContainerPointerMove}
+      onPointerUp={handleContainerPointerUp}
+      onPointerCancel={handleContainerPointerCancel}
     >
       <div
         className="tree-svg-pan"
-        style={mobileMode ? { transform: `translate3d(${pan.x}px, ${pan.y}px, 0)` } : undefined}
+        style={{ transform: `translate3d(${mobileMode ? pan.x : desktopPan.x}px, ${mobileMode ? pan.y : desktopPan.y}px, 0)` }}
       >
         <svg
-          viewBox="0 0 900 900"
+          viewBox="0 0 3600 3600"
           preserveAspectRatio="xMidYMid meet"
           className="tree-svg"
-          style={mobileMode ? { transform: `scale(${zoom})`, transformOrigin: 'center center' } : undefined}
+          style={{ transform: `scale(${mobileMode ? zoom : desktopZoom})`, transformOrigin: 'center center' }}
         >
+        {/* ── Allocated edge glow pass ─────────────────────────── */}
+        {TREE_EDGES.map(({ a, b }) => {
+          if (!allocatedSet.has(a) || !allocatedSet.has(b)) return null;
+          const na = TREE_NODE_MAP[a];
+          const nb = TREE_NODE_MAP[b];
+          if (!na || !nb) return null;
+          return (
+            <line
+              key={`glow-${a}||${b}`}
+              x1={na.position.x} y1={na.position.y}
+              x2={nb.position.x} y2={nb.position.y}
+              stroke="#f1c40f"
+              strokeWidth={32}
+              opacity={0.12}
+              strokeLinecap="round"
+            />
+          );
+        })}
+
         {/* ── Connection lines ─────────────────────────────────── */}
         {TREE_EDGES.map(({ a, b }) => {
           const na = TREE_NODE_MAP[a];
@@ -271,7 +458,7 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
           const stroke   = bothAllocated ? '#f1c40f'
                          : eitherAvailable ? '#3a5f82'
                          : '#2a2a3a';
-          const sw = bothAllocated ? 3 : 1.5;
+          const sw = bothAllocated ? 12 : 6;
           const opacity = stroke === '#2a2a3a' ? 0.45 : 1;
           return (
             <line
@@ -288,7 +475,7 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
         {/* ── Nodes ─────────────────────────────────────────────── */}
         {PASSIVE_TREE_NODES.map((node) => {
           const state     = getNodeState(node.id, allocatedSet, skillPoints);
-          const r         = NODE_RADIUS[node.type];
+          const r         = NODE_RADIUS[node.type] ?? NODE_RADIUS.minor;
           const isAvail   = state === 'available';
           const isAlloc   = state === 'allocated';
           const isSelected = selectedNodeId === node.id;
@@ -306,10 +493,10 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
               {/* Outer glow ring */}
               {(isAlloc || isAvail || isSelected) && (
                 <circle
-                  cx={x} cy={y} r={r + 6}
+                  cx={x} cy={y} r={r + 24}
                   fill="none"
                   stroke={isSelected ? '#8bd3ff' : (isAlloc ? '#f1c40f' : '#4a7fb5')}
-                  strokeWidth={isSelected ? 2 : 1}
+                  strokeWidth={isSelected ? 8 : 4}
                   opacity={isSelected ? 0.65 : (isAlloc ? 0.35 : 0.22)}
                 />
               )}
@@ -317,10 +504,10 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
               {/* Pulse ring (available only) */}
               {isAvail && (
                 <circle
-                  cx={x} cy={y} r={r + 4}
+                  cx={x} cy={y} r={r + 16}
                   fill="none"
                   stroke="#6b9cd4"
-                  strokeWidth={1.5}
+                  strokeWidth={6}
                   className="tree-pulse"
                 />
               )}
@@ -328,18 +515,18 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
               {/* Node shape */}
               <NodeShape node={node} state={state} />
 
-              {/* Labels — notable and keystone only */}
-              {(node.type === 'notable' || node.type === 'keystone') && (
+              {/* Labels — notable, mastery, and keystone only */}
+              {(node.type === 'notable' || node.type === 'mastery' || node.type === 'keystone') && (
                 <text
                   x={x}
-                  y={y + r + 13}
+                  y={y + r + 52}
                   textAnchor="middle"
                   fill={state === 'locked' ? '#484860' : '#d0d0e0'}
-                  fontSize={node.type === 'keystone' ? 10 : 9}
+                  fontSize={node.type === 'keystone' ? 40 : node.type === 'mastery' ? 38 : 36}
                   fontWeight="700"
                   fontFamily="'Courier New', Courier, monospace"
                   pointerEvents="none"
-                  letterSpacing="0.5"
+                  letterSpacing="2"
                 >
                   {node.label}
                 </text>
@@ -497,8 +684,12 @@ export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClo
       <div className="tree-legend">
         <span className="tree-legend-item tree-legend-minor">Minor</span>
         <span className="tree-legend-item tree-legend-notable">Notable</span>
-        <span className="tree-legend-item tree-legend-keystone">Keystone</span>
-      </div>
-    </div>
+          <span className="tree-legend-item tree-legend-mastery">Mastery</span>
+          <span className="tree-legend-item tree-legend-keystone">Keystone</span>
+          {!mobileMode && (
+            <span className="tree-legend-item tree-legend-hint">Scroll to zoom · drag to pan</span>
+          )}
+        </div>
+        </div>
   );
 }

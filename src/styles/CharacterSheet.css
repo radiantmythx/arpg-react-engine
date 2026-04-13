@@ -145,7 +145,7 @@
 }
 
 .cs-mod-type {
-  font-size: 0.62rem;
+  font-size: 0.74rem;
   border: 1px solid rgba(158, 179, 215, 0.4);
   border-radius: 999px;
   padding: 2px 7px;
@@ -197,7 +197,7 @@
 }
 
 .cs-gear-chip-slot {
-  font-size: 0.58rem;
+  font-size: 0.7rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: rgba(165, 186, 217, 0.85);
@@ -235,14 +235,14 @@
 }
 
 .cs-gear-detail-slot {
-  font-size: 0.6rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #a8bfdc;
 }
 
 .cs-gear-detail-rarity {
-  font-size: 0.58rem;
+  font-size: 0.7rem;
   border: 1px solid rgba(173, 189, 208, 0.45);
   border-radius: 999px;
   padding: 1px 6px;
@@ -276,7 +276,7 @@
 }
 
 .cs-gear-detail-label {
-  font-size: 0.58rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #9eb8db;
