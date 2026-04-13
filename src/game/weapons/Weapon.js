@@ -82,6 +82,13 @@ export class Weapon {
       if (this.tags.includes('Attack') && (player.attackDamage ?? 0) > 0) domainInc += player.attackDamage;
       if (this.tags.includes('AoE')    && (player.aoeDamage    ?? 0) > 0) domainInc += player.aoeDamage;
 
+      // Flat passive-tree AoE bonus applies to all radius-like fields used by skills.
+      if ((player.aoeSizeFlat ?? 0) !== 0) {
+        for (const key of ['radius', 'pillarRadius', 'meleeRadius', 'impactRadius', 'afterRadius']) {
+          if (stats[key] != null) stats[key] = Math.max(1, Math.round(stats[key] + player.aoeSizeFlat));
+        }
+      }
+
       const activeElems = ELEMENT_TYPES.filter((e) => this.tags.includes(e));
       const typedElems = activeElems.length > 0 ? activeElems : ['Physical'];
       if (stats.damage != null) {

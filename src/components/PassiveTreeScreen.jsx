@@ -1,695 +1,539 @@
-/**
- * PassiveTreeScreen — full-screen SVG passive skill tree overlay.
- *
- * The tree renders in a 3600×3600 SVG viewBox with desktop wheel-zoom/drag-pan
- * and mobile pinch/drag-to-pan.
- *
- * Node visual states:
- *   allocated — gold/bright, shows allocation glow
- *   available — steel-blue, pulsing ring (adjacent to allocated + cost <= skillPoints)
- *   locked    — dark gray, not clickable
- *
- * Node shapes (all radii in 3600×3600 SVG coordinate space):
- *   minor    — circle r=40
- *   notable  — circle r=64
- *   mastery  — octagon r=76
- *   keystone — rotated square (diamond) r≈88
- *
- * Props:
- *   allocatedIds  — array of allocated node ids (converted to Set internally)
- *   skillPoints   — number of unspent skill points
- *   onAllocate(id) — called when player clicks an available node
- *   onClose        — called when player closes the tree
- */
-import { useEffect, useRef, useState } from 'react';
-import { PASSIVE_TREE_NODES, TREE_NODE_MAP, TREE_EDGES } from '../game/data/passiveTree.js';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { TREE_NODE_MAP } from '../game/data/passiveTree.js';
 
-// Node radii in SVG coordinate space (3600×3600 viewBox — all values ×4 from original 900×900)
-const NODE_RADIUS = { minor: 40, notable: 64, mastery: 76, keystone: 88 };
+// ─── Layout constants ────────────────────────────────────────────────────────
+const RING_RADII   = [0, 130, 240, 350, 460, 570]; // px from centre per ring
+const RING_SLOTS   = [8, 16, 32, 32, 32, 32];      // slot count per ring
 
-// State → fill color per type
-const FILL = {
-  minor:    { allocated: '#f1c40f', available: '#4a7fb5', locked: '#1e1e2e' },
-  notable:  { allocated: '#f39c12', available: '#2980b9', locked: '#16162a' },
-  mastery:  { allocated: '#c084fc', available: '#7e3ba2', locked: '#1a142e' },
-  keystone: { allocated: '#e74c3c', available: '#c0392b', locked: '#14142a' },
+// ─── Visual constants ────────────────────────────────────────────────────────
+const NODE_RADIUS = { minor: 10, notable: 16, keystone: 18, start: 14, hub: 13 };
+const SECTION_COLOR = {
+  warrior: '#e8722a',
+  rogue:   '#4ab8d8',
+  sage:    '#f0d050',
+  shared:  '#c8a84b',
+};
+const ALLOCATED_GLOW = {
+  warrior: 'rgba(232,114,42,0.55)',
+  rogue:   'rgba(74,184,216,0.55)',
+  sage:    'rgba(240,208,80,0.55)',
+  shared:  'rgba(200,168,75,0.55)',
 };
 
-const STROKE = {
-  allocated: 'rgba(255,255,255,0.55)',
-  available: 'rgba(107,156,212,0.6)',
-  locked:    'transparent',
+// ─── Polar → cartesian ──────────────────────────────────────────────────────
+function nodeXY(node, cx, cy) {
+  const slots = RING_SLOTS[node.ring] ?? 32;
+  const angle = (node.slot / slots) * Math.PI * 2 - Math.PI / 2; // 0° = top
+  const r     = RING_RADII[node.ring] ?? 0;
+  return { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r };
+}
+
+// ─── Stat delta → readable string ───────────────────────────────────────────
+const STAT_LABELS = {
+  maxHealth:            (v) => `+${v} Max Health`,
+  maxMana:              (v) => `+${v} Max Mana`,
+  maxEnergyShield:      (v) => `+${v} Max Energy Shield`,
+  healthRegenPerS:      (v) => `+${v.toFixed(1)} HP/s`,
+  manaRegenPerS:        (v) => `+${v.toFixed(1)} Mana/s`,
+  totalArmor:           (v) => `+${v} Armor`,
+  totalEvasion:         (v) => `+${v} Evasion`,
+  moveSpeedMult:        (v) => `+${Math.round(v*100)}% Movement Speed`,
+  castSpeed:            (v) => `+${Math.round(v*100)}% Cast Speed`,
+  attackSpeed:          (v) => `+${Math.round(v*100)}% Attack Speed`,
+  spellDamage:          (v) => `+${Math.round(v*100)}% Spell Damage`,
+  attackDamage:         (v) => `+${Math.round(v*100)}% Attack Damage`,
+  aoeDamage:            (v) => `+${Math.round(v*100)}% AoE Damage`,
+  flatBlazeDamage:      (v) => `+${v} Flat Fire Damage`,
+  flatThunderDamage:    (v) => `+${v} Flat Lightning Damage`,
+  flatFrostDamage:      (v) => `+${v} Flat Cold Damage`,
+  flatPhysicalDamage:   (v) => `+${v} Flat Physical Damage`,
+  flatHolyDamage:       (v) => `+${v} Flat Holy Damage`,
+  flatUnholyDamage:     (v) => `+${v} Flat Unholy Damage`,
+  increasedBlazeDamage:    (v) => `+${Math.round(v*100)}% Increased Fire Damage`,
+  increasedThunderDamage:  (v) => `+${Math.round(v*100)}% Increased Lightning Damage`,
+  increasedFrostDamage:    (v) => `+${Math.round(v*100)}% Increased Cold Damage`,
+  increasedPhysicalDamage: (v) => `+${Math.round(v*100)}% Increased Physical Damage`,
+  blazeResistance:      (v) => `+${Math.round(v*100)}% Fire Resistance`,
+  thunderResistance:    (v) => `+${Math.round(v*100)}% Lightning Resistance`,
+  frostResistance:      (v) => `+${Math.round(v*100)}% Cold Resistance`,
+  xpMultiplier:         (v) => `+${Math.round(v*100)}% Experience Gained`,
+  pickupRadiusBonus:    (v) => `+${v} Pickup Radius`,
+  projectileCountBonus: (v) => `+${v} Projectile(s)`,
 };
 
-const MIN_MOBILE_ZOOM   = 0.8;
-const MAX_MOBILE_ZOOM   = 5;
-const DEFAULT_MOBILE_ZOOM = 3.5;
-const MIN_DESKTOP_ZOOM  = 0.3;
-const MAX_DESKTOP_ZOOM  = 3.0;
-const DEFAULT_DESKTOP_ZOOM = 1.0;
-
-function clampMobileZoom(v)  { return Math.max(MIN_MOBILE_ZOOM,  Math.min(MAX_MOBILE_ZOOM,  v)); }
-function clampDesktopZoom(v) { return Math.max(MIN_DESKTOP_ZOOM, Math.min(MAX_DESKTOP_ZOOM, v)); }
-
-/** Generate SVG points string for an octagon centred at (cx, cy) with circumradius r. */
-function octagonPoints(cx, cy, r) {
-  const pts = [];
-  for (let i = 0; i < 8; i++) {
-    const a = (Math.PI / 4) * i + Math.PI / 8;
-    pts.push(`${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`);
-  }
-  return pts.join(' ');
+function statLines(stats) {
+  if (!stats) return [];
+  return Object.entries(stats)
+    .filter(([, v]) => v != null && v !== 0)
+    .map(([k, v]) => STAT_LABELS[k]?.(v) ?? `+${v} ${k}`);
 }
 
-function getNodeState(id, allocatedSet, skillPoints) {
-  if (allocatedSet.has(id)) return 'allocated';
-  const node = TREE_NODE_MAP[id];
-  if (!node) return 'locked';
-  const adjacent = node.connections.some((cid) => allocatedSet.has(cid));
-  if (adjacent && skillPoints > 0) return 'available';
-  return 'locked';
+// ─── Draw helpers ────────────────────────────────────────────────────────────
+function drawStar(ctx, x, y, r, points = 6) {
+  const inner = r * 0.48;
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+    const d = i % 2 === 0 ? r : inner;
+    i === 0 ? ctx.moveTo(x + Math.cos(a) * d, y + Math.sin(a) * d)
+            : ctx.lineTo(x + Math.cos(a) * d, y + Math.sin(a) * d);
+  }
+  ctx.closePath();
 }
 
-function NodeShape({ node, state }) {
-  const r      = NODE_RADIUS[node.type] ?? NODE_RADIUS.minor;
-  const fill   = (FILL[node.type] ?? FILL.minor)[state];
-  const stroke = STROKE[state];
-  const { x, y } = node.position;
+function drawNode(ctx, node, pos, allocated, allocatable) {
+  const col   = SECTION_COLOR[node.section] ?? '#aaa';
+  const glow  = ALLOCATED_GLOW[node.section] ?? 'rgba(200,200,200,0.4)';
+  const nr    = NODE_RADIUS[node.type] ?? 10;
+  const isKS  = node.type === 'keystone';
+  const isNot = node.type === 'notable';
 
-  if (node.type === 'mastery') {
-    return (
-      <polygon
-        points={octagonPoints(x, y, r)}
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={6}
-      />
-    );
+  // Glow behind allocated nodes
+  if (allocated) {
+    ctx.save();
+    ctx.shadowColor  = glow;
+    ctx.shadowBlur   = isKS ? 28 : isNot ? 20 : 14;
   }
-  if (node.type === 'keystone') {
-    const s = r * 1.35;
-    return (
-      <rect
-        x={x - s / 2} y={y - s / 2}
-        width={s}      height={s}
-        rx={12}
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={6}
-        transform={`rotate(45, ${x}, ${y})`}
-      />
-    );
+
+  // Shape
+  if (isKS) {
+    drawStar(ctx, pos.x, pos.y, nr);
+  } else {
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2);
   }
-  return (
-    <circle cx={x} cy={y} r={r} fill={fill} stroke={stroke} strokeWidth={6} />
-  );
+
+  if (allocated) {
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth   = 2;
+    if (isKS) drawStar(ctx, pos.x, pos.y, nr); else { ctx.beginPath(); ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2); }
+    ctx.stroke();
+  } else if (allocatable) {
+    // Reachable, not yet taken — pulsing lighter ring handled via alpha in caller
+    ctx.fillStyle = '#1e1e2a';
+    ctx.fill();
+    ctx.strokeStyle = col;
+    ctx.lineWidth   = 2;
+    if (isKS) drawStar(ctx, pos.x, pos.y, nr); else { ctx.beginPath(); ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2); }
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = '#111118';
+    ctx.fill();
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth   = 1.5;
+    if (isKS) drawStar(ctx, pos.x, pos.y, nr); else { ctx.beginPath(); ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2); }
+    ctx.stroke();
+  }
 }
 
-export function PassiveTreeScreen({ allocatedIds, skillPoints, onAllocate, onClose, mobileMode = false }) {
-  const allocatedSet = new Set(allocatedIds);
-  const [hovered, setHovered]       = useState(null);
-  const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(DEFAULT_MOBILE_ZOOM);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const containerRef = useRef(null);
-  const dragRef = useRef(null);
-  const suppressNodeTapUntilRef = useRef(0);
+// ─────────────────────────────────────────────────────────────────────────────
+export function PassiveTreeScreen({
+  allocatedIds,
+  skillPoints,
+  onAllocate,
+  onRefund,
+  onClose,
+  mobileMode,
+}) {
+  const canvasRef  = useRef(null);
+  const stateRef   = useRef({ pan: { x: 0, y: 0 }, zoom: 1, drag: null, pulse: 0, ringPulses: [] });
+  const rafRef     = useRef(null);
+  const [tooltip, setTooltip] = useState(null); // { node, sx, sy }
 
-  // Desktop pan / zoom state
-  const [desktopZoom, setDesktopZoom] = useState(DEFAULT_DESKTOP_ZOOM);
-  const [desktopPan,  setDesktopPan]  = useState({ x: 0, y: 0 });
-  const [isDesktopDragging, setIsDesktopDragging] = useState(false);
-  const desktopDragRef  = useRef(null);
-  // Refs so the non-passive wheel handler can read latest values without re-registering
-  const desktopZoomRef  = useRef(DEFAULT_DESKTOP_ZOOM);
-  const desktopPanRef   = useRef({ x: 0, y: 0 });
+  // Normalise allocatedIds to a Set regardless of what App.jsx passes
+  const allocSet = allocatedIds instanceof Set
+    ? allocatedIds
+    : new Set(allocatedIds ?? []);
 
-  useEffect(() => {
-    if (!mobileMode) return;
-    const fallbackId = TREE_NODE_MAP.start ? 'start' : (PASSIVE_TREE_NODES[0]?.id ?? null);
-    if (!selectedNodeId && fallbackId) {
-      setSelectedNodeId(fallbackId);
-    }
-  }, [mobileMode, selectedNodeId]);
+  const nodes = Object.values(TREE_NODE_MAP);
 
-  // Keep refs in sync so the non-passive wheel handler always sees latest values
-  useEffect(() => { desktopZoomRef.current = desktopZoom; }, [desktopZoom]);
-  useEffect(() => { desktopPanRef.current  = desktopPan;  }, [desktopPan]);
-
-  // Non-passive wheel zoom for desktop (must be registered imperatively)
-  useEffect(() => {
-    if (mobileMode) return;
-    const el = containerRef.current;
-    if (!el) return;
-    const onWheel = (e) => {
-      e.preventDefault();
-      const zoomNow = desktopZoomRef.current;
-      const panNow  = desktopPanRef.current;
-      const factor  = e.deltaY < 0 ? 1.1 : 0.9;
-      const newZoom = clampDesktopZoom(zoomNow * factor);
-      const rect    = el.getBoundingClientRect();
-      const cx      = e.clientX - rect.left  - rect.width  / 2;
-      const cy      = e.clientY - rect.top   - rect.height / 2;
-      const scale   = newZoom / zoomNow;
-      setDesktopZoom(newZoom);
-      setDesktopPan({
-        x: cx - scale * (cx - panNow.x),
-        y: cy - scale * (cy - panNow.y),
-      });
+  // ── Centre of the canvas in world space ───────────────────────────────────
+  function worldCentre(canvas) {
+    const s = stateRef.current;
+    return {
+      cx: (canvas.width  / 2 - s.pan.x) / s.zoom,
+      cy: (canvas.height / 2 - s.pan.y) / s.zoom,
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [mobileMode]);
+  }
 
-  const centerOnNode = (node, nextZoom = zoom) => {
-    const container = containerRef.current;
-    if (!container || !node) return;
-    const rect = container.getBoundingClientRect();
-    const baseSize = Math.min(rect.width - 12, rect.height - 12, 820);
-    const offsetY = mobileMode ? Math.round(rect.height * -0.08) : 0;
-    const relativeX = ((node.position.x / 3600) - 0.5) * baseSize;
-    const relativeY = ((node.position.y / 3600) - 0.5) * baseSize;
-    setPan({
-      x: Math.round(-(relativeX * nextZoom)),
-      y: Math.round(offsetY - (relativeY * nextZoom)),
-    });
-  };
+  // ── Hit-test: find node under canvas pixel (px, py) ──────────────────────
+  function hitTest(canvas, px, py) {
+    const s = stateRef.current;
+    // Canvas pixel → world
+    const wx = (px - canvas.width  / 2 - s.pan.x) / s.zoom;
+    const wy = (py - canvas.height / 2 - s.pan.y) / s.zoom;
+    const cx = 0, cy = 0; // world centre is (0,0)
+    for (const node of nodes) {
+      const pos = nodeXY(node, cx, cy);
+      const nr  = (NODE_RADIUS[node.type] ?? 10) + 4; // generous hit margin
+      if ((wx - pos.x) ** 2 + (wy - pos.y) ** 2 <= nr * nr) return node;
+    }
+    return null;
+  }
 
-  const handleSvgMouseMove = (e) => {
-    setTooltipPos({ x: e.clientX, y: e.clientY });
-  };
+  // ── Main draw ─────────────────────────────────────────────────────────────
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const s   = stateRef.current;
+    const W   = canvas.width, H = canvas.height;
 
-  const handleZoomChange = (delta) => {
-    const nextZoom = clampMobileZoom(zoom + delta);
-    setZoom(nextZoom);
-    if (mobileMode && selectedNodeId && typeof window !== 'undefined') {
-      const node = TREE_NODE_MAP[selectedNodeId];
-      if (node) {
-        window.requestAnimationFrame(() => centerOnNode(node, nextZoom));
+    ctx.clearRect(0, 0, W, H);
+
+    // Dark radial background
+    const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.72);
+    bg.addColorStop(0, '#12121e');
+    bg.addColorStop(1, '#070710');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Apply pan + zoom, centred
+    ctx.save();
+    ctx.translate(W / 2 + s.pan.x, H / 2 + s.pan.y);
+    ctx.scale(s.zoom, s.zoom);
+
+    const cx = 0, cy = 0;
+
+    // Ghost rings
+    ctx.save();
+    ctx.setLineDash([4, 8]);
+    for (let ring = 1; ring <= 5; ring++) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, RING_RADII[ring], 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.lineWidth   = 1 / s.zoom;
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Allocatable set: adjacent to allocated AND not already allocated
+    const allocatable = new Set();
+    for (const node of nodes) {
+      if (allocSet.has(node.id)) continue;
+      if (node.connections.some((cid) => allocSet.has(cid))) {
+        allocatable.add(node.id);
       }
     }
-  };
 
-  const resetMobileView = () => {
-    setZoom(DEFAULT_MOBILE_ZOOM);
-    setSelectedNodeId(TREE_NODE_MAP.start ? 'start' : (PASSIVE_TREE_NODES[0]?.id ?? null));
-    setPan({ x: 0, y: 0 });
-  };
+    // ── Connections ──────────────────────────────────────────────────────────
+    const drawn = new Set();
+    for (const node of nodes) {
+      const posA = nodeXY(node, cx, cy);
+      for (const cid of node.connections) {
+        const key = [node.id, cid].sort().join('|');
+        if (drawn.has(key)) continue;
+        drawn.add(key);
+        const other = TREE_NODE_MAP[cid];
+        if (!other) continue;
+        const posB = nodeXY(other, cx, cy);
 
-  // Desktop pan handlers
-  const handleDesktopPanStart = (e) => {
-    if (e.button !== 0 && e.button !== 1) return;
-    desktopDragRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      panX: desktopPan.x,
-      panY: desktopPan.y,
-      moved: false,
-    };
-    setIsDesktopDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
+        const bothAlloc = allocSet.has(node.id) && allocSet.has(cid);
+        const eitherAlloc = allocSet.has(node.id) || allocSet.has(cid);
 
-  const handleDesktopPanMove = (e) => {
-    const drag = desktopDragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
-    setDesktopPan({ x: drag.panX + dx, y: drag.panY + dy });
-  };
+        // Pick color from whichever end is allocated (or the section color)
+        const sect = allocSet.has(node.id) ? node.section : other.section;
+        const col  = bothAlloc ? SECTION_COLOR[sect]
+                    : eitherAlloc ? SECTION_COLOR[sect]
+                    : '#2a2a3a';
 
-  const handleDesktopPanEnd = (e) => {
-    const drag = desktopDragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    if (drag.moved) suppressNodeTapUntilRef.current = Date.now() + 150;
-    desktopDragRef.current = null;
-    setIsDesktopDragging(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
+        ctx.beginPath();
+        ctx.moveTo(posA.x, posA.y);
+        ctx.lineTo(posB.x, posB.y);
+        ctx.strokeStyle = col;
+        ctx.lineWidth   = bothAlloc ? 2.5 : 1.5;
+        ctx.globalAlpha = bothAlloc ? 0.9 : eitherAlloc ? 0.55 : 0.3;
 
-  // Unified container pointer handlers (dispatch to mobile or desktop)
-  const handleContainerPointerDown   = (e) => mobileMode ? handlePanStart(e)  : handleDesktopPanStart(e);
-  const handleContainerPointerMove   = (e) => mobileMode ? handlePanMove(e)   : handleDesktopPanMove(e);
-  const handleContainerPointerUp     = (e) => mobileMode ? handlePanEnd(e)    : handleDesktopPanEnd(e);
-  const handleContainerPointerCancel = (e) => mobileMode ? handlePanEnd(e)    : handleDesktopPanEnd(e);
-
-  const handlePanStart = (e) => {
-    if (!mobileMode) return;
-    if (e.target.closest('.tree-mobile-sheet') || e.target.closest('.tree-mobile-toolbar')) return;
-    dragRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      panX: pan.x,
-      panY: pan.y,
-      moved: false,
-    };
-    setIsDragging(true);
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-  };
-
-  const handlePanMove = (e) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-      drag.moved = true;
+        if (bothAlloc) {
+          ctx.shadowColor = ALLOCATED_GLOW[sect];
+          ctx.shadowBlur  = 8;
+        }
+        ctx.stroke();
+        ctx.shadowBlur  = 0;
+        ctx.globalAlpha = 1;
+      }
     }
-    setPan({ x: drag.panX + dx, y: drag.panY + dy });
-  };
 
-  const handlePanEnd = (e) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    if (drag.moved) {
-      suppressNodeTapUntilRef.current = Date.now() + 250;
+    // ── Nodes ─────────────────────────────────────────────────────────────────
+    // Pulse alpha for allocatable nodes
+    const pulse = 0.55 + 0.45 * Math.sin(s.pulse);
+    for (const node of nodes) {
+      const pos   = nodeXY(node, cx, cy);
+      const alloc = allocSet.has(node.id);
+      const reach = allocatable.has(node.id);
+
+      if (reach && !alloc) ctx.globalAlpha = pulse;
+      drawNode(ctx, node, pos, alloc, reach);
+      ctx.globalAlpha = 1;
     }
-    dragRef.current = null;
-    setIsDragging(false);
-    e.currentTarget.releasePointerCapture?.(e.pointerId);
-  };
 
-  const handleNodeClick = (id) => {
-    if (Date.now() < suppressNodeTapUntilRef.current) return;
-    const node = TREE_NODE_MAP[id];
+    // ── Ring pulse animations (node allocation feedback) ──────────────────────
+    for (const p of s.ringPulses) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.alpha);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.strokeStyle = p.col;
+      ctx.lineWidth = 3 / s.zoom;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore(); // end pan+zoom
+
+    // ── HUD overlay ───────────────────────────────────────────────────────────
+    ctx.font      = 'bold 15px serif';
+    ctx.fillStyle = '#e0c97f';
+    ctx.fillText(`Passive Points: ${skillPoints ?? 0}`, 14, 28);
+    ctx.font      = '12px serif';
+    ctx.fillStyle = '#888';
+    ctx.fillText('Left-click: allocate   Right-click: refund   Scroll: zoom   Drag: pan', 14, 48);
+
+    rafRef.current = requestAnimationFrame(draw);
+  }, [allocSet, nodes, skillPoints]);
+
+  // ── Pulse + resize ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    function resize() {
+      canvas.width  = canvas.parentElement?.clientWidth  ?? window.innerWidth;
+      canvas.height = canvas.parentElement?.clientHeight ?? window.innerHeight;
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas.parentElement ?? document.body);
+
+    let t = 0;
+    function loop() {
+      t += 0.045;
+      stateRef.current.pulse = t;
+      // Advance ring pulses
+      const rp = stateRef.current.ringPulses;
+      if (rp.length > 0) {
+        for (const p of rp) { p.r += 1.8; p.alpha -= 0.028; }
+        stateRef.current.ringPulses = rp.filter(p => p.alpha > 0);
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    loop();
+    return () => { cancelAnimationFrame(rafRef.current); ro.disconnect(); };
+  }, []);
+
+  // Redraw whenever props change (new allocation)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    draw();
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [draw]);
+
+  // ── Mouse events ─────────────────────────────────────────────────────────
+  const onMouseDown = useCallback((e) => {
+    stateRef.current.drag = { startX: e.clientX, startY: e.clientY, panX: stateRef.current.pan.x, panY: stateRef.current.pan.y };
+  }, []);
+
+  const onMouseMove = useCallback((e) => {
+    const s = stateRef.current;
+    if (s.drag) {
+      s.pan.x = s.drag.panX + (e.clientX - s.drag.startX);
+      s.pan.y = s.drag.panY + (e.clientY - s.drag.startY);
+    }
+    // Tooltip
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const node = hitTest(canvas, e.clientX - rect.left, e.clientY - rect.top);
+    setTooltip(node ? { node, sx: e.clientX, sy: e.clientY } : null);
+  }, []);
+
+  const onMouseUp = useCallback((e) => {
+    const s = stateRef.current;
+    const wasDrag = s.drag && (Math.abs(e.clientX - s.drag.startX) > 4 || Math.abs(e.clientY - s.drag.startY) > 4);
+    s.drag = null;
+    if (wasDrag) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const node = hitTest(canvas, e.clientX - rect.left, e.clientY - rect.top);
     if (!node) return;
-    setSelectedNodeId(id);
-    if (mobileMode) {
-      setHovered(node);
-      centerOnNode(node);
-      return;
-    }
-    if (getNodeState(id, allocatedSet, skillPoints) === 'available') {
-      onAllocate(id);
-    }
-  };
 
-  // Build a description of what stats the node grants for the tooltip
-  const statLines = (node) => {
-    const lines = [];
-    const s = node.stats;
-    if (s.damageMult !== undefined) {
-      const pct = Math.round((s.damageMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% weapon damage` : `${pct}% weapon damage`);
+    if (e.button === 2) {
+      // Right-click: refund
+      if (node.type !== 'start' && node.type !== 'hub') onRefund?.(node.id);
+    } else {
+      // Left-click: allocate + ring pulse feedback
+      const pos = nodeXY(node, 0, 0);
+      stateRef.current.ringPulses.push({ x: pos.x, y: pos.y, r: NODE_RADIUS[node.type] ?? 10, col: SECTION_COLOR[node.section] ?? '#aaa', alpha: 1.0 });
+      onAllocate?.(node.id);
     }
-    if (s.cooldownMult !== undefined) {
-      const pct = Math.round((1 - s.cooldownMult) * 100);
-      lines.push(`−${pct}% weapon cooldown`);
-    }
-    if (s.speedFlat !== undefined) {
-      lines.push(s.speedFlat >= 0 ? `+${s.speedFlat} movement speed` : `${s.speedFlat} movement speed`);
-    }
-    if (s.maxHealthFlat !== undefined) {
-      lines.push(s.maxHealthFlat >= 0 ? `+${s.maxHealthFlat} maximum life` : `${s.maxHealthFlat} maximum life`);
-    }
-    if (s.maxManaFlat !== undefined) {
-      lines.push(s.maxManaFlat >= 0 ? `+${s.maxManaFlat} maximum mana` : `${s.maxManaFlat} maximum mana`);
-    }
-    if (s.healthRegenPerS !== undefined) {
-      const v = s.healthRegenPerS;
-      lines.push(v >= 0 ? `+${v} HP regenerated per second` : `${v} HP per second (drain)`);
-    }
-    if (s.manaRegenPerS !== undefined) {
-      const v = s.manaRegenPerS;
-      lines.push(v >= 0 ? `+${v} mana regenerated per second` : `${v} mana per second`);
-    }
-    if (s.pickupRadiusFlat !== undefined) {
-      lines.push(`+${s.pickupRadiusFlat} pickup radius`);
-    }
-    if (s.xpMultiplier !== undefined) {
-      const pct = Math.round((s.xpMultiplier - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% experience gained` : `${pct}% experience gained`);
-    }
-    if (s.manaCostMult !== undefined) {
-      const pct = Math.round((1 - s.manaCostMult) * 100);
-      lines.push(pct >= 0 ? `−${pct}% mana costs` : `+${Math.abs(pct)}% mana costs`);
-    }
-    if (s.projectileCountBonus !== undefined) {
-      lines.push(`+${s.projectileCountBonus} projectile${s.projectileCountBonus > 1 ? 's' : ''}`);
-    }
-    // ── New stat keys (PT-0B) ────────────────────────────────────────────
-    if (s.armorFlat !== undefined) {
-      lines.push(s.armorFlat >= 0 ? `+${s.armorFlat} armor` : `${s.armorFlat} armor`);
-    }
-    if (s.evasionFlat !== undefined) {
-      lines.push(s.evasionFlat >= 0 ? `+${s.evasionFlat} evasion` : `${s.evasionFlat} evasion`);
-    }
-    if (s.critChanceFlat !== undefined) {
-      lines.push(s.critChanceFlat >= 0 ? `+${s.critChanceFlat}% critical chance` : `${s.critChanceFlat}% critical chance`);
-    }
-    if (s.critMultFlat !== undefined) {
-      lines.push(s.critMultFlat >= 0 ? `+${s.critMultFlat}% critical multiplier` : `${s.critMultFlat}% critical multiplier`);
-    }
-    if (s.blazeDamageMult !== undefined) {
-      const pct = Math.round((s.blazeDamageMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% Blaze damage` : `${pct}% Blaze damage`);
-    }
-    if (s.thunderDamageMult !== undefined) {
-      const pct = Math.round((s.thunderDamageMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% Thunder damage` : `${pct}% Thunder damage`);
-    }
-    if (s.frostDamageMult !== undefined) {
-      const pct = Math.round((s.frostDamageMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% Frost damage` : `${pct}% Frost damage`);
-    }
-    if (s.holyDamageMult !== undefined) {
-      const pct = Math.round((s.holyDamageMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% Holy damage` : `${pct}% Holy damage`);
-    }
-    if (s.unholyDamageMult !== undefined) {
-      const pct = Math.round((s.unholyDamageMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% Unholy damage` : `${pct}% Unholy damage`);
-    }
-    if (s.physDamageMult !== undefined) {
-      const pct = Math.round((s.physDamageMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% Physical damage` : `${pct}% Physical damage`);
-    }
-    if (s.igniteChanceFlat !== undefined) lines.push(`+${s.igniteChanceFlat}% Ignite chance`);
-    if (s.shockChanceFlat  !== undefined) lines.push(`+${s.shockChanceFlat}% Shock chance`);
-    if (s.chillChanceFlat  !== undefined) lines.push(`+${s.chillChanceFlat}% Chill chance`);
-    if (s.freezeChanceFlat !== undefined) lines.push(`+${s.freezeChanceFlat}% Freeze chance`);
-    if (s.aoeSizeFlat !== undefined) {
-      lines.push(s.aoeSizeFlat >= 0 ? `+${s.aoeSizeFlat} AoE radius` : `${s.aoeSizeFlat} AoE radius`);
-    }
-    if (s.skillDurationMult !== undefined) {
-      const pct = Math.round((s.skillDurationMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% skill duration` : `${pct}% skill duration`);
-    }
-    if (s.lifeOnKillFlat !== undefined) lines.push(`+${s.lifeOnKillFlat} life on kill`);
-    if (s.manaOnKillFlat !== undefined) lines.push(`+${s.manaOnKillFlat} mana on kill`);
-    if (s.goldDropMult !== undefined) {
-      const pct = Math.round((s.goldDropMult - 1) * 100);
-      lines.push(pct >= 0 ? `+${pct}% gold dropped` : `${pct}% gold dropped`);
-    }
-    if (s.dashCooldownMult !== undefined) {
-      const pct = Math.round((1 - s.dashCooldownMult) * 100);
-      lines.push(pct >= 0 ? `\u2212${pct}% dash cooldown` : `+${Math.abs(pct)}% dash cooldown`);
-    }
-    if (s.energyShieldFlat !== undefined) {
-      lines.push(s.energyShieldFlat >= 0 ? `+${s.energyShieldFlat} energy shield` : `${s.energyShieldFlat} energy shield`);
-    }
-    if (s.energyShieldRegenPerS !== undefined) {
-      const v = s.energyShieldRegenPerS;
-      lines.push(v >= 0 ? `+${v} energy shield per second` : `${v} energy shield per second`);
-    }
-    return lines;
-  };
+  }, [onAllocate, onRefund]);
 
-  const detailNode = mobileMode ? (TREE_NODE_MAP[selectedNodeId] ?? hovered) : hovered;
-  const detailState = detailNode ? getNodeState(detailNode.id, allocatedSet, skillPoints) : 'locked';
-  const detailLines = detailNode ? statLines(detailNode) : [];
-  const isLandscapeMobile = mobileMode
-    && typeof window !== 'undefined'
-    && window.innerWidth > window.innerHeight;
+  const onWheel = useCallback((e) => {
+    e.preventDefault();
+    const s = stateRef.current;
+    const factor = e.deltaY < 0 ? 1.1 : 0.91;
+    s.zoom = Math.min(2.2, Math.max(0.35, s.zoom * factor));
+  }, []);
 
-  const treeSvgView = (
-    <div
-      ref={containerRef}
-      className={`tree-svg-container${mobileMode ? ' tree-svg-container--mobile' : ''}${isDragging || isDesktopDragging ? ' tree-svg-container--dragging' : ''}`}
-      onMouseMove={mobileMode ? undefined : handleSvgMouseMove}
-      onPointerDown={handleContainerPointerDown}
-      onPointerMove={handleContainerPointerMove}
-      onPointerUp={handleContainerPointerUp}
-      onPointerCancel={handleContainerPointerCancel}
-    >
-      <div
-        className="tree-svg-pan"
-        style={{ transform: `translate3d(${mobileMode ? pan.x : desktopPan.x}px, ${mobileMode ? pan.y : desktopPan.y}px, 0)` }}
-      >
-        <svg
-          viewBox="0 0 3600 3600"
-          preserveAspectRatio="xMidYMid meet"
-          className="tree-svg"
-          style={{ transform: `scale(${mobileMode ? zoom : desktopZoom})`, transformOrigin: 'center center' }}
-        >
-        {/* ── Allocated edge glow pass ─────────────────────────── */}
-        {TREE_EDGES.map(({ a, b }) => {
-          if (!allocatedSet.has(a) || !allocatedSet.has(b)) return null;
-          const na = TREE_NODE_MAP[a];
-          const nb = TREE_NODE_MAP[b];
-          if (!na || !nb) return null;
-          return (
-            <line
-              key={`glow-${a}||${b}`}
-              x1={na.position.x} y1={na.position.y}
-              x2={nb.position.x} y2={nb.position.y}
-              stroke="#f1c40f"
-              strokeWidth={32}
-              opacity={0.12}
-              strokeLinecap="round"
-            />
-          );
-        })}
+  const onMouseLeave = useCallback(() => {
+    stateRef.current.drag = null;
+    setTooltip(null);
+  }, []);
 
-        {/* ── Connection lines ─────────────────────────────────── */}
-        {TREE_EDGES.map(({ a, b }) => {
-          const na = TREE_NODE_MAP[a];
-          const nb = TREE_NODE_MAP[b];
-          if (!na || !nb) return null;
-          const bothAllocated = allocatedSet.has(a) && allocatedSet.has(b);
-          const eitherAvailable =
-            getNodeState(a, allocatedSet, skillPoints) === 'available' ||
-            getNodeState(b, allocatedSet, skillPoints) === 'available';
-          const stroke   = bothAllocated ? '#f1c40f'
-                         : eitherAvailable ? '#3a5f82'
-                         : '#2a2a3a';
-          const sw = bothAllocated ? 12 : 6;
-          const opacity = stroke === '#2a2a3a' ? 0.45 : 1;
-          return (
-            <line
-              key={`${a}||${b}`}
-              x1={na.position.x} y1={na.position.y}
-              x2={nb.position.x} y2={nb.position.y}
-              stroke={stroke}
-              strokeWidth={sw}
-              opacity={opacity}
-            />
-          );
-        })}
+  // ── Tooltip render ────────────────────────────────────────────────────────
+  function Tooltip({ data }) {
+    if (!data) return null;
+    const { node, sx, sy } = data;
+    const col    = SECTION_COLOR[node.section] ?? '#aaa';
+    const lines  = statLines(node.stats);
+    const isAlloc = allocSet.has(node.id);
+    const typeStr = node.type.charAt(0).toUpperCase() + node.type.slice(1);
 
-        {/* ── Nodes ─────────────────────────────────────────────── */}
-        {PASSIVE_TREE_NODES.map((node) => {
-          const state     = getNodeState(node.id, allocatedSet, skillPoints);
-          const r         = NODE_RADIUS[node.type] ?? NODE_RADIUS.minor;
-          const isAvail   = state === 'available';
-          const isAlloc   = state === 'allocated';
-          const isSelected = selectedNodeId === node.id;
-          const { x, y }  = node.position;
+    // Keep tooltip on screen
+    const left = Math.min(sx + 14, window.innerWidth  - 230);
+    const top  = Math.min(sy + 14, window.innerHeight - 160);
 
-          return (
-            <g
-              key={node.id}
-              className={`tree-node tree-node--${state}`}
-              onClick={() => handleNodeClick(node.id)}
-              onMouseEnter={() => setHovered(node)}
-              onMouseLeave={() => setHovered(null)}
-              style={{ cursor: isAvail ? 'pointer' : 'default' }}
-            >
-              {/* Outer glow ring */}
-              {(isAlloc || isAvail || isSelected) && (
-                <circle
-                  cx={x} cy={y} r={r + 24}
-                  fill="none"
-                  stroke={isSelected ? '#8bd3ff' : (isAlloc ? '#f1c40f' : '#4a7fb5')}
-                  strokeWidth={isSelected ? 8 : 4}
-                  opacity={isSelected ? 0.65 : (isAlloc ? 0.35 : 0.22)}
-                />
-              )}
-
-              {/* Pulse ring (available only) */}
-              {isAvail && (
-                <circle
-                  cx={x} cy={y} r={r + 16}
-                  fill="none"
-                  stroke="#6b9cd4"
-                  strokeWidth={6}
-                  className="tree-pulse"
-                />
-              )}
-
-              {/* Node shape */}
-              <NodeShape node={node} state={state} />
-
-              {/* Labels — notable, mastery, and keystone only */}
-              {(node.type === 'notable' || node.type === 'mastery' || node.type === 'keystone') && (
-                <text
-                  x={x}
-                  y={y + r + 52}
-                  textAnchor="middle"
-                  fill={state === 'locked' ? '#484860' : '#d0d0e0'}
-                  fontSize={node.type === 'keystone' ? 40 : node.type === 'mastery' ? 38 : 36}
-                  fontWeight="700"
-                  fontFamily="'Courier New', Courier, monospace"
-                  pointerEvents="none"
-                  letterSpacing="2"
-                >
-                  {node.label}
-                </text>
-              )}
-            </g>
-          );
-        })}
-        </svg>
+    return (
+      <div style={{
+        position: 'fixed', left, top, zIndex: 2000,
+        background: '#0e0e18', border: `1px solid ${col}`,
+        borderRadius: 6, padding: '10px 14px', minWidth: 190,
+        pointerEvents: 'none', fontFamily: 'serif',
+      }}>
+        <div style={{ color: col, fontWeight: 'bold', fontSize: 14, marginBottom: 4 }}>
+          {node.label}
+        </div>
+        <div style={{ color: '#888', fontSize: 11, marginBottom: 6 }}>
+          {typeStr} · {node.section}
+          {isAlloc ? <span style={{ color: '#5f5', marginLeft: 8 }}>✓ Allocated</span> : null}
+        </div>
+        {lines.map((l, i) => (
+          <div key={i} style={{ color: '#c8c8c8', fontSize: 12, lineHeight: 1.5 }}>{l}</div>
+        ))}
+        {lines.length === 0 && (
+          <div style={{ color: '#555', fontSize: 11, fontStyle: 'italic' }}>No stat bonuses</div>
+        )}
+        {node.description && (
+          <div style={{ color: '#777', fontSize: 11, marginTop: 6, borderTop: '1px solid #222', paddingTop: 5, fontStyle: 'italic' }}>
+            {node.description}
+          </div>
+        )}
+        <div style={{ color: '#555', fontSize: 10, marginTop: 8, borderTop: '1px solid #1a1a2a', paddingTop: 5 }}>
+          {isAlloc ? 'Right-click / 2nd tap to refund' : 'Left-click / 2nd tap to allocate'}
+        </div>
       </div>
+    );
+  }
+
+  // ── Mobile touch ────────────────────────────────────────────────────────────
+  const mobileTapRef = useRef(null); // { node, time }
+  const pinchRef     = useRef(null); // { dist }
+
+  const onTouchStart = useCallback((e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchRef.current = { dist: Math.hypot(dx, dy) };
+      stateRef.current.drag = null;
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      stateRef.current.drag = {
+        startX: t.clientX, startY: t.clientY,
+        panX: stateRef.current.pan.x, panY: stateRef.current.pan.y,
+      };
+    }
+  }, []);
+
+  const onTouchMove = useCallback((e) => {
+    e.preventDefault();
+    if (e.touches.length === 2 && pinchRef.current) {
+      const dx      = e.touches[0].clientX - e.touches[1].clientX;
+      const dy      = e.touches[0].clientY - e.touches[1].clientY;
+      const newDist = Math.hypot(dx, dy);
+      const factor  = newDist / Math.max(1, pinchRef.current.dist);
+      const s       = stateRef.current;
+      s.zoom = Math.min(2.2, Math.max(0.35, s.zoom * factor));
+      pinchRef.current.dist = newDist;
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const s = stateRef.current;
+      if (s.drag) {
+        s.pan.x = s.drag.panX + (t.clientX - s.drag.startX);
+        s.pan.y = s.drag.panY + (t.clientY - s.drag.startY);
+      }
+    }
+  }, []);
+
+  const onTouchEnd = useCallback((e) => {
+    pinchRef.current = null;
+    const s  = stateRef.current;
+    const ct = e.changedTouches[0];
+    const wasDrag = s.drag && ct && (
+      Math.abs(ct.clientX - s.drag.startX) > 6 ||
+      Math.abs(ct.clientY - s.drag.startY) > 6
+    );
+    s.drag = null;
+    if (wasDrag || !ct) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const node = hitTest(canvas, ct.clientX - rect.left, ct.clientY - rect.top);
+    if (!node) { mobileTapRef.current = null; return; }
+
+    const now  = Date.now();
+    const prev = mobileTapRef.current;
+    if (prev && prev.node.id === node.id && now - prev.time < 800) {
+      mobileTapRef.current = null;
+      if (allocSet.has(node.id)) {
+        if (node.type !== 'start' && node.type !== 'hub') onRefund?.(node.id);
+      } else {
+        const pos = nodeXY(node, 0, 0);
+        stateRef.current.ringPulses.push({ x: pos.x, y: pos.y, r: NODE_RADIUS[node.type] ?? 10, col: SECTION_COLOR[node.section] ?? '#aaa', alpha: 1.0 });
+        onAllocate?.(node.id);
+      }
+    } else {
+      mobileTapRef.current = { node, time: now };
+      setTooltip({ node, sx: ct.clientX, sy: ct.clientY });
+    }
+  }, [allocSet, onAllocate, onRefund]);
+
+  // ── Main return ─────────────────────────────────────────────────────────────
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#07070f' }}>
+      <canvas
+        ref={canvasRef}
+        style={{ display: 'block', width: '100%', height: '100%', touchAction: 'none' }}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onContextMenu={(e) => e.preventDefault()}
+        onWheel={onWheel}
+        onMouseLeave={onMouseLeave}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      />
+      <button
+        onClick={onClose}
+        style={{
+          position: 'absolute', top: 12, right: 16,
+          background: 'rgba(255,255,255,0.08)', border: '1px solid #444',
+          color: '#ccc', borderRadius: 6, padding: '4px 14px', cursor: 'pointer',
+          fontFamily: 'serif', fontSize: 14,
+        }}
+      >
+        ✕ Close
+      </button>
+      <Tooltip data={tooltip} />
     </div>
   );
-
-  return (
-    <div className={`tree-overlay${mobileMode ? ' tree-overlay--mobile' : ''}${isLandscapeMobile ? ' tree-overlay--mobile-landscape' : ''}`} onContextMenu={(e) => e.preventDefault()}>
-
-      {/* ── Header ───────────────────────────────────────────────── */}
-      <div className="tree-header">
-        <div className="tree-header-left">
-          <span className="tree-title">PASSIVE SKILL TREE</span>
-        </div>
-        <div className="tree-header-center">
-          {skillPoints > 0 ? (
-            <span className="tree-points-badge">
-              {skillPoints} skill point{skillPoints > 1 ? 's' : ''} available
-            </span>
-          ) : (
-            <span className="tree-points-zero">
-              {mobileMode ? 'No points available - level up to earn more.' : 'No points available - press [T] or level up'}
-              {mobileMode && (
-                <span className="tree-points-guide">Tap a node to focus it. Drag on the tree to pan.</span>
-              )}
-            </span>
-          )}
-        </div>
-        <div className="tree-header-right">
-          <button
-            className={`btn tree-close-btn${mobileMode ? ' tree-close-btn--mobile' : ''}`}
-            onClick={onClose}
-            aria-label={mobileMode ? 'Close passive tree' : undefined}
-          >
-            {mobileMode ? '✕' : '✕ Close [T]'}
-          </button>
-        </div>
-      </div>
-
-      {mobileMode && (
-        <div className="tree-mobile-toolbar">
-          <span className="tree-mobile-toolbar__hint">Drag to pan · zoom in farther for tiny clusters.</span>
-          <div className="tree-mobile-zoom">
-            <button type="button" className="tree-mobile-zoom-btn" onClick={() => handleZoomChange(-0.2)} aria-label="Zoom out">−</button>
-            <span className="tree-mobile-zoom-label">{Math.round(zoom * 100)}%</span>
-            <button type="button" className="tree-mobile-zoom-btn" onClick={() => handleZoomChange(0.2)} aria-label="Zoom in">+</button>
-            <button type="button" className="tree-mobile-zoom-btn tree-mobile-zoom-btn--reset" onClick={resetMobileView}>Reset</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── SVG Tree ─────────────────────────────────────────────── */}
-      {mobileMode && isLandscapeMobile ? (
-        <div className="tree-mobile-layout">
-          {treeSvgView}
-          {detailNode && (
-            <div className="tree-mobile-sheet tree-mobile-sheet--landscape">
-              <div className={`tree-tt-type tree-tt-type--${detailNode.type}`}>
-                {detailNode.type.toUpperCase()}
-              </div>
-              <div className="tree-tt-name">{detailNode.label}</div>
-              <div className="tree-tt-desc">{detailNode.description}</div>
-              {detailLines.length > 0 && (
-                <ul className="tree-tt-stats">
-                  {detailLines.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              )}
-              {detailState === 'available' ? (
-                <button className="btn btn-primary tree-mobile-allocate" onClick={() => onAllocate(detailNode.id)}>
-                  Allocate Node
-                </button>
-              ) : detailState === 'allocated' ? (
-                <div className="tree-mobile-status tree-mobile-status--done">Allocated</div>
-              ) : (
-                <div className="tree-mobile-status">Connect to this node and spend a point to unlock it.</div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        treeSvgView
-      )}
-
-      {/* ── Tooltip ───────────────────────────────────────────────── */}
-      {!mobileMode && hovered && (
-        <div
-          className="tree-tooltip"
-          style={{
-            left: Math.min(tooltipPos.x + 14, window.innerWidth  - 270),
-            top:  Math.min(tooltipPos.y + 14, window.innerHeight - 220),
-          }}
-        >
-          <div className={`tree-tt-type tree-tt-type--${hovered.type}`}>
-            {hovered.type.toUpperCase()}
-          </div>
-          <div className="tree-tt-name">{hovered.label}</div>
-          <div className="tree-tt-desc">{hovered.description}</div>
-
-          {statLines(hovered).length > 0 && (
-            <ul className="tree-tt-stats">
-              {statLines(hovered).map((line, i) => (
-                <li key={i}>{line}</li>
-              ))}
-            </ul>
-          )}
-
-          {getNodeState(hovered.id, allocatedSet, skillPoints) === 'available' && (
-            <div className="tree-tt-hint">Click to allocate · costs 1 point</div>
-          )}
-          {getNodeState(hovered.id, allocatedSet, skillPoints) === 'allocated' && (
-            <div className="tree-tt-hint tree-tt-hint--done">✓ Allocated</div>
-          )}
-          {getNodeState(hovered.id, allocatedSet, skillPoints) === 'locked' &&
-            allocatedSet.size > 0 && skillPoints <= 0 && (
-            <div className="tree-tt-hint tree-tt-hint--locked">Requires a skill point</div>
-          )}
-        </div>
-      )}
-
-      {mobileMode && detailNode && !isLandscapeMobile && (
-        <div className="tree-mobile-sheet">
-          <div className={`tree-tt-type tree-tt-type--${detailNode.type}`}>
-            {detailNode.type.toUpperCase()}
-          </div>
-          <div className="tree-tt-name">{detailNode.label}</div>
-          <div className="tree-tt-desc">{detailNode.description}</div>
-          {detailLines.length > 0 && (
-            <ul className="tree-tt-stats">
-              {detailLines.map((line, i) => (
-                <li key={i}>{line}</li>
-              ))}
-            </ul>
-          )}
-          {detailState === 'available' ? (
-            <button className="btn btn-primary tree-mobile-allocate" onClick={() => onAllocate(detailNode.id)}>
-              Allocate Node
-            </button>
-          ) : detailState === 'allocated' ? (
-            <div className="tree-mobile-status tree-mobile-status--done">✓ Allocated</div>
-          ) : (
-            <div className="tree-mobile-status">Connect to this node and spend a point to unlock it.</div>
-          )}
-        </div>
-      )}
-
-      {/* ── Legend ───────────────────────────────────────────────── */}
-      <div className="tree-legend">
-        <span className="tree-legend-item tree-legend-minor">Minor</span>
-        <span className="tree-legend-item tree-legend-notable">Notable</span>
-          <span className="tree-legend-item tree-legend-mastery">Mastery</span>
-          <span className="tree-legend-item tree-legend-keystone">Keystone</span>
-          {!mobileMode && (
-            <span className="tree-legend-item tree-legend-hint">Scroll to zoom · drag to pan</span>
-          )}
-        </div>
-        </div>
-  );
 }
+

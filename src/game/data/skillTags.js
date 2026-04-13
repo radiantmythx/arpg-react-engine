@@ -186,6 +186,7 @@ function resolveAilmentHitMagnitude(hitPayload, ailmentTag) {
 export function applyAilmentsOnHit(sourceTags, hitPayload, enemy, player) {
   if (!sourceTags || sourceTags.length === 0 || !enemy.active) return;
   const chances = resolveAilmentChances(sourceTags, player ?? {});
+  const durationMult = Math.max(0.1, player?.skillDurationMult ?? 1);
   for (const [name, chance] of Object.entries(chances)) {
     if (Math.random() > chance) continue;
     const def = AILMENT_DEFS[name];
@@ -194,6 +195,23 @@ export function applyAilmentsOnHit(sourceTags, hitPayload, enemy, player) {
     if (ailmentHit <= 0) continue;
     // Freeze requires a minimum hit magnitude relative to enemy max HP
     if (name === 'Freeze' && ailmentHit < def.freezeThreshold * enemy.maxHealth) continue;
-    enemy.applyAilment(name, ailmentHit, def);
+
+    const scaledDuration = def.duration * durationMult;
+    let runtimeDef = { ...def, duration: scaledDuration };
+
+    // Conflagration: ignites are guaranteed to be massive and reflect self-ignite risk.
+    if (name === 'Ignite' && player?.allocatedNodes?.has?.('bz_ks')) {
+      runtimeDef = {
+        ...runtimeDef,
+        damageFormula: (hit) => {
+          const baseline = def.damageFormula(hit);
+          const lifeBasedDps = (enemy.maxHealth * 0.30) / Math.max(0.1, scaledDuration);
+          return Math.max(baseline, lifeBasedDps);
+        },
+      };
+      player.selfIgnitedTimer = Math.max(player.selfIgnitedTimer ?? 0, scaledDuration);
+    }
+
+    enemy.applyAilment(name, ailmentHit, runtimeDef);
   }
 }

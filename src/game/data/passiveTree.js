@@ -1,1217 +1,800 @@
-/**
- * passiveTree.js — Phase 6 Passive Skill Tree
+﻿/**
+ * passiveTree.js — Radial-grid passive tree data + stat helpers.
  *
- * 60 nodes organized into 5 zones:
- *   Starting hub  (9)  — centre of the tree, always reachable
- *   Power cluster (14) — right side, damage / cooldown / projectile count
- *   Speed cluster (13) — top, movement speed / cooldown
- *   Tank  cluster (12) — left side, max HP / health regen
- *   Arcane cluster(12) — bottom, XP gain / pickup radius
- *
- * Node types:
- *   minor    — small stat increments (r=10 in SVG)
- *   notable  — larger thematic bonuses (r=16)
- *   keystone — build-defining trade-offs, one per outer cluster (r=22, diamond shape)
- *
- * Stats use the same keys as PassiveItem:
- *   damageMult, cooldownMult, speedFlat, maxHealthFlat,
- *   healthRegenPerS, pickupRadiusFlat, xpMultiplier,
- *   maxManaFlat, manaRegenPerS, manaCostMult,
- *   projectileCountBonus (new in Phase 6)
- *
- * SVG coordinate space: 0 0 3600 3600, origin top-left.
- * All node positions use the 3600×3600 coordinate space (×4 from the original 900×900 layout).
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │  HOW TO ADD NEW NODES  (read this before touching the NODES section)     │
+ * │                                                                          │
+ * │  1. PICK COORDINATES                                                     │
+ * │     All nodes live on a polar grid: ring (0–5) and slot (0–31).         │
+ * │     ID format: r{ring}s{slot:02d}  e.g.  r3s04                          │
+ * │                                                                          │
+ * │     Ring slot counts & degree spacing:                                   │
+ * │       ring 0 →  8 slots, 45°   apart  (hub)                             │
+ * │       ring 1 → 16 slots, 22.5° apart  (inner minor)                     │
+ * │       ring 2 → 32 slots, 11.25° apart (class start gates)               │
+ * │       ring 3 → 32 slots, 11.25° apart (minor branch)                    │
+ * │       ring 4 → 32 slots, 11.25° apart (notable)                         │
+ * │       ring 5 → 32 slots, 11.25° apart (outer / keystone)                │
+ * │                                                                          │
+ * │     Slot 0 = 0° (right). Increases clockwise.                           │
+ * │     Class starts: Warrior r2s00 (0°), Rogue r2s11 (≈123°),             │
+ * │                   Sage r2s21 (≈236°)                                    │
+ * │                                                                          │
+ * │  2. CHOOSE A TYPE                                                        │
+ * │     'minor'    — small incremental bonus, small circle                  │
+ * │     'notable'  — named meaningful bonus, large circle                   │
+ * │     'keystone' — build-defining modifier, star shape                    │
+ * │     'start'    — class gate, allocated free at character select         │
+ * │     'hub'      — central shared node                                    │
+ * │                                                                          │
+ * │  3. WRITE THE STATS OBJECT                                               │
+ * │     Use only keys from STAT_KEYS below. All values are additive deltas. │
+ * │     Multiplicative stats use fractional addends:                         │
+ * │       moveSpeedMult: 0.10 means "+10% move speed"                       │
+ * │       castSpeed:     0.10 means "+10% cast speed" (added to base 1.0)   │
+ * │                                                                          │
+ * │  4. DECLARE CONNECTIONS ON BOTH ENDS                                     │
+ * │     Add the new node's ID to each neighbour's `connections` array.      │
+ * │     Add each neighbour's ID to the new node's `connections` array.      │
+ * │     Valid connection patterns:                                           │
+ * │       Arc  — same ring, slot differs by 1 (wraps at max slot)           │
+ * │       Spoke — same slot, ring differs by 1                              │
+ * │                                                                          │
+ * │  5. VERIFY                                                               │
+ * │     Run `npm run dev` and open the Passive Tree screen.                 │
+ * │     The node should appear in the correct position with visible arcs.   │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 
-// ─── Shared stat application helpers ────────────────────────────────────────
-// These mirror PassiveItem.apply/remove but also handle projectileCountBonus.
+// ─────────────────────────────────────────────────────────────────────────────
+// STAT KEYS — the exhaustive list of player properties a node may modify.
+// applyStats / removeStats handle all of these.
+// ─────────────────────────────────────────────────────────────────────────────
+export const STAT_KEYS = [
+  // Core vitals
+  'maxHealth', 'maxMana', 'maxEnergyShield',
+  // Regen
+  'healthRegenPerS', 'manaRegenPerS',
+  // Defense
+  'totalArmor', 'totalEvasion',
+  // Resistances (fractional, e.g. 0.10 = +10%)
+  'blazeResistance', 'thunderResistance', 'frostResistance',
+  'holyResistance', 'unholyResistance',
+  // Multiplicative speed modifiers (fractional addends)
+  'moveSpeedMult', 'castSpeed', 'attackSpeed', 'manaCostMult',
+  // Skill damage bonuses (fractional addends)
+  'spellDamage', 'attackDamage', 'aoeDamage',
+  // Flat elemental damage
+  'flatBlazeDamage', 'flatThunderDamage', 'flatFrostDamage',
+  'flatHolyDamage', 'flatUnholyDamage', 'flatPhysicalDamage',
+  // Increased elemental damage (fractional addend)
+  'increasedBlazeDamage', 'increasedThunderDamage', 'increasedFrostDamage',
+  'increasedHolyDamage', 'increasedUnholyDamage', 'increasedPhysicalDamage',
+  // Penetration
+  'blazePenetration', 'thunderPenetration', 'frostPenetration',
+  'holyPenetration', 'unholyPenetration', 'physicalPenetration',
+  // Utility
+  'xpMultiplier', 'pickupRadiusBonus', 'projectileCountBonus',
+  // Potion
+  'potionEffectMult', 'potionDurationMult', 'potionChargeGainMult',
+];
 
-/** Apply stats to a player. Returns a snapshot needed for reversal. */
+// ─────────────────────────────────────────────────────────────────────────────
+// applyStats — applies a stat delta to the player; returns a snapshot for undo.
+//
+// For additive stats (most of them): snapshot records exactly the delta applied.
+// For multiplicative stats (castSpeed, attackSpeed, moveSpeedMult,
+//   manaCostMult, xpMultiplier, potionEffectMult, potionDurationMult,
+//   potionChargeGainMult): the delta is multiplied in, snapshot stores it so
+//   removeStats can divide it back out.
+// ─────────────────────────────────────────────────────────────────────────────
+const MULT_KEYS = new Set([
+  'castSpeed', 'attackSpeed', 'moveSpeedMult', 'manaCostMult',
+  'xpMultiplier', 'potionEffectMult', 'potionDurationMult', 'potionChargeGainMult',
+]);
+
+/**
+ * Apply a stats object to the player. Returns a snapshot that can be passed to
+ * removeStats to perfectly reverse the effect.
+ * @param {object} player
+ * @param {object} stats
+ * @returns {object} snapshot
+ */
 export function applyStats(player, stats) {
-  const snap = {};
-
-  if (stats.damageMult !== undefined) {
-    for (const w of player.autoSkills) w.damage = Math.round(w.damage * stats.damageMult);
-    snap.damageMult = stats.damageMult;
-  }
-  if (stats.cooldownMult !== undefined) {
-    for (const w of player.autoSkills) w.cooldown *= stats.cooldownMult;
-    snap.cooldownMult = stats.cooldownMult;
-  }
-  if (stats.speedFlat !== undefined) {
-    player.speed += stats.speedFlat;
-    snap.speedFlat = stats.speedFlat;
-  }
-  if (stats.maxHealthFlat !== undefined) {
-    player.maxHealth += stats.maxHealthFlat;
-    // Only grant HP when the bonus is positive; negative ones just lower the ceiling.
-    if (stats.maxHealthFlat > 0) {
-      player.health = Math.min(player.health + stats.maxHealthFlat, player.maxHealth);
+  if (!stats || !player) return {};
+  const snapshot = {};
+  for (const [key, value] of Object.entries(stats)) {
+    if (value == null) continue;
+    if (MULT_KEYS.has(key)) {
+      const before = player[key] ?? 1;
+      player[key] = before * (1 + value);
+      snapshot[key] = value; // store the fractional addend
     } else {
-      player.health = Math.min(player.health, player.maxHealth);
+      player[key] = (player[key] ?? 0) + value;
+      snapshot[key] = value;
     }
-    snap.maxHealthFlat = stats.maxHealthFlat;
+    // Heal up to new max when max vitals increase
+    if (key === 'maxHealth')       player.health       = Math.min(player.health ?? 0, player.maxHealth);
+    if (key === 'maxMana')         player.mana         = Math.min(player.mana   ?? 0, player.maxMana);
+    if (key === 'maxEnergyShield') player.energyShield = Math.min(player.energyShield ?? 0, player.maxEnergyShield);
   }
-  if (stats.healthRegenPerS !== undefined) {
-    player.healthRegenPerS = (player.healthRegenPerS ?? 0) + stats.healthRegenPerS;
-    snap.healthRegenPerS = stats.healthRegenPerS;
-  }
-  if (stats.pickupRadiusFlat !== undefined) {
-    player.pickupRadiusBonus = (player.pickupRadiusBonus ?? 0) + stats.pickupRadiusFlat;
-    snap.pickupRadiusFlat = stats.pickupRadiusFlat;
-  }
-  if (stats.xpMultiplier !== undefined) {
-    player.xpMultiplier = (player.xpMultiplier ?? 1) * stats.xpMultiplier;
-    snap.xpMultiplier = stats.xpMultiplier;
-  }
-  if (stats.maxManaFlat !== undefined) {
-    player.maxMana = (player.maxMana ?? 0) + stats.maxManaFlat;
-    if (stats.maxManaFlat > 0) {
-      player.mana = Math.min((player.mana ?? 0) + stats.maxManaFlat, player.maxMana);
-    } else {
-      player.mana = Math.min(player.mana ?? 0, player.maxMana);
-    }
-    snap.maxManaFlat = stats.maxManaFlat;
-  }
-  if (stats.manaRegenPerS !== undefined) {
-    player.manaRegenPerS = (player.manaRegenPerS ?? 0) + stats.manaRegenPerS;
-    snap.manaRegenPerS = stats.manaRegenPerS;
-  }
-  if (stats.manaCostMult !== undefined) {
-    player.manaCostMult = (player.manaCostMult ?? 1) * stats.manaCostMult;
-    snap.manaCostMult = stats.manaCostMult;
-  }
-  if (stats.projectileCountBonus !== undefined) {
-    player.projectileCountBonus = (player.projectileCountBonus ?? 0) + stats.projectileCountBonus;
-    snap.projectileCountBonus = stats.projectileCountBonus;
-  }
-  if (stats.potionChargeGainMult !== undefined) {
-    player.potionChargeGainMult = (player.potionChargeGainMult ?? 1) * stats.potionChargeGainMult;
-    snap.potionChargeGainMult = stats.potionChargeGainMult;
-  }
-  if (stats.potionChargeGainFlat !== undefined) {
-    player.potionChargeGainFlat = (player.potionChargeGainFlat ?? 0) + stats.potionChargeGainFlat;
-    snap.potionChargeGainFlat = stats.potionChargeGainFlat;
-  }
-  if (stats.potionChargeRegenPerS !== undefined) {
-    player.potionChargeRegenPerS = (player.potionChargeRegenPerS ?? 0) + stats.potionChargeRegenPerS;
-    snap.potionChargeRegenPerS = stats.potionChargeRegenPerS;
-  }
-  if (stats.potionDurationMult !== undefined) {
-    player.potionDurationMult = (player.potionDurationMult ?? 1) * stats.potionDurationMult;
-    snap.potionDurationMult = stats.potionDurationMult;
-  }
-  if (stats.potionEffectMult !== undefined) {
-    player.potionEffectMult = (player.potionEffectMult ?? 1) * stats.potionEffectMult;
-    snap.potionEffectMult = stats.potionEffectMult;
-  }
-  if (stats.potionMaxChargesMult !== undefined) {
-    player.potionMaxChargesMult = (player.potionMaxChargesMult ?? 1) * stats.potionMaxChargesMult;
-    snap.potionMaxChargesMult = stats.potionMaxChargesMult;
-  }
-  if (stats.potionChargesPerUseMult !== undefined) {
-    player.potionChargesPerUseMult = (player.potionChargesPerUseMult ?? 1) * stats.potionChargesPerUseMult;
-    snap.potionChargesPerUseMult = stats.potionChargesPerUseMult;
-  }
-
-  // ── New stat keys (Phase PT-0B) ──────────────────────────────────────────
-  if (stats.armorFlat !== undefined) {
-    player.armor = (player.armor ?? 0) + stats.armorFlat;
-    snap.armorFlat = stats.armorFlat;
-  }
-  if (stats.evasionFlat !== undefined) {
-    player.evasion = (player.evasion ?? 0) + stats.evasionFlat;
-    snap.evasionFlat = stats.evasionFlat;
-  }
-  if (stats.critChanceFlat !== undefined) {
-    player.critChanceFlat = (player.critChanceFlat ?? 0) + stats.critChanceFlat;
-    snap.critChanceFlat = stats.critChanceFlat;
-  }
-  if (stats.critMultFlat !== undefined) {
-    player.critMultFlat = (player.critMultFlat ?? 0) + stats.critMultFlat;
-    snap.critMultFlat = stats.critMultFlat;
-  }
-  if (stats.blazeDamageMult !== undefined) {
-    player.blazeDamageMult = (player.blazeDamageMult ?? 1) * stats.blazeDamageMult;
-    snap.blazeDamageMult = stats.blazeDamageMult;
-  }
-  if (stats.thunderDamageMult !== undefined) {
-    player.thunderDamageMult = (player.thunderDamageMult ?? 1) * stats.thunderDamageMult;
-    snap.thunderDamageMult = stats.thunderDamageMult;
-  }
-  if (stats.frostDamageMult !== undefined) {
-    player.frostDamageMult = (player.frostDamageMult ?? 1) * stats.frostDamageMult;
-    snap.frostDamageMult = stats.frostDamageMult;
-  }
-  if (stats.holyDamageMult !== undefined) {
-    player.holyDamageMult = (player.holyDamageMult ?? 1) * stats.holyDamageMult;
-    snap.holyDamageMult = stats.holyDamageMult;
-  }
-  if (stats.unholyDamageMult !== undefined) {
-    player.unholyDamageMult = (player.unholyDamageMult ?? 1) * stats.unholyDamageMult;
-    snap.unholyDamageMult = stats.unholyDamageMult;
-  }
-  if (stats.physDamageMult !== undefined) {
-    player.physDamageMult = (player.physDamageMult ?? 1) * stats.physDamageMult;
-    snap.physDamageMult = stats.physDamageMult;
-  }
-  if (stats.igniteChanceFlat !== undefined) {
-    player.igniteChanceFlat = (player.igniteChanceFlat ?? 0) + stats.igniteChanceFlat;
-    snap.igniteChanceFlat = stats.igniteChanceFlat;
-  }
-  if (stats.shockChanceFlat !== undefined) {
-    player.shockChanceFlat = (player.shockChanceFlat ?? 0) + stats.shockChanceFlat;
-    snap.shockChanceFlat = stats.shockChanceFlat;
-  }
-  if (stats.chillChanceFlat !== undefined) {
-    player.chillChanceFlat = (player.chillChanceFlat ?? 0) + stats.chillChanceFlat;
-    snap.chillChanceFlat = stats.chillChanceFlat;
-  }
-  if (stats.freezeChanceFlat !== undefined) {
-    player.freezeChanceFlat = (player.freezeChanceFlat ?? 0) + stats.freezeChanceFlat;
-    snap.freezeChanceFlat = stats.freezeChanceFlat;
-  }
-  if (stats.aoeSizeFlat !== undefined) {
-    player.aoeSizeFlat = (player.aoeSizeFlat ?? 0) + stats.aoeSizeFlat;
-    snap.aoeSizeFlat = stats.aoeSizeFlat;
-  }
-  if (stats.skillDurationMult !== undefined) {
-    player.skillDurationMult = (player.skillDurationMult ?? 1) * stats.skillDurationMult;
-    snap.skillDurationMult = stats.skillDurationMult;
-  }
-  if (stats.lifeOnKillFlat !== undefined) {
-    player.lifeOnKillFlat = (player.lifeOnKillFlat ?? 0) + stats.lifeOnKillFlat;
-    snap.lifeOnKillFlat = stats.lifeOnKillFlat;
-  }
-  if (stats.manaOnKillFlat !== undefined) {
-    player.manaOnKillFlat = (player.manaOnKillFlat ?? 0) + stats.manaOnKillFlat;
-    snap.manaOnKillFlat = stats.manaOnKillFlat;
-  }
-  if (stats.goldDropMult !== undefined) {
-    player.goldDropMult = (player.goldDropMult ?? 1) * stats.goldDropMult;
-    snap.goldDropMult = stats.goldDropMult;
-  }
-  if (stats.dashCooldownMult !== undefined) {
-    player.dashCooldownMult = (player.dashCooldownMult ?? 1) * stats.dashCooldownMult;
-    snap.dashCooldownMult = stats.dashCooldownMult;
-  }
-  if (stats.energyShieldFlat !== undefined) {
-    player.energyShield = (player.energyShield ?? 0) + stats.energyShieldFlat;
-    snap.energyShieldFlat = stats.energyShieldFlat;
-  }
-  if (stats.energyShieldRegenPerS !== undefined) {
-    player.energyShieldRegenPerS = (player.energyShieldRegenPerS ?? 0) + stats.energyShieldRegenPerS;
-    snap.energyShieldRegenPerS = stats.energyShieldRegenPerS;
-  }
-
-  return snap;
+  return snapshot;
 }
 
-/** Reverse a previous applyStats call using its returned snapshot. */
+/**
+ * Reverse a previously applied snapshot.
+ * @param {object} player
+ * @param {object} snapshot
+ */
 export function removeStats(player, snapshot) {
-  if (snapshot.damageMult !== undefined) {
-    for (const w of player.autoSkills) w.damage = Math.round(w.damage / snapshot.damageMult);
-  }
-  if (snapshot.cooldownMult !== undefined) {
-    for (const w of player.autoSkills) w.cooldown /= snapshot.cooldownMult;
-  }
-  if (snapshot.speedFlat !== undefined) player.speed -= snapshot.speedFlat;
-  if (snapshot.maxHealthFlat !== undefined) {
-    player.maxHealth -= snapshot.maxHealthFlat;
-    player.health = Math.min(player.health, player.maxHealth);
-  }
-  if (snapshot.healthRegenPerS !== undefined) {
-    player.healthRegenPerS = (player.healthRegenPerS ?? 0) - snapshot.healthRegenPerS;
-  }
-  if (snapshot.pickupRadiusFlat !== undefined) {
-    player.pickupRadiusBonus = Math.max(0, (player.pickupRadiusBonus ?? 0) - snapshot.pickupRadiusFlat);
-  }
-  if (snapshot.xpMultiplier !== undefined) {
-    player.xpMultiplier = (player.xpMultiplier ?? 1) / snapshot.xpMultiplier;
-  }
-  if (snapshot.maxManaFlat !== undefined) {
-    player.maxMana = Math.max(0, (player.maxMana ?? 0) - snapshot.maxManaFlat);
-    player.mana = Math.min(player.mana ?? 0, player.maxMana);
-  }
-  if (snapshot.manaRegenPerS !== undefined) {
-    player.manaRegenPerS = Math.max(0, (player.manaRegenPerS ?? 0) - snapshot.manaRegenPerS);
-  }
-  if (snapshot.manaCostMult !== undefined) {
-    player.manaCostMult = Math.max(0.1, (player.manaCostMult ?? 1) / snapshot.manaCostMult);
-  }
-  if (snapshot.projectileCountBonus !== undefined) {
-    player.projectileCountBonus = Math.max(0, (player.projectileCountBonus ?? 0) - snapshot.projectileCountBonus);
-  }
-  if (snapshot.potionChargeGainMult !== undefined) {
-    player.potionChargeGainMult = Math.max(0, (player.potionChargeGainMult ?? 1) / snapshot.potionChargeGainMult);
-  }
-  if (snapshot.potionChargeGainFlat !== undefined) {
-    player.potionChargeGainFlat = (player.potionChargeGainFlat ?? 0) - snapshot.potionChargeGainFlat;
-  }
-  if (snapshot.potionChargeRegenPerS !== undefined) {
-    player.potionChargeRegenPerS = (player.potionChargeRegenPerS ?? 0) - snapshot.potionChargeRegenPerS;
-  }
-  if (snapshot.potionDurationMult !== undefined) {
-    player.potionDurationMult = Math.max(0, (player.potionDurationMult ?? 1) / snapshot.potionDurationMult);
-  }
-  if (snapshot.potionEffectMult !== undefined) {
-    player.potionEffectMult = Math.max(0, (player.potionEffectMult ?? 1) / snapshot.potionEffectMult);
-  }
-  if (snapshot.potionMaxChargesMult !== undefined) {
-    player.potionMaxChargesMult = Math.max(0, (player.potionMaxChargesMult ?? 1) / snapshot.potionMaxChargesMult);
-  }
-  if (snapshot.potionChargesPerUseMult !== undefined) {
-    player.potionChargesPerUseMult = Math.max(0, (player.potionChargesPerUseMult ?? 1) / snapshot.potionChargesPerUseMult);
-  }
-
-  // ── New stat keys (Phase PT-0B) ──────────────────────────────────────────
-  if (snapshot.armorFlat !== undefined) {
-    player.armor = Math.max(0, (player.armor ?? 0) - snapshot.armorFlat);
-  }
-  if (snapshot.evasionFlat !== undefined) {
-    player.evasion = Math.max(0, (player.evasion ?? 0) - snapshot.evasionFlat);
-  }
-  if (snapshot.critChanceFlat !== undefined) {
-    player.critChanceFlat = Math.max(0, (player.critChanceFlat ?? 0) - snapshot.critChanceFlat);
-  }
-  if (snapshot.critMultFlat !== undefined) {
-    player.critMultFlat = Math.max(0, (player.critMultFlat ?? 0) - snapshot.critMultFlat);
-  }
-  if (snapshot.blazeDamageMult !== undefined) {
-    player.blazeDamageMult = Math.max(0.01, (player.blazeDamageMult ?? 1) / snapshot.blazeDamageMult);
-  }
-  if (snapshot.thunderDamageMult !== undefined) {
-    player.thunderDamageMult = Math.max(0.01, (player.thunderDamageMult ?? 1) / snapshot.thunderDamageMult);
-  }
-  if (snapshot.frostDamageMult !== undefined) {
-    player.frostDamageMult = Math.max(0.01, (player.frostDamageMult ?? 1) / snapshot.frostDamageMult);
-  }
-  if (snapshot.holyDamageMult !== undefined) {
-    player.holyDamageMult = Math.max(0.01, (player.holyDamageMult ?? 1) / snapshot.holyDamageMult);
-  }
-  if (snapshot.unholyDamageMult !== undefined) {
-    player.unholyDamageMult = Math.max(0.01, (player.unholyDamageMult ?? 1) / snapshot.unholyDamageMult);
-  }
-  if (snapshot.physDamageMult !== undefined) {
-    player.physDamageMult = Math.max(0.01, (player.physDamageMult ?? 1) / snapshot.physDamageMult);
-  }
-  if (snapshot.igniteChanceFlat !== undefined) {
-    player.igniteChanceFlat = Math.max(0, (player.igniteChanceFlat ?? 0) - snapshot.igniteChanceFlat);
-  }
-  if (snapshot.shockChanceFlat !== undefined) {
-    player.shockChanceFlat = Math.max(0, (player.shockChanceFlat ?? 0) - snapshot.shockChanceFlat);
-  }
-  if (snapshot.chillChanceFlat !== undefined) {
-    player.chillChanceFlat = Math.max(0, (player.chillChanceFlat ?? 0) - snapshot.chillChanceFlat);
-  }
-  if (snapshot.freezeChanceFlat !== undefined) {
-    player.freezeChanceFlat = Math.max(0, (player.freezeChanceFlat ?? 0) - snapshot.freezeChanceFlat);
-  }
-  if (snapshot.aoeSizeFlat !== undefined) {
-    player.aoeSizeFlat = (player.aoeSizeFlat ?? 0) - snapshot.aoeSizeFlat;
-  }
-  if (snapshot.skillDurationMult !== undefined) {
-    player.skillDurationMult = Math.max(0.01, (player.skillDurationMult ?? 1) / snapshot.skillDurationMult);
-  }
-  if (snapshot.lifeOnKillFlat !== undefined) {
-    player.lifeOnKillFlat = Math.max(0, (player.lifeOnKillFlat ?? 0) - snapshot.lifeOnKillFlat);
-  }
-  if (snapshot.manaOnKillFlat !== undefined) {
-    player.manaOnKillFlat = Math.max(0, (player.manaOnKillFlat ?? 0) - snapshot.manaOnKillFlat);
-  }
-  if (snapshot.goldDropMult !== undefined) {
-    player.goldDropMult = Math.max(0.01, (player.goldDropMult ?? 1) / snapshot.goldDropMult);
-  }
-  if (snapshot.dashCooldownMult !== undefined) {
-    player.dashCooldownMult = Math.max(0.1, (player.dashCooldownMult ?? 1) / snapshot.dashCooldownMult);
-  }
-  if (snapshot.energyShieldFlat !== undefined) {
-    player.energyShield = Math.max(0, (player.energyShield ?? 0) - snapshot.energyShieldFlat);
-  }
-  if (snapshot.energyShieldRegenPerS !== undefined) {
-    player.energyShieldRegenPerS = Math.max(0, (player.energyShieldRegenPerS ?? 0) - snapshot.energyShieldRegenPerS);
+  if (!snapshot || !player) return;
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value == null) continue;
+    if (MULT_KEYS.has(key)) {
+      player[key] = (player[key] ?? 1) / (1 + value);
+    } else {
+      player[key] = (player[key] ?? 0) - value;
+    }
+    // Clamp vitals after removal
+    if (key === 'maxHealth')       player.health       = Math.min(player.health ?? 0, Math.max(1, player.maxHealth));
+    if (key === 'maxMana')         player.mana         = Math.min(player.mana   ?? 0, Math.max(0, player.maxMana));
+    if (key === 'maxEnergyShield') player.energyShield = Math.min(player.energyShield ?? 0, Math.max(0, player.maxEnergyShield));
   }
 }
 
-// ─── Tree node definitions ───────────────────────────────────────────────────
-
-export const PASSIVE_TREE_NODES = [
+// ─────────────────────────────────────────────────────────────────────────────
+// NODES
+//
+// Each entry: {
+//   id:          string   — matches the key (format: r{ring}s{slot:02d})
+//   label:       string   — display name
+//   type:        'hub' | 'start' | 'minor' | 'notable' | 'keystone'
+//   section:     'warrior' | 'rogue' | 'sage' | 'shared'
+//   ring:        number   — 0–5
+//   slot:        number   — 0–(slotsInRing-1)
+//   stats:       object   — keys from STAT_KEYS, additive deltas
+//   connections: string[] — IDs of directly connected nodes (bidirectional)
+//   description: string   — human-readable tooltip text
+// }
+//
+// RING SLOT COUNTS (for reference when adding nodes):
+//   ring 0 →  8 slots   (45°   apart)   hub
+//   ring 1 → 16 slots   (22.5° apart)   inner minor  [used in Phase 4]
+//   ring 2 → 32 slots   (11.25° apart)  class start gates
+//   ring 3 → 32 slots   (11.25° apart)  minor branches
+//   ring 4 → 32 slots   (11.25° apart)  notables
+//   ring 5 → 32 slots   (11.25° apart)  outer / keystones
+// ─────────────────────────────────────────────────────────────────────────────
+const NODES = [
 
   // ══════════════════════════════════════════════════════════════════════════
-  // STARTING HUB  (1 + 8 = 9 nodes)
+  //  WARRIOR SECTION  —  Fire · Strength · Armor
+  //  Center: slot 0 (0°).  22 nodes spanning slots ~29–03 across all rings.
+  //  Section color (renderer): ember-orange #e8722a
   // ══════════════════════════════════════════════════════════════════════════
 
   {
-    id: 'start',
-    label: "Exile's Path",
-    description: "The beginning of your journey. The first step into the dark.",
-    type: 'minor',
-    position: { x: 1800, y: 1800 },
-    connections: ['s1', 's2', 's3', 's4', 's5', 's6'],
+    id: 'r2s00', label: "Warrior's Gate",
+    type: 'start', section: 'warrior', ring: 2, slot: 0,
     stats: {},
+    connections: ['r3s00', 'r1s00'],
+    description: 'Starting node for the Warrior. Also connects to the hub via Life\'s Crossing.',
+  },
+  // ── Ring 3 ──
+  {
+    id: 'r3s29', label: 'Iron Vein',
+    type: 'minor', section: 'warrior', ring: 3, slot: 29,
+    stats: { maxHealth: 20, totalArmor: 5 },
+    connections: ['r3s30', 'r4s29'],
+    description: '+20 maximum health. +5 armor.',
   },
   {
-    id: 's1',
-    label: '+5% Damage',
-    description: '5% increased weapon damage.',
-    type: 'minor',
-    position: { x: 1800, y: 1500 },
-    connections: ['start', 's7', 'sp_entry'],
-    stats: { damageMult: 1.05 },
+    id: 'r3s30', label: 'Forge Blood',
+    type: 'minor', section: 'warrior', ring: 3, slot: 30,
+    stats: { healthRegenPerS: 1.5, flatBlazeDamage: 6 },
+    connections: ['r3s29', 'r3s31', 'r4s30'],
+    description: '+1.5 HP/s regeneration. +6 flat fire damage.',
   },
   {
-    id: 's2',
-    label: '+8 Speed',
-    description: '8 increased movement speed.',
-    type: 'minor',
-    position: { x: 2040, y: 1620 },
-    connections: ['start', 's7', 's8'],
-    stats: { speedFlat: 8 },
+    id: 'r3s31', label: 'Smoldering Blood',
+    type: 'minor', section: 'warrior', ring: 3, slot: 31,
+    stats: { healthRegenPerS: 1.5, flatBlazeDamage: 6 },
+    connections: ['r3s30', 'r3s00', 'r4s31'],
+    description: '+1.5 HP/s regeneration. +6 flat fire damage.',
   },
   {
-    id: 's3',
-    label: '+10 Life',
-    description: '10 to maximum life.',
-    type: 'minor',
-    position: { x: 2060, y: 1840 },
-    connections: ['start', 's8'],
-    stats: { maxHealthFlat: 10 },
+    id: 'r3s00', label: 'Thick Hide',
+    type: 'minor', section: 'warrior', ring: 3, slot: 0,
+    stats: { maxHealth: 25, totalArmor: 8 },
+    connections: ['r2s00', 'r3s31', 'r3s01', 'r4s00'],
+    description: '+25 maximum health. +8 armor.',
   },
   {
-    id: 's4',
-    label: '+5% Experience',
-    description: '5% increased experience gained.',
-    type: 'minor',
-    position: { x: 1800, y: 2040 },
-    connections: ['start', 'ar_entry'],
-    stats: { xpMultiplier: 1.05 },
+    id: 'r3s01', label: 'Ember Coils',
+    type: 'minor', section: 'warrior', ring: 3, slot: 1,
+    stats: { flatBlazeDamage: 12, increasedBlazeDamage: 0.06 },
+    connections: ['r3s00', 'r3s02', 'r4s01'],
+    description: '+12 flat fire damage. +6% increased fire damage.',
   },
   {
-    id: 's5',
-    label: '+15 Pickup Radius',
-    description: '15 to item and gem pickup radius.',
-    type: 'minor',
-    position: { x: 1560, y: 1900 },
-    connections: ['start', 'tn_entry'],
-    stats: { pickupRadiusFlat: 15 },
+    id: 'r3s02', label: 'Charred Hide',
+    type: 'minor', section: 'warrior', ring: 3, slot: 2,
+    stats: { totalArmor: 10, blazeResistance: 0.05 },
+    connections: ['r3s01', 'r3s03', 'r4s02'],
+    description: '+10 armor. +5% fire resistance.',
   },
   {
-    id: 's6',
-    label: '−5% Cooldown',
-    description: '5% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 1540, y: 1680 },
-    connections: ['start', 'tn_entry'],
-    stats: { cooldownMult: 0.95 },
+    id: 'r3s03', label: 'Blaze Mark',
+    type: 'minor', section: 'warrior', ring: 3, slot: 3,
+    stats: { flatBlazeDamage: 10, increasedBlazeDamage: 0.06 },
+    connections: ['r3s02', 'r3s04', 'r4s03'],
+    description: '+10 flat fire damage. +6% increased fire damage.',
+  },
+  // ── Ring 4 ──
+  {
+    id: 'r4s29', label: 'Cinder Guard',
+    type: 'minor', section: 'warrior', ring: 4, slot: 29,
+    stats: { totalArmor: 12, blazeResistance: 0.05 },
+    connections: ['r3s29', 'r4s30', 'r5s29'],
+    description: '+12 armor. +5% fire resistance.',
   },
   {
-    id: 's7',
-    label: '+5% Damage',
-    description: '5% increased weapon damage.',
-    type: 'minor',
-    position: { x: 1800, y: 1400 },
-    connections: ['s1', 's2'],
-    stats: { damageMult: 1.05 },
+    id: 'r4s30', label: 'Molten Core',
+    type: 'notable', section: 'warrior', ring: 4, slot: 30,
+    stats: { maxHealth: 35, flatBlazeDamage: 10, increasedBlazeDamage: 0.08 },
+    connections: ['r3s30', 'r4s29', 'r4s31'],
+    description: '+35 maximum health. +10 flat fire damage. +8% increased fire damage.',
   },
   {
-    id: 's8',
-    label: '+5% Damage',
-    description: '5% increased weapon damage.',
-    type: 'minor',
-    position: { x: 2280, y: 1728 },
-    connections: ['s2', 's3', 'pw_entry'],
-    stats: { damageMult: 1.05 },
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // POWER CLUSTER — right side  (14 nodes including keystone)
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    id: 'pw_entry',
-    label: '+8% Damage',
-    description: '8% increased weapon damage.',
-    type: 'minor',
-    position: { x: 2480, y: 1680 },
-    connections: ['s8', 'pw1', 'pw2'],
-    stats: { damageMult: 1.08 },
+    id: 'r4s31', label: 'Forge-Born',
+    type: 'minor', section: 'warrior', ring: 4, slot: 31,
+    stats: { maxHealth: 20, totalArmor: 8 },
+    connections: ['r3s31', 'r4s30', 'r4s00', 'r5s31'],
+    description: '+20 maximum health. +8 armor.',
   },
   {
-    id: 'pw1',
-    label: '+8% Damage',
-    description: '8% increased weapon damage.',
-    type: 'minor',
-    position: { x: 2620, y: 1472 },
-    connections: ['pw_entry', 'pw3', 'pw4'],
-    stats: { damageMult: 1.08 },
+    id: 'r4s00', label: 'Ironclad',
+    type: 'notable', section: 'warrior', ring: 4, slot: 0,
+    stats: { maxHealth: 55, totalArmor: 22 },
+    connections: ['r3s00', 'r4s31', 'r4s01', 'r5s00'],
+    description: '+55 maximum health. +22 armor. Built for endurance.',
   },
   {
-    id: 'pw2',
-    label: '−6% Cooldown',
-    description: '6% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 2620, y: 1800 },
-    connections: ['pw_entry', 'pw4', 'pw_n1'],
-    stats: { cooldownMult: 0.94 },
+    id: 'r4s01', label: 'Blazeheart',
+    type: 'notable', section: 'warrior', ring: 4, slot: 1,
+    stats: { flatBlazeDamage: 22, increasedBlazeDamage: 0.14 },
+    connections: ['r3s01', 'r4s00', 'r4s02', 'r5s01'],
+    description: '+22 flat fire damage. +14% increased fire damage. The furnace burns within.',
   },
   {
-    id: 'pw3',
-    label: '+8% Damage',
-    description: '8% increased weapon damage.',
-    type: 'minor',
-    position: { x: 2760, y: 1300 },
-    connections: ['pw1', 'pw5'],
-    stats: { damageMult: 1.08 },
+    id: 'r4s02', label: 'Blaze Brand',
+    type: 'minor', section: 'warrior', ring: 4, slot: 2,
+    stats: { flatBlazeDamage: 12, increasedBlazeDamage: 0.08 },
+    connections: ['r3s02', 'r4s01', 'r4s03', 'r5s02'],
+    description: '+12 flat fire damage. +8% increased fire damage.',
   },
   {
-    id: 'pw4',
-    label: '−6% Cooldown',
-    description: '6% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 2800, y: 1600 },
-    connections: ['pw1', 'pw2', 'pw5', 'pw6'],
-    stats: { cooldownMult: 0.94 },
+    id: 'r4s03', label: 'Scorched Earth',
+    type: 'notable', section: 'warrior', ring: 4, slot: 3,
+    stats: { flatBlazeDamage: 18, aoeDamage: 0.12, increasedBlazeDamage: 0.08 },
+    connections: ['r3s03', 'r4s02', 'r5s03'],
+    description: '+18 flat fire damage. +12% AoE damage. +8% increased fire damage. Leave nothing but ash.',
+  },
+  // ── Ring 5 ──
+  {
+    id: 'r5s29', label: 'Volcanic',
+    type: 'minor', section: 'warrior', ring: 5, slot: 29,
+    stats: { flatBlazeDamage: 18, increasedBlazeDamage: 0.08 },
+    connections: ['r4s29', 'r5s30'],
+    description: '+18 flat fire damage. +8% increased fire damage.',
   },
   {
-    id: 'pw_n1',
-    label: 'Overwhelming Force',
-    description: '20% increased weapon damage. Crush them before they can react.',
-    type: 'notable',
-    position: { x: 2672, y: 1960 },
-    connections: ['pw2', 'pw4', 'pw_n2'],
-    stats: { damageMult: 1.20 },
+    id: 'r5s30', label: 'Ashforged',
+    type: 'minor', section: 'warrior', ring: 5, slot: 30,
+    stats: { maxHealth: 25, totalArmor: 8, flatBlazeDamage: 5 },
+    connections: ['r5s29', 'r5s31'],
+    description: '+25 maximum health. +8 armor. +5 flat fire damage.',
   },
   {
-    id: 'pw5',
-    label: '+5% Damage',
-    description: '5% increased weapon damage.',
-    type: 'minor',
-    position: { x: 2912, y: 1392 },
-    connections: ['pw3', 'pw4', 'pw7'],
-    stats: { damageMult: 1.05 },
+    id: 'r5s31', label: 'Undying Flame',
+    type: 'minor', section: 'warrior', ring: 5, slot: 31,
+    stats: { maxHealth: 20, healthRegenPerS: 1.0 },
+    connections: ['r5s30', 'r4s31', 'r5s00'],
+    description: '+20 maximum health. +1 HP/s regeneration.',
   },
   {
-    id: 'pw6',
-    label: '−5% Cooldown',
-    description: '5% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 2952, y: 1680 },
-    connections: ['pw4', 'pw_n2', 'pw7', 'pw8'],
-    stats: { cooldownMult: 0.95 },
+    id: 'r5s00', label: "Pyre's Dominion",
+    type: 'keystone', section: 'warrior', ring: 5, slot: 0,
+    stats: { maxHealth: 40, totalArmor: 15, flatBlazeDamage: 15, increasedBlazeDamage: 0.10 },
+    connections: ['r4s00', 'r5s31', 'r5s01'],
+    description: 'Every 2s erupts in a fire nova hitting all enemies within 280px. +40 max HP. +15 armor. +15 flat fire.',
   },
   {
-    id: 'pw_n2',
-    label: 'Alacrity',
-    description: '16% reduced weapon cooldown. Strike with precision and frequency.',
-    type: 'notable',
-    position: { x: 2840, y: 1952 },
-    connections: ['pw_n1', 'pw6'],
-    stats: { cooldownMult: 0.84 },
+    id: 'r5s01', label: "Inferno's Edge",
+    type: 'minor', section: 'warrior', ring: 5, slot: 1,
+    stats: { flatBlazeDamage: 18, increasedBlazeDamage: 0.08 },
+    connections: ['r4s01', 'r5s00', 'r5s02'],
+    description: '+18 flat fire damage. +8% increased fire damage.',
   },
   {
-    id: 'pw7',
-    label: '+5% Damage',
-    description: '5% increased weapon damage.',
-    type: 'minor',
-    position: { x: 3052, y: 1432 },
-    connections: ['pw5', 'pw6', 'pw_n3'],
-    stats: { damageMult: 1.05 },
+    id: 'r5s02', label: 'Searing Brand',
+    type: 'minor', section: 'warrior', ring: 5, slot: 2,
+    stats: { flatBlazeDamage: 15, increasedBlazeDamage: 0.06 },
+    connections: ['r4s02', 'r5s01', 'r5s03'],
+    description: '+15 flat fire damage. +6% increased fire damage.',
   },
   {
-    id: 'pw8',
-    label: '+5% Damage',
-    description: '5% increased weapon damage.',
-    type: 'minor',
-    position: { x: 3072, y: 1752 },
-    connections: ['pw6', 'pw_n3'],
-    stats: { damageMult: 1.05 },
-  },
-  {
-    id: 'pw_n3',
-    label: 'Barrage Mode',
-    description: 'Fire one additional projectile from all applicable weapons. Aligned in a slight spread.',
-    type: 'notable',
-    position: { x: 3080, y: 1568 },
-    connections: ['pw7', 'pw8', 'pw9'],
-    stats: { projectileCountBonus: 1 },
-  },
-  {
-    id: 'pw9',
-    label: '+5% Damage',
-    description: '5% increased weapon damage.',
-    type: 'minor',
-    position: { x: 3232, y: 1532 },
-    connections: ['pw_n3', 'pw_ks'],
-    stats: { damageMult: 1.05 },
-  },
-  {
-    id: 'pw_ks',
-    label: 'Bloodrage',
-    description: '+80% weapon damage, but −50 maximum life. Power demands sacrifice.',
-    type: 'keystone',
-    position: { x: 3392, y: 1500 },
-    connections: ['pw9'],
-    stats: { damageMult: 1.80, maxHealthFlat: -50 },
+    id: 'r5s03', label: "Pyre's Wake",
+    type: 'minor', section: 'warrior', ring: 5, slot: 3,
+    stats: { flatBlazeDamage: 18, increasedBlazeDamage: 0.10 },
+    connections: ['r4s03', 'r5s02'],
+    description: '+18 flat fire damage. +10% increased fire damage.',
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SPEED CLUSTER — top  (13 nodes including keystone)
+  //  SHARED — Cross-section bridge (Warrior → Rogue)
+  //  Slots 4–7 in ring 3 (45°–78.75°). Cost: 4 shared points to cross.
+  //  Section color (renderer): soft-gold #c8a84b
   // ══════════════════════════════════════════════════════════════════════════
 
   {
-    id: 'sp_entry',
-    label: '+10 Speed',
-    description: '10 increased movement speed.',
-    type: 'minor',
-    position: { x: 1740, y: 1200 },
-    connections: ['s1', 's7', 'sp1', 'sp2'],
-    stats: { speedFlat: 10 },
+    id: 'r3s04', label: 'Emberglass',
+    type: 'minor', section: 'shared', ring: 3, slot: 4,
+    stats: { maxHealth: 10, flatBlazeDamage: 5, flatFrostDamage: 4 },
+    connections: ['r3s03', 'r3s05'],
+    description: '+10 HP. +5 flat fire damage. +4 flat cold damage. The elements begrudgingly coexist.',
   },
   {
-    id: 'sp1',
-    label: '+10 Speed',
-    description: '10 increased movement speed.',
-    type: 'minor',
-    position: { x: 1500, y: 1020 },
-    connections: ['sp_entry', 'sp4', 'sp5'],
-    stats: { speedFlat: 10 },
+    id: 'r3s05', label: 'Shard of Halves',
+    type: 'notable', section: 'shared', ring: 3, slot: 5,
+    stats: { maxHealth: 18, flatBlazeDamage: 7, flatFrostDamage: 7, moveSpeedMult: 0.04 },
+    connections: ['r3s04', 'r3s06'],
+    description: '+18 HP. +7 flat fire & cold damage each. +4% move speed. A soul split between two worlds.',
   },
   {
-    id: 'sp2',
-    label: '−6% Cooldown',
-    description: '6% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 1840, y: 992 },
-    connections: ['sp_entry', 'sp5', 'sp6'],
-    stats: { cooldownMult: 0.94 },
+    id: 'r3s06', label: 'Frostburn Mantle',
+    type: 'minor', section: 'shared', ring: 3, slot: 6,
+    stats: { maxHealth: 8, flatFrostDamage: 6, flatBlazeDamage: 6 },
+    connections: ['r3s05', 'r3s07'],
+    description: '+8 HP. +6 flat cold damage. +6 flat fire damage.',
   },
   {
-    id: 'sp3',
-    label: '+10 Speed',
-    description: '10 increased movement speed.',
-    type: 'minor',
-    position: { x: 2112, y: 1040 },
-    connections: ['sp2', 'sp6'],
-    stats: { speedFlat: 10 },
-  },
-  {
-    id: 'sp4',
-    label: '+8 Speed',
-    description: '8 increased movement speed.',
-    type: 'minor',
-    position: { x: 1360, y: 820 },
-    connections: ['sp1', 'sp_n1'],
-    stats: { speedFlat: 8 },
-  },
-  {
-    id: 'sp5',
-    label: '−5% Cooldown',
-    description: '5% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 1708, y: 792 },
-    connections: ['sp1', 'sp2', 'sp_n2'],
-    stats: { cooldownMult: 0.95 },
-  },
-  {
-    id: 'sp6',
-    label: '+8 Speed',
-    description: '8 increased movement speed.',
-    type: 'minor',
-    position: { x: 2060, y: 792 },
-    connections: ['sp2', 'sp3', 'sp_n3'],
-    stats: { speedFlat: 8 },
-  },
-  {
-    id: 'sp_n1',
-    label: 'Phase Run',
-    description: '+20 movement speed. Nothing can stop the exile in motion.',
-    type: 'notable',
-    position: { x: 1320, y: 660 },
-    connections: ['sp4', 'sp7'],
-    stats: { speedFlat: 20 },
-  },
-  {
-    id: 'sp_n2',
-    label: 'Windrunner',
-    description: '20% reduced all weapon cooldowns. Faster. Always faster.',
-    type: 'notable',
-    position: { x: 1792, y: 632 },
-    connections: ['sp5', 'sp7', 'sp8'],
-    stats: { cooldownMult: 0.80 },
-  },
-  {
-    id: 'sp_n3',
-    label: 'Fleet-Footed',
-    description: '+25 movement speed and +15 pickup radius. Every step counts.',
-    type: 'notable',
-    position: { x: 2260, y: 660 },
-    connections: ['sp6', 'sp8'],
-    stats: { speedFlat: 25, pickupRadiusFlat: 15 },
-  },
-  {
-    id: 'sp7',
-    label: '+8 Speed',
-    description: '8 increased movement speed.',
-    type: 'minor',
-    position: { x: 1552, y: 512 },
-    connections: ['sp_n1', 'sp_n2', 'sp_ks'],
-    stats: { speedFlat: 8 },
-  },
-  {
-    id: 'sp8',
-    label: '−5% Cooldown',
-    description: '5% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 2040, y: 512 },
-    connections: ['sp_n2', 'sp_n3', 'sp_ks'],
-    stats: { cooldownMult: 0.95 },
-  },
-  {
-    id: 'sp_ks',
-    label: 'Elusive',
-    description: '+50 movement speed, but −40 maximum life. Evasion demands fragility.',
-    type: 'keystone',
-    position: { x: 1800, y: 380 },
-    connections: ['sp7', 'sp8'],
-    stats: { speedFlat: 50, maxHealthFlat: -40 },
+    id: 'r3s07', label: 'Cold Hearth',
+    type: 'minor', section: 'shared', ring: 3, slot: 7,
+    stats: { maxHealth: 10, flatFrostDamage: 8, flatBlazeDamage: 5 },
+    connections: ['r3s06', 'r3s08'],
+    description: '+10 HP. +8 flat cold damage. +5 flat fire damage.',
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  // TANK CLUSTER — left side  (12 nodes including keystone)
+  //  ROGUE SECTION  —  Cold · Speed · Regen
+  //  Center: slot 11 (123.75°).  22 nodes spanning slots ~08–14 across rings.
+  //  Section color (renderer): ice-blue #4ab8d8
   // ══════════════════════════════════════════════════════════════════════════
 
   {
-    id: 'tn_entry',
-    label: '+12 Life',
-    description: '12 to maximum life.',
-    type: 'minor',
-    position: { x: 1272, y: 1680 },
-    connections: ['s5', 's6', 'tn1', 'tn2'],
-    stats: { maxHealthFlat: 12 },
+    id: 'r2s11', label: "Rogue's Gate",
+    type: 'start', section: 'rogue', ring: 2, slot: 11,
+    stats: {},
+    connections: ['r3s11'],
+    description: 'Starting node for the Rogue. Grants access to the cold and speed paths.',
+  },
+  // ── Ring 3 ──
+  {
+    id: 'r3s08', label: 'Shadow Veil',
+    type: 'minor', section: 'rogue', ring: 3, slot: 8,
+    stats: { totalEvasion: 80, healthRegenPerS: 0.8 },
+    connections: ['r2s08', 'r3s07', 'r3s09', 'r4s08'],
+    description: '+80 evasion. +0.8 HP/s. Also reachable from the Warrior-Rogue cross-section bridge.',
   },
   {
-    id: 'tn1',
-    label: '+10 Life',
-    description: '10 to maximum life.',
-    type: 'minor',
-    position: { x: 1088, y: 1480 },
-    connections: ['tn_entry', 'tn3', 'tn4'],
-    stats: { maxHealthFlat: 10 },
+    id: 'r3s09', label: 'Crisp Air',
+    type: 'minor', section: 'rogue', ring: 3, slot: 9,
+    stats: { frostResistance: 0.05, flatFrostDamage: 6 },
+    connections: ['r3s08', 'r3s10', 'r4s09'],
+    description: '+5% cold resistance. +6 flat cold damage.',
   },
   {
-    id: 'tn2',
-    label: '+1.5 Regen',
-    description: '1.5 life regenerated per second.',
-    type: 'minor',
-    position: { x: 1032, y: 1780 },
-    connections: ['tn_entry', 'tn4', 'tn5'],
-    stats: { healthRegenPerS: 1.5 },
+    id: 'r3s10', label: 'Frostfoot',
+    type: 'minor', section: 'rogue', ring: 3, slot: 10,
+    stats: { moveSpeedMult: 0.06, frostResistance: 0.05 },
+    connections: ['r3s09', 'r3s11', 'r4s10'],
+    description: '+6% movement speed. +5% cold resistance.',
   },
   {
-    id: 'tn3',
-    label: '+10 Life',
-    description: '10 to maximum life.',
-    type: 'minor',
-    position: { x: 928, y: 1260 },
-    connections: ['tn1', 'tn_n1'],
-    stats: { maxHealthFlat: 10 },
+    id: 'r3s11', label: 'Shiver Step',
+    type: 'minor', section: 'rogue', ring: 3, slot: 11,
+    stats: { moveSpeedMult: 0.08, flatFrostDamage: 8 },
+    connections: ['r2s11', 'r3s10', 'r3s12', 'r4s11'],
+    description: '+8% movement speed. +8 flat cold damage.',
   },
   {
-    id: 'tn4',
-    label: '+1.5 Regen',
-    description: '1.5 life regenerated per second.',
-    type: 'minor',
-    position: { x: 872, y: 1560 },
-    connections: ['tn1', 'tn2', 'tn_n1', 'tn_n2'],
-    stats: { healthRegenPerS: 1.5 },
+    id: 'r3s12', label: 'Cold Reflex',
+    type: 'minor', section: 'rogue', ring: 3, slot: 12,
+    stats: { attackSpeed: 0.08, flatFrostDamage: 6 },
+    connections: ['r3s11', 'r3s13', 'r4s12'],
+    description: '+8% attack speed. +6 flat cold damage.',
   },
   {
-    id: 'tn5',
-    label: '+8 Life',
-    description: '8 to maximum life.',
-    type: 'minor',
-    position: { x: 860, y: 1832 },
-    connections: ['tn2', 'tn4', 'tn_n2', 'tn_n3'],
-    stats: { maxHealthFlat: 8 },
+    id: 'r3s13', label: 'Chill Vein',
+    type: 'minor', section: 'rogue', ring: 3, slot: 13,
+    stats: { healthRegenPerS: 1.2, frostResistance: 0.06 },
+    connections: ['r3s12', 'r3s14', 'r4s13'],
+    description: '+1.2 HP/s regeneration. +6% cold resistance.',
   },
   {
-    id: 'tn_n1',
-    label: 'Iron Fortress',
-    description: '+30 maximum life. Built to endure.',
-    type: 'notable',
-    position: { x: 760, y: 1272 },
-    connections: ['tn3', 'tn4', 'tn6'],
-    stats: { maxHealthFlat: 30 },
+    id: 'r3s14', label: 'Cold Trail',
+    type: 'minor', section: 'rogue', ring: 3, slot: 14,
+    stats: { frostResistance: 0.04, flatFrostDamage: 6 },
+    connections: ['r3s13', 'r4s14'],
+    description: '+4% cold resistance. +6 flat cold damage.',
+  },
+  // ── Ring 4 ──
+  {
+    id: 'r4s08', label: 'Blizzard Step',
+    type: 'notable', section: 'rogue', ring: 4, slot: 8,
+    stats: { moveSpeedMult: 0.10, flatFrostDamage: 14, increasedFrostDamage: 0.06 },
+    connections: ['r3s08', 'r4s09', 'r5s08'],
+    description: '+10% movement speed. +14 flat cold damage. +6% increased cold damage.',
   },
   {
-    id: 'tn_n2',
-    label: 'Life Tap',
-    description: '+3 HP regenerated per second. The body heals itself.',
-    type: 'notable',
-    position: { x: 700, y: 1608 },
-    connections: ['tn4', 'tn5', 'tn6', 'tn7'],
-    stats: { healthRegenPerS: 3 },
+    id: 'r4s09', label: 'Gelid Reflex',
+    type: 'minor', section: 'rogue', ring: 4, slot: 9,
+    stats: { attackSpeed: 0.07, flatFrostDamage: 5 },
+    connections: ['r3s09', 'r4s08', 'r4s10', 'r5s09'],
+    description: '+7% attack speed. +5 flat cold damage.',
   },
   {
-    id: 'tn_n3',
-    label: 'Bastion',
-    description: '+25 maximum life and +2 HP regenerated per second. Immovable.',
-    type: 'notable',
-    position: { x: 712, y: 1872 },
-    connections: ['tn5', 'tn_n2', 'tn7'],
-    stats: { maxHealthFlat: 25, healthRegenPerS: 2 },
+    id: 'r4s10', label: 'Windstep',
+    type: 'notable', section: 'rogue', ring: 4, slot: 10,
+    stats: { moveSpeedMult: 0.12, healthRegenPerS: 1.5 },
+    connections: ['r3s10', 'r4s09', 'r4s11', 'r5s10'],
+    description: '+12% movement speed. +1.5 HP/s regeneration. Always in motion.',
   },
   {
-    id: 'tn6',
-    label: '+8 Life',
-    description: '8 to maximum life.',
-    type: 'minor',
-    position: { x: 592, y: 1360 },
-    connections: ['tn_n1', 'tn_n2', 'tn_ks'],
-    stats: { maxHealthFlat: 8 },
+    id: 'r4s11', label: 'Frostbite',
+    type: 'notable', section: 'rogue', ring: 4, slot: 11,
+    stats: { flatFrostDamage: 20, increasedFrostDamage: 0.14, frostResistance: 0.06 },
+    connections: ['r3s11', 'r4s10', 'r4s12', 'r5s11'],
+    description: '+20 flat cold damage. +14% increased cold damage. +6% cold resistance.',
   },
   {
-    id: 'tn7',
-    label: '+1.5 Regen',
-    description: '1.5 life regenerated per second.',
-    type: 'minor',
-    position: { x: 560, y: 1700 },
-    connections: ['tn_n2', 'tn_n3', 'tn_ks'],
-    stats: { healthRegenPerS: 1.5 },
+    id: 'r4s12', label: 'Swift Killer',
+    type: 'minor', section: 'rogue', ring: 4, slot: 12,
+    stats: { attackSpeed: 0.10, flatFrostDamage: 10 },
+    connections: ['r3s12', 'r4s11', 'r4s13', 'r5s12'],
+    description: '+10% attack speed. +10 flat cold damage.',
   },
   {
-    id: 'tn_ks',
-    label: 'Immortal Ambition',
-    description: '+150 maximum life, but 30% reduced weapon damage. Safety at great cost.',
-    type: 'keystone',
-    position: { x: 440, y: 1540 },
-    connections: ['tn6', 'tn7'],
-    stats: { maxHealthFlat: 150, damageMult: 0.70 },
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // ARCANE CLUSTER — bottom  (12 nodes including keystone)
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    id: 'ar_entry',
-    label: '+8% XP, +10 Mana',
-    description: '8% increased experience gained and +10 maximum mana.',
-    type: 'minor',
-    position: { x: 1840, y: 2248 },
-    connections: ['s4', 'ar1', 'ar2'],
-    stats: { xpMultiplier: 1.08, maxManaFlat: 10 },
+    id: 'r4s13', label: 'Frozen Reflex',
+    type: 'minor', section: 'rogue', ring: 4, slot: 13,
+    stats: { attackSpeed: 0.08, moveSpeedMult: 0.05 },
+    connections: ['r3s13', 'r4s12', 'r4s14', 'r5s13'],
+    description: '+8% attack speed. +5% movement speed.',
   },
   {
-    id: 'ar1',
-    label: '+15 Pickup Radius',
-    description: '15 to item and gem pickup radius.',
-    type: 'minor',
-    position: { x: 1592, y: 2400 },
-    connections: ['ar_entry', 'ar3', 'ar4'],
-    stats: { pickupRadiusFlat: 15 },
+    id: 'r4s14', label: 'Frostweave',
+    type: 'notable', section: 'rogue', ring: 4, slot: 14,
+    stats: { attackSpeed: 0.08, flatFrostDamage: 16, increasedFrostDamage: 0.08 },
+    connections: ['r3s14', 'r4s13', 'r5s14'],
+    description: '+8% attack speed. +16 flat cold damage. +8% increased cold damage.',
+  },
+  // ── Ring 5 ──
+  {
+    id: 'r5s08', label: 'Deep Freeze',
+    type: 'minor', section: 'rogue', ring: 5, slot: 8,
+    stats: { flatFrostDamage: 16, increasedFrostDamage: 0.08 },
+    connections: ['r4s08', 'r5s09'],
+    description: '+16 flat cold damage. +8% increased cold damage.',
   },
   {
-    id: 'ar2',
-    label: '+5% XP, +1 Mana/s',
-    description: '5% increased experience gained and +1 mana regenerated per second.',
-    type: 'minor',
-    position: { x: 2060, y: 2400 },
-    connections: ['ar_entry', 'ar4', 'ar5'],
-    stats: { xpMultiplier: 1.05, manaRegenPerS: 1 },
+    id: 'r5s09', label: 'Hypothermia',
+    type: 'minor', section: 'rogue', ring: 5, slot: 9,
+    stats: { moveSpeedMult: 0.06, flatFrostDamage: 10 },
+    connections: ['r5s08', 'r4s09', 'r5s10'],
+    description: '+6% movement speed. +10 flat cold damage.',
   },
   {
-    id: 'ar3',
-    label: '+12 Pickup Radius',
-    description: '12 to item and gem pickup radius.',
-    type: 'minor',
-    position: { x: 1460, y: 2580 },
-    connections: ['ar1', 'ar_n1'],
-    stats: { pickupRadiusFlat: 12 },
+    id: 'r5s10', label: 'Arctic Wind',
+    type: 'minor', section: 'rogue', ring: 5, slot: 10,
+    stats: { moveSpeedMult: 0.10, flatFrostDamage: 8 },
+    connections: ['r5s09', 'r4s10', 'r5s11'],
+    description: '+10% movement speed. +8 flat cold damage.',
   },
   {
-    id: 'ar4',
-    label: '+5% Experience',
-    description: '5% increased experience gained.',
-    type: 'minor',
-    position: { x: 1800, y: 2600 },
-    connections: ['ar1', 'ar2', 'ar_n1', 'ar_n2'],
-    stats: { xpMultiplier: 1.05 },
+    id: 'r5s11', label: 'Ghost Step',
+    type: 'keystone', section: 'rogue', ring: 5, slot: 11,
+    stats: { moveSpeedMult: 0.18, flatFrostDamage: 12, attackSpeed: 0.10 },
+    connections: ['r4s11', 'r5s10', 'r5s12'],
+    description: 'Move speed scales 0→+40% as HP drops to 10%. +18% speed. +12 flat cold. +10% attack speed.',
   },
   {
-    id: 'ar5',
-    label: '+12 Pickup Radius',
-    description: '12 to item and gem pickup radius.',
-    type: 'minor',
-    position: { x: 2120, y: 2580 },
-    connections: ['ar2', 'ar_n2', 'ar_n3'],
-    stats: { pickupRadiusFlat: 12 },
+    id: 'r5s12', label: 'Shatter',
+    type: 'minor', section: 'rogue', ring: 5, slot: 12,
+    stats: { flatFrostDamage: 18, increasedFrostDamage: 0.10 },
+    connections: ['r4s12', 'r5s11', 'r5s13'],
+    description: '+18 flat cold damage. +10% increased cold damage.',
   },
   {
-    id: 'ar_n1',
-    label: 'Arcane Surge',
-    description: '+25% experience gained and +40 maximum mana. The arcane flows freely through you.',
-    type: 'notable',
-    position: { x: 1440, y: 2768 },
-    connections: ['ar3', 'ar4', 'ar6'],
-    stats: { xpMultiplier: 1.25, maxManaFlat: 40 },
+    id: 'r5s13', label: 'Shattered Bone',
+    type: 'minor', section: 'rogue', ring: 5, slot: 13,
+    stats: { flatFrostDamage: 15, increasedFrostDamage: 0.08 },
+    connections: ['r5s12', 'r4s13', 'r5s14'],
+    description: '+15 flat cold damage. +8% increased cold damage.',
   },
   {
-    id: 'ar_n2',
-    label: 'Gem Hoarder',
-    description: '+50 gem and item pickup radius. Nothing escapes your reach.',
-    type: 'notable',
-    position: { x: 1840, y: 2808 },
-    connections: ['ar4', 'ar5', 'ar6', 'ar7'],
-    stats: { pickupRadiusFlat: 50 },
-  },
-  {
-    id: 'ar_n3',
-    label: 'Soul Siphon',
-    description: '+18% experience gained, +30 pickup radius, and 12% reduced mana costs.',
-    type: 'notable',
-    position: { x: 2208, y: 2768 },
-    connections: ['ar5', 'ar_n2', 'ar7'],
-    stats: { xpMultiplier: 1.18, pickupRadiusFlat: 30, manaCostMult: 0.88 },
-  },
-  {
-    id: 'ar6',
-    label: '+5% Experience',
-    description: '5% increased experience gained.',
-    type: 'minor',
-    position: { x: 1560, y: 2952 },
-    connections: ['ar_n1', 'ar_n2', 'ar_ks'],
-    stats: { xpMultiplier: 1.05 },
-  },
-  {
-    id: 'ar7',
-    label: '+15 Pickup Radius',
-    description: '15 to item and gem pickup radius.',
-    type: 'minor',
-    position: { x: 2048, y: 2952 },
-    connections: ['ar_n2', 'ar_n3', 'ar_ks'],
-    stats: { pickupRadiusFlat: 15 },
-  },
-  {
-    id: 'ar_ks',
-    label: 'Void Pact',
-    description: '+100% experience gained, but lose 3 HP per second. Knowledge has its price.',
-    type: 'keystone',
-    position: { x: 1800, y: 3128 },
-    connections: ['ar6', 'ar7'],
-    stats: { xpMultiplier: 2.0, healthRegenPerS: -3 },
+    id: 'r5s14', label: "Winter's Edge",
+    type: 'minor', section: 'rogue', ring: 5, slot: 14,
+    stats: { flatFrostDamage: 18, increasedFrostDamage: 0.10 },
+    connections: ['r4s14', 'r5s13'],
+    description: '+18 flat cold damage. +10% increased cold damage.',
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  // ARCANE MASTERY CLUSTER — upper-right  (12 nodes including keystone)
-  // Focuses on projectile count, damage, and cooldown for spell builds.
-  // Entry connects from Power cluster node pw3.
+  //  SAGE SECTION  —  Lightning · Mana · Cast Speed
+  //  Center: slot 21 (236.25°).  22 nodes spanning slots ~18–24 across rings.
+  //  Section color (renderer): lightning-gold #f0d050
   // ══════════════════════════════════════════════════════════════════════════
 
   {
-    id: 'am_entry',
-    label: '+6% Damage',
-    description: '6% increased weapon damage.',
-    type: 'minor',
-    position: { x: 2920, y: 1180 },
-    connections: ['pw3', 'am1', 'am2'],
-    stats: { damageMult: 1.06 },
+    id: 'r2s21', label: "Sage's Gate",
+    type: 'start', section: 'sage', ring: 2, slot: 21,
+    stats: {},
+    connections: ['r3s21'],
+    description: 'Starting node for the Sage. Grants access to the lightning and mana paths.',
+  },
+  // ── Ring 3 ──
+  {
+    id: 'r3s18', label: 'Leyline Tap',
+    type: 'minor', section: 'sage', ring: 3, slot: 18,
+    stats: { maxMana: 12, flatThunderDamage: 6 },
+    connections: ['r3s19', 'r4s18'],
+    description: '+12 maximum mana. +6 flat lightning damage.',
   },
   {
-    id: 'am1',
-    label: '+7% Damage',
-    description: '7% increased weapon damage.',
-    type: 'minor',
-    position: { x: 3072, y: 1032 },
-    connections: ['am_entry', 'am3', 'am4'],
-    stats: { damageMult: 1.07 },
+    id: 'r3s19', label: 'Static Field',
+    type: 'minor', section: 'sage', ring: 3, slot: 19,
+    stats: { flatThunderDamage: 8, manaRegenPerS: 0.6 },
+    connections: ['r3s18', 'r3s20', 'r4s19'],
+    description: '+8 flat lightning damage. +0.6 mana/s regeneration.',
   },
   {
-    id: 'am2',
-    label: '−5% Cooldown',
-    description: '5% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 2780, y: 992 },
-    connections: ['am_entry', 'am4', 'am5'],
-    stats: { cooldownMult: 0.95 },
+    id: 'r3s20', label: 'Charged Mind',
+    type: 'minor', section: 'sage', ring: 3, slot: 20,
+    stats: { maxMana: 18, manaRegenPerS: 0.8 },
+    connections: ['r3s19', 'r3s21', 'r4s20'],
+    description: '+18 maximum mana. +0.8 mana/s regeneration.',
   },
   {
-    id: 'am3',
-    label: '+7% Damage',
-    description: '7% increased weapon damage.',
-    type: 'minor',
-    position: { x: 3232, y: 872 },
-    connections: ['am1', 'am_n1'],
-    stats: { damageMult: 1.07 },
+    id: 'r3s21', label: 'Spark Touch',
+    type: 'minor', section: 'sage', ring: 3, slot: 21,
+    stats: { flatThunderDamage: 10, maxMana: 15 },
+    connections: ['r2s21', 'r3s20', 'r3s22', 'r4s21'],
+    description: '+10 flat lightning damage. +15 maximum mana.',
   },
   {
-    id: 'am4',
-    label: '+1 Projectile',
-    description: 'Fire one additional projectile from all applicable weapons.',
-    type: 'minor',
-    position: { x: 2992, y: 820 },
-    connections: ['am1', 'am2', 'am_n1', 'am_n2'],
-    stats: { projectileCountBonus: 1 },
+    id: 'r3s22', label: 'Arc Surge',
+    type: 'minor', section: 'sage', ring: 3, slot: 22,
+    stats: { castSpeed: 0.07, flatThunderDamage: 8 },
+    connections: ['r3s21', 'r3s23', 'r4s22'],
+    description: '+7% cast speed. +8 flat lightning damage.',
   },
   {
-    id: 'am5',
-    label: '−5% Cooldown',
-    description: '5% reduced weapon cooldown.',
-    type: 'minor',
-    position: { x: 2760, y: 648 },
-    connections: ['am2', 'am_n2'],
-    stats: { cooldownMult: 0.95 },
+    id: 'r3s23', label: 'Mana Flow',
+    type: 'minor', section: 'sage', ring: 3, slot: 23,
+    stats: { maxMana: 22, manaRegenPerS: 1.0 },
+    connections: ['r3s22', 'r3s24', 'r4s23'],
+    description: '+22 maximum mana. +1.0 mana/s regeneration.',
   },
   {
-    id: 'am_n1',
-    label: 'Arcane Mastery',
-    description: '+22% weapon damage. Your spells carry the weight of mastered arcana.',
-    type: 'notable',
-    position: { x: 3352, y: 728 },
-    connections: ['am3', 'am4', 'am6'],
-    stats: { damageMult: 1.22 },
+    id: 'r3s24', label: 'Shock Web',
+    type: 'minor', section: 'sage', ring: 3, slot: 24,
+    stats: { flatThunderDamage: 10, manaRegenPerS: 0.8 },
+    connections: ['r2s24', 'r3s23', 'r4s24'],
+    description: '+10 flat lightning damage. +0.8 mana/s. Also reachable from Earthen Will hub.',
+  },
+  // ── Ring 4 ──
+  {
+    id: 'r4s18', label: 'Conductor',
+    type: 'notable', section: 'sage', ring: 4, slot: 18,
+    stats: { maxMana: 35, flatThunderDamage: 12, increasedThunderDamage: 0.08 },
+    connections: ['r3s18', 'r4s19', 'r5s18'],
+    description: '+35 maximum mana. +12 flat lightning damage. +8% increased lightning damage.',
   },
   {
-    id: 'am_n2',
-    label: 'Spellhaste',
-    description: '−18% weapon cooldown. Spells flow like breath.',
-    type: 'notable',
-    position: { x: 3048, y: 648 },
-    connections: ['am4', 'am5', 'am6', 'am7'],
-    stats: { cooldownMult: 0.82 },
+    id: 'r4s19', label: 'Surge Vent',
+    type: 'minor', section: 'sage', ring: 4, slot: 19,
+    stats: { castSpeed: 0.06, flatThunderDamage: 8 },
+    connections: ['r3s19', 'r4s18', 'r4s20', 'r5s19'],
+    description: '+6% cast speed. +8 flat lightning damage.',
   },
   {
-    id: 'am6',
-    label: '+5% Damage',
-    description: '5% increased weapon damage.',
-    type: 'minor',
-    position: { x: 3340, y: 528 },
-    connections: ['am_n1', 'am_n2', 'am_ks'],
-    stats: { damageMult: 1.05 },
+    id: 'r4s20', label: 'Arcane Reservoir',
+    type: 'notable', section: 'sage', ring: 4, slot: 20,
+    stats: { maxMana: 45, manaRegenPerS: 2.5 },
+    connections: ['r3s20', 'r4s19', 'r4s21', 'r5s20'],
+    description: '+45 maximum mana. +2.5 mana/s regeneration. The well runs deep.',
   },
   {
-    id: 'am7',
-    label: '+1 Projectile',
-    description: 'Fire one additional projectile from all applicable weapons.',
-    type: 'minor',
-    position: { x: 3020, y: 472 },
-    connections: ['am_n2', 'am_n3', 'am_ks'],
-    stats: { projectileCountBonus: 1 },
+    id: 'r4s21', label: 'Stormcaller',
+    type: 'notable', section: 'sage', ring: 4, slot: 21,
+    stats: { flatThunderDamage: 22, increasedThunderDamage: 0.14, castSpeed: 0.10 },
+    connections: ['r3s21', 'r4s20', 'r4s22', 'r5s21'],
+    description: '+22 flat lightning damage. +14% increased lightning damage. +10% cast speed.',
   },
   {
-    id: 'am_n3',
-    label: 'Echoing Bolts',
-    description: '+15% weapon damage and +1 additional projectile. The air crackles with replicated force.',
-    type: 'notable',
-    position: { x: 2768, y: 460 },
-    connections: ['am7'],
-    stats: { damageMult: 1.15, projectileCountBonus: 1 },
+    id: 'r4s22', label: 'Tempest Mind',
+    type: 'minor', section: 'sage', ring: 4, slot: 22,
+    stats: { castSpeed: 0.08, maxMana: 20 },
+    connections: ['r3s22', 'r4s21', 'r4s23', 'r5s22'],
+    description: '+8% cast speed. +20 maximum mana.',
   },
   {
-    id: 'am_ks',
-    label: 'Spellweave',
-    description: 'Fire +2 additional projectiles from all applicable weapons, but −20% weapon damage.',
-    type: 'keystone',
-    position: { x: 3200, y: 320 },
-    connections: ['am6', 'am7'],
-    stats: { projectileCountBonus: 2, damageMult: 0.80 },
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // BLOOD RITE CLUSTER — lower-left  (10 nodes including keystone)
-  // Focuses on life leech, regen, and sustain for aggressive melee builds.
-  // Entry connects from Tank cluster node tn7.
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    id: 'br_entry',
-    label: '+10 Life',
-    description: '10 to maximum life.',
-    type: 'minor',
-    position: { x: 488, y: 1872 },
-    connections: ['tn7', 'br1', 'br2'],
-    stats: { maxHealthFlat: 10 },
+    id: 'r4s23', label: 'Overcharged',
+    type: 'minor', section: 'sage', ring: 4, slot: 23,
+    stats: { flatThunderDamage: 12, manaRegenPerS: 1.2 },
+    connections: ['r3s23', 'r4s22', 'r4s24', 'r5s23'],
+    description: '+12 flat lightning damage. +1.2 mana/s regeneration.',
   },
   {
-    id: 'br1',
-    label: '+2 Regen',
-    description: '2 life regenerated per second.',
-    type: 'minor',
-    position: { x: 352, y: 2080 },
-    connections: ['br_entry', 'br3', 'br4'],
-    stats: { healthRegenPerS: 2 },
+    id: 'r4s24', label: 'Tempest Coil',
+    type: 'notable', section: 'sage', ring: 4, slot: 24,
+    stats: { maxMana: 20, flatThunderDamage: 16, increasedThunderDamage: 0.10 },
+    connections: ['r3s24', 'r4s23', 'r5s24'],
+    description: '+20 maximum mana. +16 flat lightning damage. +10% increased lightning damage.',
+  },
+  // ── Ring 5 ──
+  {
+    id: 'r5s18', label: 'Ball Lightning',
+    type: 'minor', section: 'sage', ring: 5, slot: 18,
+    stats: { flatThunderDamage: 14, increasedThunderDamage: 0.10 },
+    connections: ['r4s18', 'r5s19'],
+    description: '+14 flat lightning damage. +10% increased lightning damage.',
   },
   {
-    id: 'br2',
-    label: '+12 Life',
-    description: '12 to maximum life.',
-    type: 'minor',
-    position: { x: 632, y: 2088 },
-    connections: ['br_entry', 'br4', 'br_n1'],
-    stats: { maxHealthFlat: 12 },
+    id: 'r5s19', label: 'Voltaic',
+    type: 'minor', section: 'sage', ring: 5, slot: 19,
+    stats: { castSpeed: 0.08, flatThunderDamage: 10 },
+    connections: ['r5s18', 'r4s19', 'r5s20'],
+    description: '+8% cast speed. +10 flat lightning damage.',
   },
   {
-    id: 'br3',
-    label: '+2 Regen',
-    description: '2 life regenerated per second.',
-    type: 'minor',
-    position: { x: 272, y: 2288 },
-    connections: ['br1', 'br_n2'],
-    stats: { healthRegenPerS: 2 },
+    id: 'r5s20', label: 'Lightning Rod',
+    type: 'minor', section: 'sage', ring: 5, slot: 20,
+    stats: { flatThunderDamage: 12, increasedThunderDamage: 0.08 },
+    connections: ['r5s19', 'r4s20', 'r5s21'],
+    description: '+12 flat lightning damage. +8% increased lightning damage.',
   },
   {
-    id: 'br4',
-    label: '+10 Life',
-    description: '10 to maximum life.',
-    type: 'minor',
-    position: { x: 512, y: 2248 },
-    connections: ['br1', 'br2', 'br_n1', 'br_n2'],
-    stats: { maxHealthFlat: 10 },
+    id: 'r5s21', label: 'Overload',
+    type: 'keystone', section: 'sage', ring: 5, slot: 21,
+    stats: { flatThunderDamage: 18, castSpeed: 0.15, maxMana: 35 },
+    connections: ['r4s21', 'r5s20', 'r5s22'],
+    description: 'Every 5th primary skill cast triggers a free lightning nova. +18 flat lightning. +15% cast. +35 mana.',
   },
   {
-    id: 'br_n1',
-    label: 'Crimson Feast',
-    description: '+35 maximum life. Your veins sing with vital force.',
-    type: 'notable',
-    position: { x: 648, y: 2432 },
-    connections: ['br2', 'br4', 'br5'],
-    stats: { maxHealthFlat: 35 },
+    id: 'r5s22', label: 'Chain Lightning',
+    type: 'minor', section: 'sage', ring: 5, slot: 22,
+    stats: { flatThunderDamage: 18, increasedThunderDamage: 0.10 },
+    connections: ['r4s22', 'r5s21', 'r5s23'],
+    description: '+18 flat lightning damage. +10% increased lightning damage.',
   },
   {
-    id: 'br_n2',
-    label: 'Sanguine Vigour',
-    description: '+5 HP regenerated per second. Wounds close before they are felt.',
-    type: 'notable',
-    position: { x: 304, y: 2488 },
-    connections: ['br3', 'br4', 'br5'],
-    stats: { healthRegenPerS: 5 },
+    id: 'r5s23', label: 'Bifurcate',
+    type: 'minor', section: 'sage', ring: 5, slot: 23,
+    stats: { flatThunderDamage: 12, increasedThunderDamage: 0.08, castSpeed: 0.05 },
+    connections: ['r5s22', 'r4s23', 'r5s24'],
+    description: '+12 flat lightning damage. +8% increased lightning damage. +5% cast speed.',
   },
   {
-    id: 'br5',
-    label: '+12 Life',
-    description: '12 to maximum life.',
-    type: 'minor',
-    position: { x: 488, y: 2672 },
-    connections: ['br_n1', 'br_n2', 'br_ks'],
-    stats: { maxHealthFlat: 12 },
-  },
-  {
-    id: 'br6',
-    label: '+2 Regen',
-    description: '2 life regenerated per second.',
-    type: 'minor',
-    position: { x: 312, y: 2848 },
-    connections: ['br5', 'br_ks'],
-    stats: { healthRegenPerS: 2 },
-  },
-  {
-    id: 'br_ks',
-    label: 'Bloodlust',
-    description: '+100 maximum life and +8 HP regen/s, but −20% movement speed. Power through pain.',
-    type: 'keystone',
-    position: { x: 432, y: 3020 },
-    connections: ['br5', 'br6'],
-    stats: { maxHealthFlat: 100, healthRegenPerS: 8, speedFlat: -30 },
+    id: 'r5s24', label: 'Storm Surge',
+    type: 'minor', section: 'sage', ring: 5, slot: 24,
+    stats: { flatThunderDamage: 18, increasedThunderDamage: 0.10 },
+    connections: ['r4s24', 'r5s23'],
+    description: '+18 flat lightning damage. +10% increased lightning damage.',
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  // FORTUNE'S EDGE CLUSTER — lower-right  (8 nodes including keystone)
-  // Focuses on XP gain, item quality, and pickup radius.  Entry connects
-  // from Arcane cluster node ar_n3.
+  //  HUB NODES  —  Shared utility  (ring 0, 45° spacing)
+  //  Each hub node is now wired outward via a ring-1 bridge node.
+  //  Vitality (0°)  → r1s00 → r2s00 (Warrior Gate)
+  //  Clarity  (90°) → r1s04 → r2s08 → r3s08 (Rogue left branch)
+  //  Resilience (180°) → r1s08  (anchor, no outward class path yet)
+  //  Earthen Will (270°) → r1s12 → r2s24 → r3s24 (Sage right branch)
+  //  Section color (renderer): soft-gold #c8a84b
   // ══════════════════════════════════════════════════════════════════════════
 
   {
-    id: 'fe_entry',
-    label: '+8% Experience',
-    description: '8% increased experience gained.',
-    type: 'minor',
-    position: { x: 2432, y: 2872 },
-    connections: ['ar_n3', 'fe1', 'fe2'],
-    stats: { xpMultiplier: 1.08 },
+    id: 'r0s00', label: 'Vitality',
+    type: 'hub', section: 'shared', ring: 0, slot: 0,
+    stats: { maxHealth: 25, healthRegenPerS: 1.0 },
+    connections: ['r1s00'],
+    description: '+25 maximum health. +1 HP/s regeneration. The heart of endurance.',
   },
   {
-    id: 'fe1',
-    label: '+20 Pickup Radius',
-    description: '20 to item and gem pickup radius.',
-    type: 'minor',
-    position: { x: 2620, y: 3000 },
-    connections: ['fe_entry', 'fe_n1'],
-    stats: { pickupRadiusFlat: 20 },
+    id: 'r0s02', label: 'Clarity',
+    type: 'hub', section: 'shared', ring: 0, slot: 2,
+    stats: { maxMana: 25, manaRegenPerS: 1.5 },
+    connections: ['r1s04'],
+    description: '+25 maximum mana. +1.5 mana/s regeneration. A quiet mind flows freely.',
   },
   {
-    id: 'fe2',
-    label: '+8% Experience',
-    description: '8% increased experience gained.',
-    type: 'minor',
-    position: { x: 2432, y: 3112 },
-    connections: ['fe_entry', 'fe_n1', 'fe_n2'],
-    stats: { xpMultiplier: 1.08 },
+    id: 'r0s04', label: 'Resilience',
+    type: 'hub', section: 'shared', ring: 0, slot: 4,
+    stats: { totalArmor: 12, totalEvasion: 12 },
+    connections: ['r1s08'],
+    description: '+12 armor. +12 evasion. Hard to hurt, harder to stop.',
   },
   {
-    id: 'fe_n1',
-    label: 'Windfall',
-    description: '+30% experience gained. Fortune favours the bold exile.',
-    type: 'notable',
-    position: { x: 2800, y: 3100 },
-    connections: ['fe1', 'fe2', 'fe3', 'fe4'],
-    stats: { xpMultiplier: 1.30 },
+    id: 'r0s06', label: 'Earthen Will',
+    type: 'hub', section: 'shared', ring: 0, slot: 6,
+    stats: { maxHealth: 15, maxMana: 15, healthRegenPerS: 0.5 },
+    connections: ['r1s12'],
+    description: '+15 max health. +15 max mana. +0.5 HP/s regeneration.',
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SHARED — Hub ring-1 bridge nodes (one per hub, 4 nodes)
+  //  Each sits at the same angular position as its hub node.
+  //    r1s00 at  0°  — Vitality  → Warrior Gate
+  //    r1s04 at 90°  — Clarity   → Crossroads → Rogue left
+  //    r1s08 at 180° — Resilience (anchor for future expansion)
+  //    r1s12 at 270° — Earthen Will → Sage right entry
+  // ══════════════════════════════════════════════════════════════════════════
+
+  {
+    id: 'r1s00', label: "Life's Crossing",
+    type: 'minor', section: 'shared', ring: 1, slot: 0,
+    stats: { maxHealth: 15, healthRegenPerS: 0.5 },
+    connections: ['r0s00', 'r2s00'],
+    description: '+15 max health. +0.5 HP/s regen. Bridges the Vitality hub to the Warrior Gate.',
   },
   {
-    id: 'fe3',
-    label: '+25 Pickup Radius',
-    description: '25 to item and gem pickup radius.',
-    type: 'minor',
-    position: { x: 2968, y: 3248 },
-    connections: ['fe_n1', 'fe_ks'],
-    stats: { pickupRadiusFlat: 25 },
+    id: 'r1s04', label: 'Mana Veil',
+    type: 'minor', section: 'shared', ring: 1, slot: 4,
+    stats: { maxMana: 12, manaRegenPerS: 0.6 },
+    connections: ['r0s02', 'r2s08'],
+    description: '+12 max mana. +0.6 mana/s regen. Bridges Clarity into the Crossroads cross-class path.',
   },
   {
-    id: 'fe4',
-    label: '+8% Experience',
-    description: '8% increased experience gained.',
-    type: 'minor',
-    position: { x: 2640, y: 3288 },
-    connections: ['fe_n1', 'fe_n2', 'fe_ks'],
-    stats: { xpMultiplier: 1.08 },
+    id: 'r1s08', label: 'Steel Heart',
+    type: 'minor', section: 'shared', ring: 1, slot: 8,
+    stats: { totalArmor: 8, totalEvasion: 6 },
+    connections: ['r0s04'],
+    description: '+8 armor. +6 evasion. Channels the Resilience hub\'s defensive energy.',
   },
   {
-    id: 'fe_n2',
-    label: 'Prospector\'s Luck',
-    description: '+20% experience gained and +30 pickup radius. Everything of value is within reach.',
-    type: 'notable',
-    position: { x: 2408, y: 3340 },
-    connections: ['fe2', 'fe4'],
-    stats: { xpMultiplier: 1.20, pickupRadiusFlat: 30 },
+    id: 'r1s12', label: 'Spirit Root',
+    type: 'minor', section: 'shared', ring: 1, slot: 12,
+    stats: { maxHealth: 10, maxMana: 8 },
+    connections: ['r0s06', 'r2s24'],
+    description: '+10 max health. +8 max mana. Channels Earthen Will into the Sage right branch.',
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SHARED — Ring-2 cross-hub transit nodes
+  //    r2s08 at 90°  — Mana Veil (r1s04) → Shadow Veil (r3s08, Rogue left)
+  //    r2s24 at 270° — Spirit Root (r1s12) → Shock Web (r3s24, Sage right)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  {
+    id: 'r2s08', label: 'Crossroads',
+    type: 'minor', section: 'shared', ring: 2, slot: 8,
+    stats: { maxHealth: 12, maxMana: 10 },
+    connections: ['r1s04', 'r3s08'],
+    description: '+12 max health. +10 max mana. Where the Clarity hub path meets the Rogue\'s left wing.',
   },
   {
-    id: 'fe_ks',
-    label: 'Treasure Sense',
-    description: '+80% experience gained and +100 pickup radius, but −15% weapon damage. Knowledge over brawn.',
-    type: 'keystone',
-    position: { x: 2840, y: 3432 },
-    connections: ['fe3', 'fe4'],
-    stats: { xpMultiplier: 1.80, pickupRadiusFlat: 100, damageMult: 0.85 },
+    id: 'r2s24', label: 'Earthen Transit',
+    type: 'minor', section: 'shared', ring: 2, slot: 24,
+    stats: { maxMana: 10, maxHealth: 8 },
+    connections: ['r1s12', 'r3s24'],
+    description: '+10 max mana. +8 max health. Where the Earthen Will hub path meets the Sage\'s right wing.',
   },
 ];
 
-/** Quick O(1) lookup by node id. */
-export const TREE_NODE_MAP = Object.fromEntries(PASSIVE_TREE_NODES.map((n) => [n.id, n]));
-
 /**
- * Build a de-duplicated edge list from the bidirectional connections in the tree.
- * Each edge is { a: id, b: id } appearing exactly once.
+ * Flat lookup map: nodeId → node object.
+ * All code outside this file should use TREE_NODE_MAP rather than NODES.
  */
-export const TREE_EDGES = (() => {
-  const edges = [];
-  const seen = new Set();
-  for (const node of PASSIVE_TREE_NODES) {
-    for (const connId of node.connections) {
-      const key = [node.id, connId].sort().join('||');
-      if (!seen.has(key)) {
-        seen.add(key);
-        edges.push({ a: node.id, b: connId });
-      }
-    }
-  }
-  return edges;
-})();
+export const TREE_NODE_MAP = Object.fromEntries(NODES.map((n) => [n.id, n]));

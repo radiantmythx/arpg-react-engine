@@ -16,7 +16,7 @@ import { GoldGem } from './entities/GoldGem.js';
 import { ItemDrop } from './entities/ItemDrop.js';
 import { PassiveItem } from './PassiveItem.js';
 import { rollRarity, generateItem } from './data/itemGenerator.js';
-import { applyStats, TREE_NODE_MAP } from './data/passiveTree.js';
+import { applyStats, removeStats, TREE_NODE_MAP } from './data/passiveTree.js';
 import { CHARACTER_MAP } from './data/characters.js';
 import { AchievementSystem } from './systems/AchievementSystem.js';
 import { MetaProgression } from './MetaProgression.js';
@@ -39,6 +39,7 @@ import { MapGenerator } from './MapGenerator.js';
 import { Navigation } from './Navigation.js';
 import { calcSellPrice } from './ItemPricing.js';
 import { MAX_SUPPORT_SOCKETS, openSupportSlotsForSkill } from './supportSockets.js';
+import { AILMENT_DEFS, resolvePenetrationMap } from './data/skillTags.js';
 import { SCALING_CONFIG, areaLevelBucketLabel, clampAreaLevel } from './config/scalingConfig.js';
 import { POTION_TUNING } from './content/tuning/index.js';
 import { createDefaultPotionBelt, normalizePotionBelt, POTION_MAP, rollPotionDrop, formatPotionEffectLine } from './data/potions.js';
@@ -342,11 +343,11 @@ export class GameEngine {
       this.player.xpToNext     = LEVEL_XP_TABLE[this.player.level] ?? this.player.xpToNext;
       this.player.maxEnergyShield = saveData.maxEnergyShield ?? 0;
       this.player.energyShield    = saveData.energyShield    ?? 0;
-      this.player.skillPoints  = saveData.skillPoints ?? Math.max(0, this.player.level - 1);
+      this.player.skillPoints  = saveData.skillPoints ?? Math.max(0, (this.player.level - 1) * 2);
       this.player.gold         = saveData.gold ?? 0;
 
       // ── Restore passive tree (nodes beyond the constructor-applied start set) ──
-      const savedNodes = new Set(saveData.passiveTree?.allocated ?? ['start']);
+      const savedNodes = new Set(saveData.passiveTree?.allocated ?? charDef.treeStartNodes ?? []);
       for (const nodeId of savedNodes) {
         if (!this.player.allocatedNodes.has(nodeId)) {
           const node = TREE_NODE_MAP[nodeId];
@@ -750,6 +751,7 @@ export class GameEngine {
 
     // Player movement.
     this.player.update(dt, this.input);
+    this._applyPassiveTreeRuntimeEffects(dt);
     this._updatePotionState(dt);
     this._updateCursorAim();
     const nearby = this.hubWorld?.update(dt, this.player) ?? null;
@@ -1493,6 +1495,7 @@ export class GameEngine {
 
     // Player
     this.player.update(dt, this.input);
+    this._applyPassiveTreeRuntimeEffects(dt);
     this._updatePotionState(dt);
     this._updateCursorAim();
     this.collision.resolveEntityVsWalls(this.player, this.mapLayout);
@@ -1685,6 +1688,82 @@ export class GameEngine {
     this.player.terrainSpeedMult = (this.player.terrainSpeedMult ?? 1) * 0.65 + target * 0.35;
   }
 
+  /**
+   * Runtime passive effects that require per-tick simulation (auras / conditional keystones).
+   */
+  _applyPassiveTreeRuntimeEffects(dt) {
+    if (!this.player || !this.entities) return;
+    const allocated = this.player.allocatedNodes;
+    if (!allocated || allocated.size === 0) return;
+
+    // Permafrost keystone: nearby enemies are continuously chilled.
+    if (allocated.has('fr_ks')) {
+      const chillDef = {
+        ...AILMENT_DEFS.Chill,
+        duration: 0.4 * Math.max(0.1, this.player.skillDurationMult ?? 1),
+      };
+      for (const enemy of this.entities.getHostiles?.() ?? []) {
+        if (!enemy?.active) continue;
+        const dx = enemy.x - this.player.x;
+        const dy = enemy.y - this.player.y;
+        if (dx * dx + dy * dy <= 300 * 300) {
+          enemy.applyAilment('Chill', 1, chillDef);
+        }
+      }
+    }
+
+    // Consecration notable: radiant ground around player deals Holy DPS.
+    if (allocated.has('hl_n1')) {
+      const auraDps = 8 * Math.max(0.01, this.player.holyDamageMult ?? 1);
+      const tickDamage = auraDps * dt;
+      const pen = resolvePenetrationMap(['Holy'], this.player);
+      for (const enemy of this.entities.getHostiles?.() ?? []) {
+        if (!enemy?.active) continue;
+        const dx = enemy.x - this.player.x;
+        const dy = enemy.y - this.player.y;
+        if (dx * dx + dy * dy > 170 * 170) continue;
+        enemy.takeDamage({ Holy: tickDamage }, ['Holy'], pen);
+        if (!enemy.active) this.onEnemyKilled(enemy);
+      }
+    }
+
+    // ── Warrior keystone: Pyre's Dominion ────────────────────────────────────
+    // Every 2 seconds, explode in fire, damaging all enemies within 280 px.
+    if (allocated.has('r5s00')) {
+      this._keystoneTimers ??= {};
+      this._keystoneTimers.pyreNova = (this._keystoneTimers.pyreNova ?? 2.0) - dt;
+      if (this._keystoneTimers.pyreNova <= 0) {
+        this._keystoneTimers.pyreNova += 2.0;
+        const pen        = resolvePenetrationMap(['Blaze'], this.player);
+        const novaDamage = 40 + (this.player.flatBlazeDamage ?? 0) * 0.5;
+        for (const enemy of this.entities.getHostiles?.() ?? []) {
+          if (!enemy?.active) continue;
+          const dx = enemy.x - this.player.x;
+          const dy = enemy.y - this.player.y;
+          if (dx * dx + dy * dy <= 280 * 280) {
+            enemy.takeDamage({ Blaze: novaDamage }, ['Blaze'], pen);
+            if (!enemy.active) this.onEnemyKilled(enemy);
+          }
+        }
+        this.particles.emit?.('death', this.player.x, this.player.y, { color: '#e8722a' });
+      }
+    }
+
+    // ── Rogue keystone: Ghost Step ─────────────────────────────────────────
+    // Move speed scales 0 → +40% as HP falls from 100% → 10%.
+    if (allocated.has('r5s11')) {
+      const hpRatio = Math.min(1, this.player.health / Math.max(1, this.player.maxHealth));
+      const bonus   = 0.40 * Math.max(0, 1 - Math.max(0, hpRatio - 0.10) / 0.90);
+      const prev    = this.player._ghostStepBonus ?? 0;
+      this.player.moveSpeedMult = (this.player.moveSpeedMult ?? 0) + bonus - prev;
+      this.player._ghostStepBonus = bonus;
+    } else if ((this.player._ghostStepBonus ?? 0) !== 0) {
+      // Ghost Step de-allocated — clean up dynamic bonus.
+      this.player.moveSpeedMult = (this.player.moveSpeedMult ?? 0) - this.player._ghostStepBonus;
+      this.player._ghostStepBonus = 0;
+    }
+  }
+
   /** Update player facing to point from player toward the cursor world position. */
   _updateCursorAim() {
     if (!this.player || !this.renderer) return;
@@ -1723,7 +1802,36 @@ export class GameEngine {
     if (!this.player.spendMana(manaCost)) return false;
     skill.fire(this.player, this.entities, this);
     skill._timer = 0;
+
+    // ── Sage keystone: Overload ───────────────────────────────────────────
+    // Every 5th primary skill cast triggers a free lightning nova.
+    if (this.player.allocatedNodes?.has('r5s21')) {
+      this._overloadCastCount = (this._overloadCastCount ?? 0) + 1;
+      if (this._overloadCastCount >= 5) {
+        this._overloadCastCount = 0;
+        this._fireOverloadNova();
+      }
+    }
+
     return true;
+  }
+
+  /** @private Overload keystone: free lightning nova on every 5th primary cast. */
+  _fireOverloadNova() {
+    const player = this.player;
+    if (!player || !this.entities) return;
+    const pen        = resolvePenetrationMap(['Thunder'], player);
+    const novaDamage = 55 + (player.flatThunderDamage ?? 0) * 0.5;
+    for (const enemy of this.entities.getHostiles?.() ?? []) {
+      if (!enemy?.active) continue;
+      const dx = enemy.x - player.x;
+      const dy = enemy.y - player.y;
+      if (dx * dx + dy * dy <= 300 * 300) {
+        enemy.takeDamage({ Thunder: novaDamage }, ['Thunder'], pen);
+        if (!enemy.active) this.onEnemyKilled(enemy);
+      }
+    }
+    this.particles.emit?.('death', player.x, player.y, { color: '#f0d050' });
   }
 
   /** @private Serialize the Space-bound primary skill for HUD rendering. */
@@ -1973,6 +2081,11 @@ export class GameEngine {
       return;
     }
     this.kills++;
+    const lifeOnKill = Math.max(0, this.player?.lifeOnKillFlat ?? 0);
+    const manaOnKill = Math.max(0, this.player?.manaOnKillFlat ?? 0);
+    const goldDropMult = Math.max(0.01, this.player?.goldDropMult ?? 1);
+    if (lifeOnKill > 0) this.player.heal(lifeOnKill);
+    if (manaOnKill > 0) this.player.mana = Math.min(this.player.maxMana, (this.player.mana ?? 0) + manaOnKill);
     this._recordAreaLevelKillTelemetry();
     if (this.mapInstance) {
       this.mapInstance.enemiesKilled = (this.mapInstance.enemiesKilled ?? 0) + 1;
@@ -2028,10 +2141,12 @@ export class GameEngine {
       for (let i = 0; i < bossGoldPiles; i++) {
         const angle = (i / bossGoldPiles) * Math.PI * 2;
         const radius = 34 + (i % 3) * 10;
+        const rawValue = baseBossGold + Math.floor(Math.random() * 3);
+        const value = Math.max(1, Math.round(rawValue * goldDropMult));
         this.entities.addGoldGem(new GoldGem(
           enemy.x + Math.cos(angle) * radius,
           enemy.y + Math.sin(angle) * radius,
-          baseBossGold + Math.floor(Math.random() * 3),
+          value,
         ));
       }
 
@@ -2087,7 +2202,7 @@ export class GameEngine {
       const baseValue = enemy.isChampion
         ? (3 + areaBonus * 2) + Math.floor(Math.random() * (4 + Math.floor(areaLevel / 20)))
         : (1 + areaBonus) + (Math.random() < (0.25 + Math.min(0.25, areaLevel * 0.003)) ? 1 : 0);
-      const value = baseValue + (isActOneMap ? (enemy.isChampion ? 2 : 1) : 0);
+      const value = Math.max(1, Math.round((baseValue + (isActOneMap ? (enemy.isChampion ? 2 : 1) : 0)) * goldDropMult));
       this.entities.addGoldGem(new GoldGem(enemy.x, enemy.y, value));
     }
 
@@ -2906,6 +3021,131 @@ export class GameEngine {
     this.particles.emit('level_up', player.x, player.y);
     this._flushHudUpdate();
     return true;
+  }
+
+  /**
+   * Refund cost per node type (gold).
+   * Hub and start nodes are never refundable.
+   */
+  static REFUND_COST = {
+    minor:    25,
+    notable:  50,
+    mastery:  75,
+    keystone: 100,
+  };
+
+  /**
+   * Checks whether removing `nodeId` from the allocated set would disconnect
+   * any other allocated node from the hub (BFS connectivity check).
+   * @param {Set<string>} allocated
+   * @param {string} nodeId
+   * @returns {boolean} true if the refund is safe
+   */
+  _refundConnectivityOk(allocated, nodeId) {
+    const remaining = new Set(allocated);
+    remaining.delete(nodeId);
+    if (remaining.size === 0) return true;
+
+    // Root BFS from all permanent nodes (hub + start types) still in remaining.
+    // Hub may not be allocated, so we can't assume it's the root.
+    const roots = [...remaining].filter(id => {
+      const n = TREE_NODE_MAP[id];
+      return n && (n.type === 'hub' || n.type === 'start');
+    });
+    if (roots.length === 0) return true;
+
+    const visited = new Set(roots);
+    const queue   = [...roots];
+    while (queue.length) {
+      const cur  = queue.shift();
+      const node = TREE_NODE_MAP[cur];
+      if (!node) continue;
+      for (const conn of node.connections) {
+        if (remaining.has(conn) && !visited.has(conn)) {
+          visited.add(conn);
+          queue.push(conn);
+        }
+      }
+    }
+    for (const id of remaining) {
+      if (!visited.has(id)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Refund an allocated passive node, returning the skill point and reversing
+   * its stat effects. Costs gold; only allowed between runs (state === 'HUB').
+   * Hub and start nodes cannot be refunded.
+   * @param {string} nodeId
+   * @returns {boolean} true if the refund succeeded
+   */
+  refundNode(nodeId) {
+    const { player } = this;
+    if (!player) return false;
+
+    const node = TREE_NODE_MAP[nodeId];
+    if (!node) return false;
+    if (node.type === 'hub' || node.type === 'start') return false;
+    if (!player.allocatedNodes.has(nodeId)) return false;
+
+    // Refunds are free — no gold cost.
+    if (!this._refundConnectivityOk(player.allocatedNodes, nodeId)) return false;
+
+    // Reverse stat effects using the stored snapshot
+    const snapshot = player.nodeSnapshots.get(nodeId);
+    if (snapshot) removeStats(player, snapshot);
+
+    player.allocatedNodes.delete(nodeId);
+    player.nodeSnapshots.delete(nodeId);
+    player.skillPoints++;
+
+    this._flushHudUpdate();
+    return true;
+  }
+
+  /**
+   * Refund ALL allocated nodes (complete respec). Costs the sum of all individually
+   * refundable nodes. Hub and start-type nodes are kept; points are fully restored.
+   * Only available at hub between runs (same guard as refundNode).
+   * @returns {{ success: boolean, totalCost: number }}
+   */
+  refundAll() {
+    const { player } = this;
+    if (!player) return { success: false, totalCost: 0 };
+
+    // Collect refundable nodes (not hub/start type)
+    const refundable = [...player.allocatedNodes].filter(id => {
+      const n = TREE_NODE_MAP[id];
+      return n && n.type !== 'hub' && n.type !== 'start';
+    });
+
+    // Refunds are free — no gold cost.
+    // Remove each node's stats and de-allocate
+    for (const id of refundable) {
+      const snapshot = player.nodeSnapshots.get(id);
+      if (snapshot) removeStats(player, snapshot);
+      player.allocatedNodes.delete(id);
+      player.nodeSnapshots.delete(id);
+      player.skillPoints++;
+    }
+
+    this._flushHudUpdate();
+    return { success: true, totalCost: 0 };
+  }
+
+  /**
+   * Calculate the total gold cost to refund all currently allocated non-permanent nodes.
+   * Used by the UI to show the Refund All button cost before the user commits.
+   */
+  refundAllCost() {
+    const { player } = this;
+    if (!player) return 0;
+    return [...player.allocatedNodes].reduce((sum, id) => {
+      const n = TREE_NODE_MAP[id];
+      if (!n || n.type === 'hub' || n.type === 'start') return sum;
+      return sum + (GameEngine.REFUND_COST[n.type] ?? 25);
+    }, 0);
   }
 
   /**

@@ -42,7 +42,7 @@ const INITIAL_HUD = {
   kills: 0,
   gold: 0,
   skillPoints:    0,
-  allocatedNodes: ['start'],
+  allocatedNodes: [],
   shardsThisRun:  0,
   portalsRemaining: 0,
   mapEnemiesKilled: 0,
@@ -789,6 +789,16 @@ export default function App() {
     // HUD will update via _flushHudUpdate — no local state change needed
   }, []);
 
+  const handleRefundNode = useCallback((nodeId) => {
+    engineRef.current?.refundNode(nodeId);
+    // HUD will update via _flushHudUpdate — no local state change needed
+  }, []);
+
+  const handleRefundAll = useCallback(() => {
+    engineRef.current?.refundAll();
+    // HUD will update via _flushHudUpdate — no local state change needed
+  }, []);
+
   const handleMetaAllocate = useCallback((nodeId) => {
     const success = MetaProgression.allocateMetaNode(nodeId);
     if (success) {
@@ -1464,7 +1474,11 @@ export default function App() {
         <PassiveTreeScreen
           allocatedIds={hud.allocatedNodes}
           skillPoints={hud.skillPoints}
+          gold={hud.gold ?? 0}
           onAllocate={handleAllocateNode}
+          onRefund={handleRefundNode}
+          onRefundAll={handleRefundAll}
+          refundAllCost={engineRef.current?.refundAllCost?.() ?? 0}
           onClose={closeTree}
           mobileMode={mobileMode}
         />

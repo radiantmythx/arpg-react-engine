@@ -30,8 +30,8 @@ export const CHARACTERS = [
     startingWeapon: 'MAGIC_BOLT',
     baseStats:      { maxHealth: 80, speed: 180, maxMana: 120 },
     bonusStats:     { xpMultiplier: 1.15 },   // +15% experience gained
-    // Tree starting position: Power cluster (damage / projectile count).
-    treeStartNodes: ['pw_entry'],
+    // Tree starting position: Sage's Gate — slot 11 (123.75°, Frost-aligned).
+    treeStartNodes: ['r2s11'],
     unlockCondition: null,                       // always unlocked
     unlockHint:     'Available from the start.',
     color:          '#3498db',
@@ -47,8 +47,8 @@ export const CHARACTERS = [
     startingWeapon: 'SWIFT_ARROW',
     baseStats:      { maxHealth: 70, speed: 220, maxMana: 85 },
     bonusStats:     { pickupRadiusFlat: 20 },  // +20 pickup radius
-    // Tree starting position: Speed cluster (movement speed / cooldown).
-    treeStartNodes: ['sp_entry'],
+    // Tree starting position: Rogue's Gate — slot 21 (236.25°, Tempest-aligned).
+    treeStartNodes: ['r2s21'],
     unlockCondition: { type: 'survive', value: 300 }, // survive 5 minutes
     unlockHint:      'Survive 5 minutes in a single run.',
     color:           '#2ecc71',
@@ -64,8 +64,8 @@ export const CHARACTERS = [
     startingWeapon: 'MELEE_STRIKE',
     baseStats:      { maxHealth: 140, speed: 140, maxMana: 105 },
     bonusStats:     { healthRegenPerS: 2 },    // +2 HP/s passive regen
-    // Tree starting position: Tank cluster (max HP / regen).
-    treeStartNodes: ['tn_entry'],
+    // Tree starting position: Warrior's Gate — slot 0 (0°, Blaze-aligned).
+    treeStartNodes: ['r2s00'],
     unlockCondition: { type: 'kills', value: 200 }, // kill 200 enemies
     unlockHint:      'Kill 200 enemies in a single run.',
     color:           '#e74c3c',

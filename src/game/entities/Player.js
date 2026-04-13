@@ -65,6 +65,8 @@ export class Player extends Entity {
     this.pickupRadiusBonus = 0;   // added to PLAYER.PICKUP_RADIUS
     this.xpMultiplier      = 1;   // multiplied into XP gains
     this.projectileCountBonus = 0; // extra projectiles fired by applicable weapons
+    this.ailmentChanceBonus = {}; // { Ignite, Shock, Chill, Freeze } as fractional bonuses
+    this.selfIgnitedTimer = 0;
     this.potionChargeGainMult = 1;
     this.potionChargeGainFlat = 0;
     this.potionChargeRegenPerS = 0;
@@ -155,8 +157,9 @@ export class Player extends Entity {
 
     // ── Passive skill tree (Phase 6) ──────────────────────────────────────
     this.skillPoints    = 0;
-    // Start from character's tree position, or the universal root if no character.
-    this.allocatedNodes = new Set(characterDef?.treeStartNodes ?? ['start']);
+    // Start from the character's tree gate(s). Hub is not pre-allocated;
+    // the player must path inward to unlock it.
+    this.allocatedNodes = new Set(characterDef?.treeStartNodes ?? []);
     this.nodeSnapshots  = new Map();
 
     /**
@@ -224,9 +227,19 @@ export class Player extends Entity {
       this.invulnerable -= dt;
     }
 
+    if (this.selfIgnitedTimer > 0) {
+      this.selfIgnitedTimer = Math.max(0, this.selfIgnitedTimer - dt);
+    }
+
     // Health regen (positive = heal; negative = drain e.g. from Void Pact keystone)
     if (this.healthRegenPerS !== 0) {
-      this.health = Math.max(0, Math.min(this.maxHealth, this.health + this.healthRegenPerS * dt));
+      const conflagrationBlocked =
+        this.selfIgnitedTimer > 0
+        && this.allocatedNodes?.has?.('bz_ks')
+        && this.healthRegenPerS > 0;
+      if (!conflagrationBlocked) {
+        this.health = Math.max(0, Math.min(this.maxHealth, this.health + this.healthRegenPerS * dt));
+      }
     }
 
     if (this.manaRegenPerS !== 0) {

@@ -135,8 +135,8 @@ export class CharacterSave {
       // passiveTree.allocated mirrors the pre-allocated tree start nodes.
       passiveTree: {
         allocated: Array.isArray(charDef.treeStartNodes)
-          ? [...charDef.treeStartNodes, 'start']
-          : ['start'],
+          ? [...charDef.treeStartNodes]
+          : [],
       },
       metaTree:    { allocated: [] },
 
