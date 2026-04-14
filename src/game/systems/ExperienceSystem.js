@@ -229,8 +229,9 @@ export class ExperienceSystem {
   }
 
   _triggerLevelUp() {
-    // Grant two skill points per level — both spent in the passive tree overlay.
-    this.engine.player.skillPoints += 2;
+    // Grant passive points per level: 3 base + 2 per 10 levels (lv12→5, lv36→9).
+    const lvl = this.engine.player.level;
+    this.engine.player.skillPoints += 3 + Math.floor(lvl / 10) * 2;
     // Log the level-up event for the death recap timeline.
     this.engine.runEventLog.push({ type: 'level', time: this.engine.elapsed, level: this.engine.player.level });
     // Flush HUD immediately so skillPoints is > 0 when the tree screen opens.

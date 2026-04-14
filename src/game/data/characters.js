@@ -30,8 +30,8 @@ export const CHARACTERS = [
     startingWeapon: 'MAGIC_BOLT',
     baseStats:      { maxHealth: 80, speed: 180, maxMana: 120 },
     bonusStats:     { xpMultiplier: 1.15 },   // +15% experience gained
-    // Tree starting position: Sage's Gate — slot 11 (123.75°, Frost-aligned).
-    treeStartNodes: ['r2s11'],
+    // Tree starting position: Sage's Gate — slot 24 (240°, Lightning-aligned).
+    treeStartNodes: ['r2s24'],
     unlockCondition: null,                       // always unlocked
     unlockHint:     'Available from the start.',
     color:          '#3498db',
@@ -47,8 +47,8 @@ export const CHARACTERS = [
     startingWeapon: 'SWIFT_ARROW',
     baseStats:      { maxHealth: 70, speed: 220, maxMana: 85 },
     bonusStats:     { pickupRadiusFlat: 20 },  // +20 pickup radius
-    // Tree starting position: Rogue's Gate — slot 21 (236.25°, Tempest-aligned).
-    treeStartNodes: ['r2s21'],
+    // Tree starting position: Rogue's Gate — slot 12 (120°, Cold-aligned).
+    treeStartNodes: ['r2s12'],
     unlockCondition: { type: 'survive', value: 300 }, // survive 5 minutes
     unlockHint:      'Survive 5 minutes in a single run.',
     color:           '#2ecc71',

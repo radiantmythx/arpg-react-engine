@@ -1746,10 +1746,15 @@ export class GameEngine {
           }
         }
         this.particles.emit?.('death', this.player.x, this.player.y, { color: '#e8722a' });
+        // Keystone drawback: self-ignite — burns caster for 2% of max HP per nova.
+        this.player.health = Math.max(1, this.player.health - this.player.maxHealth * 0.02);
       }
     }
 
     // ── Rogue keystone: Ghost Step ─────────────────────────────────────────
+    // NOTE (E2P3): node IDs r5s00, r5s11, r5s21 were on the 32-slot grid.
+    // They are intentionally absent from passiveTree.js until E2P8 rewires
+    // keystone effects to new 36-slot IDs. has() returns false; no effect.
     // Move speed scales 0 → +40% as HP falls from 100% → 10%.
     if (allocated.has('r5s11')) {
       const hpRatio = Math.min(1, this.player.health / Math.max(1, this.player.maxHealth));
@@ -3002,17 +3007,20 @@ export class GameEngine {
   allocateNode(nodeId) {
     const { player } = this;
     if (!player) return false;
-    if (player.skillPoints <= 0) return false;
     if (player.allocatedNodes.has(nodeId)) return false;
 
     const node = TREE_NODE_MAP[nodeId];
     if (!node) return false;
 
+    // Cost scales with ring depth; hub/start/inner-ring rules enforced in nodePointCost.
+    const cost = GameEngine.nodePointCost(node);
+    if (player.skillPoints < cost) return false;
+
     // Must be adjacent to at least one already-allocated node.
     const adjacent = node.connections.some((id) => player.allocatedNodes.has(id));
     if (!adjacent) return false;
 
-    player.skillPoints--;
+    player.skillPoints -= cost;
     player.allocatedNodes.add(nodeId);
     const snapshot = applyStats(player, node.stats);
     player.nodeSnapshots.set(nodeId, snapshot);
@@ -3024,7 +3032,7 @@ export class GameEngine {
   }
 
   /**
-   * Refund cost per node type (gold).
+   * Refund cost per node type (gold). Legacy table kept for reference.
    * Hub and start nodes are never refundable.
    */
   static REFUND_COST = {
@@ -3033,6 +3041,28 @@ export class GameEngine {
     mastery:  75,
     keystone: 100,
   };
+
+  /**
+   * Passive points required to allocate a node.
+   * - hub / start: 0 (free, permanent)
+   * - r0–r2 minor: 5 pts (foundational inner ring cost)
+   * - r3+:  ring − 2 pts  (r3=1, r4=2, … r15=13)
+   */
+  static nodePointCost(node) {
+    if (!node || node.type === 'hub' || node.type === 'start') return 0;
+    return node.ring <= 2 ? 5 : Math.max(1, node.ring - 2);
+  }
+
+  /**
+   * Gold required to right-click-refund a node.
+   * - hub / start: n/a (cannot refund)
+   * - r0–r2 minor: 0g (only passive points are at stake)
+   * - r3+:  25 × (ring − 2) gold  (r3=25g, r4=50g, … r15=325g)
+   */
+  static nodeGoldCost(node) {
+    if (!node || node.type === 'hub' || node.type === 'start') return 0;
+    return node.ring <= 2 ? 0 : 25 * Math.max(1, node.ring - 2);
+  }
 
   /**
    * Checks whether removing `nodeId` from the allocated set would disconnect
@@ -3089,16 +3119,21 @@ export class GameEngine {
     if (node.type === 'hub' || node.type === 'start') return false;
     if (!player.allocatedNodes.has(nodeId)) return false;
 
-    // Refunds are free — no gold cost.
+    // Gold cost to refund scales with ring depth; inner rings (r0–r2) are free in gold.
+    const refundGoldCost = GameEngine.nodeGoldCost(node);
+    if (player.gold < refundGoldCost) return false;
+
     if (!this._refundConnectivityOk(player.allocatedNodes, nodeId)) return false;
 
     // Reverse stat effects using the stored snapshot
     const snapshot = player.nodeSnapshots.get(nodeId);
     if (snapshot) removeStats(player, snapshot);
 
+    player.gold -= refundGoldCost;
     player.allocatedNodes.delete(nodeId);
     player.nodeSnapshots.delete(nodeId);
-    player.skillPoints++;
+    // Restore the same number of points that were originally spent.
+    player.skillPoints += GameEngine.nodePointCost(node);
 
     this._flushHudUpdate();
     return true;
@@ -3120,14 +3155,14 @@ export class GameEngine {
       return n && n.type !== 'hub' && n.type !== 'start';
     });
 
-    // Refunds are free — no gold cost.
-    // Remove each node's stats and de-allocate
+    // Bulk respec is free — no gold cost; restores full point cost per node (ring-scaled + inner-ring rules).
     for (const id of refundable) {
+      const n = TREE_NODE_MAP[id];
       const snapshot = player.nodeSnapshots.get(id);
       if (snapshot) removeStats(player, snapshot);
       player.allocatedNodes.delete(id);
       player.nodeSnapshots.delete(id);
-      player.skillPoints++;
+      player.skillPoints += GameEngine.nodePointCost(n);
     }
 
     this._flushHudUpdate();

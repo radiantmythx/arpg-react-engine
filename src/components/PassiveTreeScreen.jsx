@@ -2,11 +2,38 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { TREE_NODE_MAP } from '../game/data/passiveTree.js';
 
 // ─── Layout constants ────────────────────────────────────────────────────────
-const RING_RADII   = [0, 130, 240, 350, 460, 570]; // px from centre per ring
-const RING_SLOTS   = [8, 16, 32, 32, 32, 32];      // slot count per ring
+const RING_RADII   = [0, 130, 240, 350, 570, 790, 1010, 1230, 1450, 1670, 1890, 2110, 2330, 2550, 2770, 2990]; // px from centre per ring — step doubles at r4 (110→220px)
+const RING_SLOTS   = [8, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36, 36]; // r1+ all 36 slots: 10° per slot, classes at 0°/120°/240°
+const R3A_RADIUS   = 295; // inner spur ring: midpoint between r2(240) and r3(350)
+const R3B_RADIUS   = 423; // outer spur ring: r3(350) + 1/3 of r3->r4 step(73)
+const R4A_RADIUS   = 497; // inner spur ring: r4(570) − ⅓step(73) — between r3 and r4
+const R4B_RADIUS   = 643; // outer spur ring: r4(570) + ⅓step(73) — between r4 and r5
+const R5A_RADIUS   = 717;  // inner spur ring: r5(790) - 1/3 of step(73) — between r4 and r5
+const R5B_RADIUS   = 863;  // outer spur ring: r5(790) + 1/3 of step(73) — between r5 and r6
+const R6A_RADIUS   = 937;  // inner spur ring: r6(1010) - 1/3 of step(73) — between r5 and r6
+const R6B_RADIUS   = 1083; // outer spur ring: r6(1010) + 1/3 of step(73) — between r6 and r7
+const R7A_RADIUS   = 1157; // inner spur ring: r7(1230) - 1/3 of step(73) — between r6 and r7
+const R7B_RADIUS   = 1303; // outer spur ring: r7(1230) + 1/3 of step(73) — between r7 and r8
+const R8A_RADIUS   = 1377; // r8(1450) - 73
+const R8B_RADIUS   = 1523; // r8(1450) + 73
+const R9A_RADIUS   = 1597; // r9(1670) - 73
+const R9B_RADIUS   = 1743; // r9(1670) + 73
+const R10A_RADIUS  = 1817; // r10(1890) - 73
+const R10B_RADIUS  = 1963; // r10(1890) + 73
+const R11A_RADIUS  = 2037; // r11(2110) - 73
+const R11B_RADIUS  = 2183; // r11(2110) + 73
+const R12A_RADIUS  = 2257; // r12(2330) - 73
+const R12B_RADIUS  = 2403; // r12(2330) + 73
+const R13A_RADIUS  = 2477; // r13(2550) - 73
+const R13B_RADIUS  = 2623; // r13(2550) + 73
+const R14A_RADIUS  = 2697; // r14(2770) - 73
+const R14B_RADIUS  = 2843; // r14(2770) + 73
+const R15A_RADIUS  = 2917; // r15(2990) - 73
+const R15B_RADIUS  = 3063; // r15(2990) + 73
 
 // ─── Visual constants ────────────────────────────────────────────────────────
-const NODE_RADIUS = { minor: 10, notable: 16, keystone: 18, start: 14, hub: 13 };
+const NODE_RADIUS = { minor: 11, notable: 18, keystone: 20, start: 15, hub: 15 };
+const HIGHWAY_RINGS = new Set([3, 7, 10, 15]); // full arc rings — travel only, no notables/keystones
 const SECTION_COLOR = {
   warrior: '#e8722a',
   rogue:   '#4ab8d8',
@@ -24,7 +51,7 @@ const ALLOCATED_GLOW = {
 function nodeXY(node, cx, cy) {
   const slots = RING_SLOTS[node.ring] ?? 32;
   const angle = (node.slot / slots) * Math.PI * 2 - Math.PI / 2; // 0° = top
-  const r     = RING_RADII[node.ring] ?? 0;
+  const r     = node.radiusOverride ?? RING_RADII[node.ring] ?? 0;
   return { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r };
 }
 
@@ -52,6 +79,8 @@ const STAT_LABELS = {
   increasedBlazeDamage:    (v) => `+${Math.round(v*100)}% Increased Fire Damage`,
   increasedThunderDamage:  (v) => `+${Math.round(v*100)}% Increased Lightning Damage`,
   increasedFrostDamage:    (v) => `+${Math.round(v*100)}% Increased Cold Damage`,
+  increasedHolyDamage:     (v) => `+${Math.round(v*100)}% Increased Holy Damage`,
+  increasedUnholyDamage:   (v) => `+${Math.round(v*100)}% Increased Unholy Damage`,
   increasedPhysicalDamage: (v) => `+${Math.round(v*100)}% Increased Physical Damage`,
   blazeResistance:      (v) => `+${Math.round(v*100)}% Fire Resistance`,
   thunderResistance:    (v) => `+${Math.round(v*100)}% Lightning Resistance`,
@@ -66,6 +95,33 @@ function statLines(stats) {
   return Object.entries(stats)
     .filter(([, v]) => v != null && v !== 0)
     .map(([k, v]) => STAT_LABELS[k]?.(v) ?? `+${v} ${k}`);
+}
+
+// ─── Icon picker ─────────────────────────────────────────────────────────────
+// Returns an emoji representing the node's primary stat theme.
+// Computed at render time — no per-node data changes required.
+function iconForNode(node) {
+  if (node.type === 'hub')      return '🌟';
+  if (node.type === 'start')    return '⭐';
+  if (node.type === 'keystone') return '💎';
+  const s = node.stats ?? {};
+  if (s.flatBlazeDamage    || s.increasedBlazeDamage)    return '🔥';
+  if (s.flatFrostDamage    || s.increasedFrostDamage)    return '❄️';
+  if (s.flatThunderDamage  || s.increasedThunderDamage)  return '⚡';
+  if (s.flatPhysicalDamage || s.increasedPhysicalDamage) return '⚔️';
+  if (s.flatHolyDamage || s.increasedHolyDamage)      return '✨';
+  if (s.flatUnholyDamage || s.increasedUnholyDamage)  return '💀';
+  if (s.moveSpeedMult)     return '💨';
+  if (s.attackSpeed)       return '🗡️';
+  if (s.castSpeed)         return '✨';
+  if (s.totalEvasion && !s.totalArmor) return '🌀';
+  if (s.totalArmor)        return '🛡️';
+  if (s.manaRegenPerS && !s.maxMana)   return '💧';
+  if (s.healthRegenPerS && !s.maxHealth) return '💚';
+  if (s.maxMana && !s.maxHealth)       return '🔮';
+  if (s.maxHealth)         return '❤️';
+  if (node.type === 'notable') return '🔸';
+  return '';
 }
 
 // ─── Draw helpers ────────────────────────────────────────────────────────────
@@ -127,6 +183,20 @@ function drawNode(ctx, node, pos, allocated, allocatable) {
     if (isKS) drawStar(ctx, pos.x, pos.y, nr); else { ctx.beginPath(); ctx.arc(pos.x, pos.y, nr, 0, Math.PI * 2); }
     ctx.stroke();
   }
+
+  // Icon emoji — centered inside the node
+  const icon = iconForNode(node);
+  if (icon) {
+    const fontSize = Math.max(10, Math.round(nr * 0.85));
+    ctx.font         = `${fontSize}px serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha  = allocated ? 1.0 : allocatable ? 0.8 : 0.45;
+    ctx.fillText(icon, pos.x, pos.y);
+    ctx.globalAlpha  = 1;
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,6 +205,7 @@ export function PassiveTreeScreen({
   skillPoints,
   onAllocate,
   onRefund,
+  onRefundAll,
   onClose,
   mobileMode,
 }) {
@@ -201,9 +272,17 @@ export function PassiveTreeScreen({
     // Ghost rings
     ctx.save();
     ctx.setLineDash([4, 8]);
-    for (let ring = 1; ring <= 5; ring++) {
+    for (let ring = 1; ring <= 15; ring++) {
       ctx.beginPath();
       ctx.arc(cx, cy, RING_RADII[ring], 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.lineWidth   = 1 / s.zoom;
+      ctx.stroke();
+    }
+    // r3a / r3b / r4a / r4b / r5a / r5b spur rings
+    for (const sr of [R3A_RADIUS, R3B_RADIUS, R4A_RADIUS, R4B_RADIUS, R5A_RADIUS, R5B_RADIUS, R6A_RADIUS, R6B_RADIUS, R7A_RADIUS, R7B_RADIUS, R8A_RADIUS, R8B_RADIUS, R9A_RADIUS, R9B_RADIUS, R10A_RADIUS, R10B_RADIUS, R11A_RADIUS, R11B_RADIUS, R12A_RADIUS, R12B_RADIUS, R13A_RADIUS, R13B_RADIUS, R14A_RADIUS, R14B_RADIUS, R15A_RADIUS, R15B_RADIUS]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, sr, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255,255,255,0.04)';
       ctx.lineWidth   = 1 / s.zoom;
       ctx.stroke();
@@ -391,14 +470,26 @@ export function PassiveTreeScreen({
   function Tooltip({ data }) {
     if (!data) return null;
     const { node, sx, sy } = data;
-    const col    = SECTION_COLOR[node.section] ?? '#aaa';
-    const lines  = statLines(node.stats);
+    const col     = SECTION_COLOR[node.section] ?? '#aaa';
+    const lines   = statLines(node.stats);
     const isAlloc = allocSet.has(node.id);
     const typeStr = node.type.charAt(0).toUpperCase() + node.type.slice(1);
 
+    // Display name: minor nodes use a generic label instead of individual names.
+    const displayLabel = node.type === 'minor'
+      ? (HIGHWAY_RINGS.has(node.ring) ? 'Minor Traversal Passive' : 'Minor Passive')
+      : node.label;
+
+    // Economy: allocation costs passive points; refund costs gold (ring-scaled, inner rings free gold).
+    const isHub      = node.type === 'hub' || node.type === 'start';
+    const allocCost  = isHub ? 0 : node.ring <= 2 ? 5 : Math.max(1, node.ring - 2);
+    const goldCost   = isHub ? 0 : node.ring <= 2 ? 0 : 25 * Math.max(1, node.ring - 2);
+    const allocCostStr = allocCost === 0 ? 'Free' : `${allocCost} passive point${allocCost !== 1 ? 's' : ''}`;
+    const goldCostStr  = goldCost  === 0 ? 'Free' : `${goldCost}g`;
+
     // Keep tooltip on screen
     const left = Math.min(sx + 14, window.innerWidth  - 230);
-    const top  = Math.min(sy + 14, window.innerHeight - 160);
+    const top  = Math.min(sy + 14, window.innerHeight - 180);
 
     return (
       <div style={{
@@ -408,7 +499,7 @@ export function PassiveTreeScreen({
         pointerEvents: 'none', fontFamily: 'serif',
       }}>
         <div style={{ color: col, fontWeight: 'bold', fontSize: 14, marginBottom: 4 }}>
-          {node.label}
+          {displayLabel}
         </div>
         <div style={{ color: '#888', fontSize: 11, marginBottom: 6 }}>
           {typeStr} · {node.section}
@@ -426,7 +517,10 @@ export function PassiveTreeScreen({
           </div>
         )}
         <div style={{ color: '#555', fontSize: 10, marginTop: 8, borderTop: '1px solid #1a1a2a', paddingTop: 5 }}>
-          {isAlloc ? 'Right-click / 2nd tap to refund' : 'Left-click / 2nd tap to allocate'}
+          {isAlloc
+            ? <>↺ Refund · <span style={{ color: goldCost > 0 ? '#e0a84a' : '#5c8' }}>{goldCostStr}</span></>
+            : <>▶ Allocate · <span style={{ color: '#b0c8ff' }}>{allocCostStr}</span></>
+          }
         </div>
       </div>
     );
@@ -532,8 +626,20 @@ export function PassiveTreeScreen({
       >
         ✕ Close
       </button>
+      <button
+        onClick={onRefundAll}
+        style={{
+          position: 'absolute', top: 12, right: 96,
+          background: 'rgba(180,100,0,0.18)', border: '1px solid #a06020',
+          color: '#e0a84a', borderRadius: 6, padding: '4px 14px', cursor: 'pointer',
+          fontFamily: 'serif', fontSize: 14,
+        }}
+      >
+        ⟳ Refund All
+      </button>
       <Tooltip data={tooltip} />
     </div>
   );
 }
+
 
