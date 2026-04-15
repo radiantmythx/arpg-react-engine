@@ -11,7 +11,7 @@
  * weapon instance.
  */
 
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import {
   buildProjectileConfig,
@@ -25,7 +25,7 @@ const ORBIT_RADIUS = 90;
 /** Turn speed toward target (radians per second). */
 const HOME_TURN_RATE = Math.PI * 3.5;
 
-export class VoidShardSwarm extends Weapon {
+export class VoidShardSwarm extends Skill {
   constructor() {
     super(WEAPONS.VOID_SHARD_SWARM);
     this.tags = ['Spell', 'Projectile', 'Unholy'];

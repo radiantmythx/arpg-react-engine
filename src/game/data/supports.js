@@ -463,13 +463,30 @@ export const SUPPORT_MAP = Object.fromEntries(SUPPORT_POOL.map((s) => [s.id, s])
  * @returns {object|null}
  */
 export function makeSupportInstance(gemItemDef) {
-  const def = SUPPORT_MAP[gemItemDef?.gemId];
+  const gemId = gemItemDef?.gemId ?? gemItemDef?.id ?? null;
+  const def = SUPPORT_MAP[gemId];
   if (!def) return null;
   const category = supportCategoryById(def.id);
   const categoryCurve = SCALING_CONFIG.gem.support[category] ?? SCALING_CONFIG.gem.support.utility;
   const manaMult = SUPPORT_TUNING.manaCostMultiplierBySupportId?.[def.id]
     ?? SUPPORT_TUNING.defaultManaCostMultiplier
     ?? 1;
+  const normalizedItemDef = {
+    type: 'support_gem',
+    slot: 'support_gem',
+    rarity: 'magic',
+    gridW: 1,
+    gridH: 1,
+    gemId: def.id,
+    id: gemItemDef?.id ?? def.id,
+    name: gemItemDef?.name ?? `${def.name} Support`,
+    icon: gemItemDef?.icon ?? def.icon ?? '◆',
+    level: gemItemDef?.level ?? 1,
+    maxLevel: gemItemDef?.maxLevel ?? 20,
+    stackable: false,
+    ...(gemItemDef ?? {}),
+    gemId: def.id,
+  };
   return {
     id:           def.id,
     name:         def.name,
@@ -486,7 +503,7 @@ export function makeSupportInstance(gemItemDef) {
     onActivate:   def.onActivate?.bind(def) ?? null,
     requiredTags: def.requiredTags,
     incompatibleTags: def.incompatibleTags,
-    _itemDef:     gemItemDef, // back-reference so we can retrieve it when unsocketing
+    _itemDef:     normalizedItemDef, // back-reference so we can retrieve it when unsocketing
   };
 }
 

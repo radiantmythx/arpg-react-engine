@@ -1,4 +1,4 @@
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import {
   buildProjectileConfig,
@@ -7,7 +7,7 @@ import {
   scaleProjectileMotion,
 } from '../projectileSupport.js';
 
-export class ArcaneLance extends Weapon {
+export class ArcaneLance extends Skill {
   constructor() {
     super(WEAPONS.ARCANE_LANCE);
     this.tags = ['Spell', 'Projectile', 'Thunder'];

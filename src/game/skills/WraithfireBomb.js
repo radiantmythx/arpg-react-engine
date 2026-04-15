@@ -9,11 +9,11 @@
  * Implementation mirrors SacredRite's flask / zone pattern.
  */
 
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import { resolvePenetrationMap } from '../data/skillTags.js';
 
-export class WraithfireBomb extends Weapon {
+export class WraithfireBomb extends Skill {
   constructor() {
     super(WEAPONS.WRAITHFIRE_BOMB);
     this.tags = ['Spell', 'AoE', 'Blaze', 'Duration'];

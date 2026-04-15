@@ -6,10 +6,10 @@
  * and it pierces through every enemy it touches.
  */
 
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 
-export class TectonicCleave extends Weapon {
+export class TectonicCleave extends Skill {
   constructor() {
     super(WEAPONS.TECTONIC_CLEAVE);
     this.tags = ['Attack', 'AoE', 'Physical', 'Melee'];

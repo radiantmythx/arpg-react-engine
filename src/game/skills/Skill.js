@@ -2,8 +2,8 @@ import { ELEMENT_TYPES, makeDamageRange, sumAverageDamageMap } from '../damageUt
 import { MAX_SUPPORT_SOCKETS, openSupportSlotsForLevel } from '../supportSockets.js';
 
 /**
- * Weapon — base class for all auto-fire and active skills implemented as
- * weapons (Attack-tagged skills).  Pure SkillDefs live in skills.js.
+ * Skill — base class for all auto-fire and active runtime skills.
+ * Pure SkillDefs live in skills.js.
  *
  * Subclasses override fire(player, entities) to spawn their effect.
  * Subclasses override _applyLevelStats() to improve stats on level up.
@@ -12,7 +12,7 @@ import { MAX_SUPPORT_SOCKETS, openSupportSlotsForLevel } from '../supportSockets
  * gem compatibility, passive tree scaling, and ailment application.
  * Use the TAGS constants from skillTags.js when setting them.
  */
-export class Weapon {
+export class Skill {
   constructor(config) {
     this.id = config.id;
     this.name = config.name;
@@ -31,7 +31,7 @@ export class Weapon {
     this.scaling  = config.scaling  ?? {};
     /** Seconds from activation press to effect delivery (0 = instant for auto-fire). */
     this.castTime = config.castTime ?? 0;
-    /** Resource cost used by active weapon skills. */
+    /** Resource cost used by active skills. */
     this.manaCost = config.manaCost ?? 0;
     /**
      * Support gem sockets. Open sockets scale by gem level:
@@ -46,14 +46,14 @@ export class Weapon {
      */
     this.tags = [];
     /**
-     * When true this weapon is a hotbar active skill and will NOT auto-fire.
+    * When true this runtime skill is a hotbar active skill and will NOT auto-fire.
      * activeSkillSystem calls fire() directly on key press.
      */
     this.isActive = false;
   }
 
   /**
-   * Compute the final runtime stats for this weapon at fire time.
+  * Compute the final runtime stats for this skill at fire time.
    *
    * For `damage`: uses the live `this.damage` value (which already holds any
    * passive-item or BloodPact multipliers), then layers support mods and
@@ -132,11 +132,11 @@ export class Weapon {
     }
   }
 
-  /** Override in subclasses to produce the weapon's effect. */
+  /** Override in subclasses to produce the skill's effect. */
   fire(_player, _entities, _engine) {}
 
   /**
-   * Called each render frame for weapons that need to draw auras, rings, or zones.
+  * Called each render frame for skills that need to draw auras, rings, or zones.
    * Override in subclasses; no-op by default.
    */
   draw(_renderer, _player) {}
@@ -154,7 +154,7 @@ export class Weapon {
     this._xp += amount;
     let levelled = false;
     while (this.level < this.maxLevel) {
-      const needed = Weapon.xpNeeded(this.level);
+      const needed = Skill.xpNeeded(this.level);
       if (this._xp < needed) break;
       this._xp -= needed;
       this.levelUp();
@@ -172,3 +172,7 @@ export class Weapon {
   /** Override in subclasses to apply per-level stat improvements. */
   _applyLevelStats() {}
 }
+
+
+// Backward compatibility alias during Phase 1 rename.
+export { Skill as Weapon };

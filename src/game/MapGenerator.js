@@ -1825,7 +1825,17 @@ export class MapGenerator {
       const tightness = Math.max(0.9, mapModEffects.pre.chokepointTightness ?? 1);
       const minRadius = isChokepoint ? 1.05 / tightness : 1.45;
       const maxRadius = isChokepoint ? 1.35 / tightness : 2.05;
-      carveWormTunnel(tiles, rows, cols, from, to, rng, minRadius, maxRadius);
+      // carveWormTunnel expects { x, y } points; lane pockets store centerX/centerY.
+      carveWormTunnel(
+        tiles,
+        rows,
+        cols,
+        { x: from.centerX, y: from.centerY },
+        { x: to.centerX, y: to.centerY },
+        rng,
+        minRadius,
+        maxRadius,
+      );
 
       if (!isChokepoint && i % 2 === 1) {
         const mx = Math.round((from.centerX + to.centerX) / 2);

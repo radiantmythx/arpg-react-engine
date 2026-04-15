@@ -4,7 +4,7 @@
  * Looses a fast arrow toward the cursor-facing direction.
  * Tags: Attack, Projectile, Physical.
  */
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import {
   buildProjectileConfig,
@@ -14,7 +14,7 @@ import {
   scaleProjectileMotion,
 } from '../projectileSupport.js';
 
-export class SwiftArrow extends Weapon {
+export class SwiftArrow extends Skill {
   constructor() {
     super(WEAPONS.SWIFT_ARROW);
     this.tags = ['Attack', 'Projectile', 'Physical'];

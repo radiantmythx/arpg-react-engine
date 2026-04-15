@@ -7,7 +7,7 @@
  * cross-hair drawn by this weapon's own draw call, stored in _cracks[]).
  */
 
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import {
   buildProjectileConfig,
@@ -19,7 +19,7 @@ import {
 /** How long a ground crack decal persists (seconds). */
 const CRACK_LIFETIME = 2.0;
 
-export class BoneSpear extends Weapon {
+export class BoneSpear extends Skill {
   constructor() {
     super(WEAPONS.BONE_SPEAR);
     this.tags = ['Attack', 'Projectile', 'Physical'];

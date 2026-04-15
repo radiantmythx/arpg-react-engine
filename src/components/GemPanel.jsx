@@ -186,7 +186,7 @@ function SocketSlot({ skillId, slotIndex, support, isOpen, skillTags, cursorGem,
 }
 
 /** Skill row for paperdoll (left side). */
-function SkillSocket({ skill, cursorGem, cursorSkillGem, onSocketGem, onUnsocketGem, onEquipSkillGem, onUnequipSkillGem, onClearSelectedSkillGem, mobileMode = false, isFocused = false, isSuggested = false, onHoverTooltip, onClearTooltip }) {
+function SkillSocket({ skill, cursorGem, cursorSkillGem, onSocketGem, onUnsocketGem, onEquipSkillGem, onUnequipSkillGem, onClearSelectedSkillGem, onDebugLevelUpSkillGem, debugMode = false, mobileMode = false, isFocused = false, isSuggested = false, onHoverTooltip, onClearTooltip }) {
   const [dragOverSkillTarget, setDragOverSkillTarget] = useState(false);
   const isMax = skill.isMaxLevel ?? false;
   const xpPct = isMax
@@ -288,6 +288,19 @@ function SkillSocket({ skill, cursorGem, cursorSkillGem, onSocketGem, onUnsocket
             <span className="gem-skill-level">
               Lv {skill.level ?? 1}{isMax ? ' ✦' : ` / ${skill.maxLevel ?? 20}`}
             </span>
+            {debugMode && !skill._isPlaceholder && (
+              <button
+                type="button"
+                className="gem-skill-debug-btn"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDebugLevelUpSkillGem?.(skill._slotKey);
+                }}
+              >
+                +1 Level (Debug)
+              </button>
+            )}
             {!isMax && (
               <div className="gem-skill-xpbar-bg">
                 <div className="gem-skill-xpbar-fill" style={{ width: `${xpPct}%` }} />
@@ -322,7 +335,7 @@ function SkillSocket({ skill, cursorGem, cursorSkillGem, onSocketGem, onUnsocket
     </div>
   );
 }
-export function GemPanel({ primarySkill, activeSkills, cursorItem, selectedSupportGem, selectedSkillGem, onClearSelectedGem, onClearSelectedSkillGem, onSocketGem, onUnsocketGem, onEquipSkillGem, onUnequipSkillGem, mobileMode = false, onHoverTooltip, onClearTooltip }) {
+export function GemPanel({ primarySkill, activeSkills, cursorItem, selectedSupportGem, selectedSkillGem, onClearSelectedGem, onClearSelectedSkillGem, onSocketGem, onUnsocketGem, onEquipSkillGem, onUnequipSkillGem, debugMode = false, onDebugLevelUpSkillGem, mobileMode = false, onHoverTooltip, onClearTooltip }) {
   const [selectedSkillId, setSelectedSkillId] = useState(null);
 
   const makePlaceholder = (slotKey, slotLabel) => ({
@@ -468,6 +481,8 @@ export function GemPanel({ primarySkill, activeSkills, cursorItem, selectedSuppo
               onEquipSkillGem={onEquipSkillGem}
               onUnequipSkillGem={onUnequipSkillGem}
               onClearSelectedSkillGem={onClearSelectedSkillGem}
+              onDebugLevelUpSkillGem={onDebugLevelUpSkillGem}
+              debugMode={debugMode}
               mobileMode={mobileMode}
               isFocused={!mobileMode || focusedSkill?.id === skill.id}
               isSuggested={skillCanAcceptCursorGem(skill, cursorGem)}

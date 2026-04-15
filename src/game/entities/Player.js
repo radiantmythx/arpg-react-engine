@@ -1,25 +1,25 @@
 import { Entity } from './Entity.js';
 import { PLAYER } from '../config.js';
-import { ArcaneLance }    from '../weapons/ArcaneLance.js';
-import { PhantomBlade }   from '../weapons/PhantomBlade.js';
-import { RighteousPyre }  from '../weapons/RighteousPyre.js';
-import { TectonicCleave } from '../weapons/TectonicCleave.js';
-import { SacredRite }     from '../weapons/SacredRite.js';
-import { VoltaicArc }     from '../weapons/VoltaicArc.js';
-import { MagicBolt }      from '../weapons/MagicBolt.js';
-import { SwiftArrow }     from '../weapons/SwiftArrow.js';
-import { MeleeStrike }    from '../weapons/MeleeStrike.js';
+import { ArcaneLance }    from '../skills/ArcaneLance.js';
+import { PhantomBlade }   from '../skills/PhantomBlade.js';
+import { RighteousPyre }  from '../skills/RighteousPyre.js';
+import { TectonicCleave } from '../skills/TectonicCleave.js';
+import { SacredRite }     from '../skills/SacredRite.js';
+import { VoltaicArc }     from '../skills/VoltaicArc.js';
+import { MagicBolt }      from '../skills/MagicBolt.js';
+import { SwiftArrow }     from '../skills/SwiftArrow.js';
+import { MeleeStrike }    from '../skills/MeleeStrike.js';
 import { PassiveItem } from '../PassiveItem.js';
 import { InventoryGrid } from '../InventoryGrid.js';
 import { applyStats, TREE_NODE_MAP } from '../data/passiveTree.js';
 
-/** Maps WEAPONS config ids to weapon constructors. */
+/** Maps runtime skill ids to skill constructors. */
 const AUTO_SKILL_REGISTRY = {
   // Starter skills (cast via Space as primary skill)
   MAGIC_BOLT:      () => new MagicBolt(),
   SWIFT_ARROW:     () => new SwiftArrow(),
   MELEE_STRIKE:    () => new MeleeStrike(),
-  // Original active weapons (also available via skill offer)
+  // Original active runtime skills (also available via skill offer)
   ARCANE_LANCE:    () => new ArcaneLance(),
   PHANTOM_BLADE:   () => new PhantomBlade(),
   RIGHTEOUS_PYRE:  () => new RighteousPyre(),
@@ -64,7 +64,7 @@ export class Player extends Entity {
     this.manaCostMult      = 1;
     this.pickupRadiusBonus = 0;   // added to PLAYER.PICKUP_RADIUS
     this.xpMultiplier      = 1;   // multiplied into XP gains
-    this.projectileCountBonus = 0; // extra projectiles fired by applicable weapons
+    this.projectileCountBonus = 0; // extra projectiles fired by applicable skills
     this.ailmentChanceBonus = {}; // { Ignite, Shock, Chill, Freeze } as fractional bonuses
     this.selfIgnitedTimer = 0;
     this.potionChargeGainMult = 1;
@@ -183,8 +183,9 @@ export class Player extends Entity {
     this.inventory = new InventoryGrid(12, 6);
 
     // Starting primary skill — from character definition, cast via Space.
-    const weaponFactory = AUTO_SKILL_REGISTRY[characterDef?.startingWeapon ?? 'MAGIC_BOLT'];
-    this.autoSkills = [weaponFactory ? weaponFactory() : new MagicBolt()];
+    const starterSkillId = characterDef?.startingSkill ?? characterDef?.startingWeapon ?? 'MAGIC_BOLT';
+    const skillFactory = AUTO_SKILL_REGISTRY[starterSkillId];
+    this.autoSkills = [skillFactory ? skillFactory() : new MagicBolt()];
     this.primarySkill = this.autoSkills[0];
     if (this.primarySkill) {
       this.primarySkill.isActive = true;

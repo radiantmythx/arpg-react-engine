@@ -5,13 +5,13 @@
  * On each pulse a visible expanding ring radiates outward from the player and fades.
  */
 
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import { resolvePenetrationMap } from '../data/skillTags.js';
 
 const PULSE_DURATION = 0.45; // seconds for the ring to fully expand and fade
 
-export class RighteousPyre extends Weapon {
+export class RighteousPyre extends Skill {
   constructor() {
     super(WEAPONS.RIGHTEOUS_PYRE);
     this.tags = ['Spell', 'AoE', 'Blaze', 'Duration'];

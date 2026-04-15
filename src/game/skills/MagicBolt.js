@@ -4,7 +4,7 @@
  * Fires a violet bolt of arcane energy toward the cursor-facing direction.
  * Tags: Spell, Projectile.
  */
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import {
   buildProjectileConfig,
@@ -14,7 +14,7 @@ import {
   scaleProjectileMotion,
 } from '../projectileSupport.js';
 
-export class MagicBolt extends Weapon {
+export class MagicBolt extends Skill {
   constructor() {
     super(WEAPONS.MAGIC_BOLT);
     this.tags = ['Spell', 'Projectile', 'Thunder'];

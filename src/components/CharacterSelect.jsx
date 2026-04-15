@@ -92,11 +92,11 @@ export function CharacterSelect({ unlocked, highScores = {}, onSelect, onBack })
                   <StatRow label="Speed"  value={char.baseStats.speed}     max={280} color="#f39c12" />
                 </div>
 
-                {/* Starting weapon */}
+                {/* Starting skill */}
                 <div className="char-card-weapon">
-                  <span className="char-weapon-label">Starting Weapon</span>
+                  <span className="char-weapon-label">Starting Skill</span>
                   <span className="char-weapon-name">
-                    {char.startingWeapon.replace(/_/g, ' ')
+                    {(char.startingSkill ?? char.startingWeapon ?? 'MAGIC_BOLT').replace(/_/g, ' ')
                       .replace(/\b\w/g, (c) => c.toUpperCase())}
                   </span>
                 </div>

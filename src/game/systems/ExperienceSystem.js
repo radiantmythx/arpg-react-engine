@@ -1,8 +1,8 @@
 import { LEVEL_XP_TABLE } from '../config.js';
-import { RighteousPyre } from '../weapons/RighteousPyre.js';
-import { SacredRite } from '../weapons/SacredRite.js';
-import { VoltaicArc } from '../weapons/VoltaicArc.js';
-import { WraithfireBomb } from '../weapons/WraithfireBomb.js';
+import { RighteousPyre } from '../skills/RighteousPyre.js';
+import { SacredRite } from '../skills/SacredRite.js';
+import { VoltaicArc } from '../skills/VoltaicArc.js';
+import { WraithfireBomb } from '../skills/WraithfireBomb.js';
 
 /**
  * UPGRADE_POOL

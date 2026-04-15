@@ -8,14 +8,14 @@
  * rings expire.
  */
 
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import { resolvePenetrationMap } from '../data/skillTags.js';
 
 /** Half-width of the collision band that surrounds the ring's leading edge. */
 const RING_TOLERANCE = 10;
 
-export class VoltaicArc extends Weapon {
+export class VoltaicArc extends Skill {
   constructor() {
     super(WEAPONS.VOLTAIC_ARC);
     this.tags = ['Spell', 'AoE', 'Thunder'];

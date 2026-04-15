@@ -173,6 +173,8 @@ export function InventoryScreen({
   onUnsocketGem,
   onEquipSkillGem,
   onUnequipSkillGem,
+  debugMode = false,
+  onDebugLevelUpSkillGem,
   mobileMode = false,
 }) {
   const [hoveredItem, setHoveredItem] = useState(null);
@@ -726,6 +728,8 @@ export function InventoryScreen({
                   onUnsocketGem={onUnsocketGem}
                   onEquipSkillGem={onEquipSkillGem}
                   onUnequipSkillGem={onUnequipSkillGem}
+                  debugMode={debugMode}
+                  onDebugLevelUpSkillGem={onDebugLevelUpSkillGem}
                   mobileMode={mobileMode}
                   onHoverTooltip={handleGemTooltipHover}
                   onClearTooltip={clearGemTooltipHover}
@@ -745,6 +749,8 @@ export function InventoryScreen({
                   onUnsocketGem={onUnsocketGem}
                   onEquipSkillGem={onEquipSkillGem}
                   onUnequipSkillGem={onUnequipSkillGem}
+                  debugMode={debugMode}
+                  onDebugLevelUpSkillGem={onDebugLevelUpSkillGem}
                   onHoverTooltip={handleGemTooltipHover}
                   onClearTooltip={clearGemTooltipHover}
                 />

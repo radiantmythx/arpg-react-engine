@@ -9,7 +9,7 @@ import {
 function buildBridgedSkillOffers() {
   return SKILL_OFFER_POOL.map((offer) => {
     const tmpl = MIGRATED_SKILL_TEMPLATE_BY_ID[offer.id];
-    if (!tmpl || offer.isWeaponSkill) return offer;
+    if (!tmpl || offer.isActiveSkill) return offer;
     return {
       ...offer,
       // Keep legacy availability and metadata, but compile from template.
@@ -84,7 +84,7 @@ export function validateSkillRegistry() {
   }
 
   for (const offer of BRIDGED_SKILL_OFFERS) {
-    if (!offer.isWeaponSkill) {
+    if (!offer.isActiveSkill) {
       if (!PURE_SKILL_CTORS[offer.id]) {
         errors.push(`Unresolved pure skill constructor for offer '${offer.id}'`);
       }

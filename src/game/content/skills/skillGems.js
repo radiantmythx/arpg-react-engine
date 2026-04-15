@@ -13,7 +13,7 @@ export function createSkillGemItem(offer) {
     slot: 'gem',
     gridW: 1,
     gridH: 1,
-    gemIcon: offer.isWeaponSkill ? '✦' : '◇',
+    gemIcon: offer.isActiveSkill ? '✦' : '◇',
     description: `Learn ${offer.name}. ${offer.description}`,
     affixes: [],
   };

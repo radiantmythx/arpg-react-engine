@@ -58,7 +58,7 @@ export function validateMigratedSkillTemplates(templates = [], skillOffers = [],
     const linkedOffer = skillOffers.find((o) => o.id === t.id);
     if (!linkedOffer) {
       errors.push(`${loc} (${t.id}): no linked skill offer found`);
-    } else if (linkedOffer.isWeaponSkill) {
+    } else if (linkedOffer.isActiveSkill) {
       errors.push(`${loc} (${t.id}): linked offer is weapon skill, expected pure skill`);
     }
   }

@@ -5,14 +5,14 @@
  * Plays a brief arc visual to communicate direction and reach.
  * Tags: Attack, Melee, Physical, AoE.
  */
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import { applyAilmentsOnHit, resolvePenetrationMap } from '../data/skillTags.js';
 
 const SLASH_DURATION = 0.25; // seconds for the visual ring to fade out
 const ARC_HALF_ANGLE = Math.PI / 5; // ~36 degrees (72-degree arc)
 
-export class MeleeStrike extends Weapon {
+export class MeleeStrike extends Skill {
   constructor() {
     super(WEAPONS.MELEE_STRIKE);
     this.tags = ['Attack', 'Melee', 'Physical', 'AoE'];

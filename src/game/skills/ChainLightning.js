@@ -13,7 +13,7 @@
  * drawn as ephemeral line flashes stored in this._flashes[].
  */
 
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import {
   buildProjectileConfig,
@@ -25,7 +25,7 @@ import {
 /** How long each chain flash line is visible (seconds). */
 const FLASH_LIFETIME = 0.12;
 
-export class ChainLightning extends Weapon {
+export class ChainLightning extends Skill {
   constructor() {
     super(WEAPONS.CHAIN_LIGHTNING);
     this.tags = ['Spell', 'Projectile', 'Thunder'];

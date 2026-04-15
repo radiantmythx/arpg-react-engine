@@ -1,5 +1,5 @@
 export const SKILL_OFFER_SCHEMA = {
-  required: ['id', 'name', 'description', 'isWeaponSkill', 'available'],
+  required: ['id', 'name', 'description', 'isActiveSkill', 'available'],
 };
 
 function isNonEmptyString(v) {
@@ -37,14 +37,14 @@ export function validateSkillOffers(skillOffers = [], pureSkillCtors = {}) {
     if (!isNonEmptyString(offer.description)) {
       errors.push(`${loc} (${offer.id}): description must be a non-empty string`);
     }
-    if (typeof offer.isWeaponSkill !== 'boolean') {
-      errors.push(`${loc} (${offer.id}): isWeaponSkill must be boolean`);
+    if (typeof offer.isActiveSkill !== 'boolean') {
+      errors.push(`${loc} (${offer.id}): isActiveSkill must be boolean`);
     }
     if (typeof offer.available !== 'function') {
       errors.push(`${loc} (${offer.id}): available must be a function`);
     }
 
-    if (offer.isWeaponSkill === true) {
+    if (offer.isActiveSkill === true) {
       if (typeof offer.create !== 'function') {
         errors.push(`${loc} (${offer.id}): weapon offer must define create()`);
       }
@@ -53,7 +53,7 @@ export function validateSkillOffers(skillOffers = [], pureSkillCtors = {}) {
       }
     }
 
-    if (offer.isWeaponSkill === false) {
+    if (offer.isActiveSkill === false) {
       if (typeof offer.createSkill !== 'function') {
         errors.push(`${loc} (${offer.id}): pure-skill offer must define createSkill()`);
       }

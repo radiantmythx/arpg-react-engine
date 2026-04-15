@@ -649,6 +649,22 @@ export default function App() {
     engine?._flushHudUpdate?.();
   }, []);
 
+  const handleDebugLevelUpSkillGem = useCallback((slotKey) => {
+    const engine = engineRef.current;
+    if (!engine || !hud.debugMode) return;
+    const result = engine.debugLevelUpSkillGem?.(slotKey);
+    if (!result?.ok) {
+      const reasonText = {
+        no_skill: 'No skill gem is equipped in that slot.',
+        already_max: 'That skill gem is already at max level.',
+        invalid_slot: 'Invalid skill slot.',
+      };
+      setVendorFeedback(reasonText[result?.reason] ?? 'Could not level up skill gem.');
+      return;
+    }
+    setVendorFeedback(`Debug: leveled ${String(slotKey).toUpperCase()} skill to ${result.level}/${result.maxLevel}.`);
+  }, [hud.debugMode]);
+
   const handleSwitchCharacterFromHub = useCallback(() => {
     const engine = engineRef.current;
     if (engine) engine.destroy();
@@ -1507,6 +1523,8 @@ export default function App() {
           onUnsocketGem={handleUnsocketGem}
           onEquipSkillGem={handleEquipSkillGem}
           onUnequipSkillGem={handleUnequipSkillGem}
+          debugMode={!!hud.debugMode}
+          onDebugLevelUpSkillGem={handleDebugLevelUpSkillGem}
         />
       )}
 

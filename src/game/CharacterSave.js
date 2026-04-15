@@ -155,8 +155,8 @@ export class CharacterSave {
       // Three active skill slots — empty to start.
       activeSkills: [null, null, null],
 
-      // Starter auto-fire weapon from the character definition.
-      autoSkills: [charDef.startingWeapon ?? 'MAGIC_BOLT'],
+      // Starter auto-fire skill from the character definition.
+      autoSkills: [charDef.startingSkill ?? charDef.startingWeapon ?? 'MAGIC_BOLT'],
 
       // ── Map progress ──────────────────────────────────────────────────────
       actsCleared: [],

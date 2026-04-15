@@ -1,4 +1,4 @@
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import {
   buildProjectileConfig,
@@ -7,7 +7,7 @@ import {
   scaleProjectileMotion,
 } from '../projectileSupport.js';
 
-export class MagicWand extends Weapon {
+export class MagicWand extends Skill {
   constructor() {
     super(WEAPONS.MAGIC_WAND);
     this.tags = ['Spell', 'Projectile', 'Thunder'];

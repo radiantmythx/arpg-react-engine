@@ -1,12 +1,31 @@
 import { makeSupportInstance } from './data/supports.js';
 import { openSupportSlotsForSkill } from './supportSockets.js';
 
+function serializeSupportGemForSave(sup) {
+  if (!sup) return null;
+  if (sup._itemDef) return { ...sup._itemDef, gemId: sup._itemDef.gemId ?? sup.id };
+  return {
+    type: 'support_gem',
+    slot: 'support_gem',
+    rarity: 'magic',
+    gridW: 1,
+    gridH: 1,
+    gemId: sup.id,
+    id: sup.id,
+    name: `${sup.name ?? 'Support'} Support`,
+    icon: sup.icon ?? '◆',
+    level: 1,
+    maxLevel: 20,
+    stackable: false,
+  };
+}
+
 /**
  * ActiveSkillSystem — Manages 3 active skill slots (Q / E / R).
  *
  * Each slot holds one of:
- *   • A Weapon instance with `isActive = true` (weapon-based active skill).
- *     Cooldown is tracked by the weapon's own `_timer` / `cooldown` fields.
+ *   • A runtime Skill instance with `isActive = true`.
+ *     Cooldown is tracked by the skill's own `_timer` / `cooldown` fields.
  *   • A SkillDef instance with `_isPureSkill = true`.
  *     Cooldown is tracked by the skill's own `_timer` field, advanced here.
  *   • null (empty slot).
@@ -53,9 +72,14 @@ export class ActiveSkillSystem {
 
   // ── State queries ────────────────────────────────────────────────────────
 
-  /** True if a weapon with the given id is equipped in any slot. */
-  hasWeaponSkill(id) {
+  /** True if a runtime active skill with the given id is equipped in any slot. */
+  hasActiveSkill(id) {
     return this.slots.some((s) => s && !s._isPureSkill && s.id === id);
+  }
+
+  /** Backward compatibility alias for older callers. */
+  hasWeaponSkill(id) {
+    return this.hasActiveSkill(id);
   }
 
   /** True if a pure skill with the given id is equipped in any slot. */
@@ -69,7 +93,7 @@ export class ActiveSkillSystem {
    * Advance cooldown timers for pure-skill slots, tick cast animation timers,
    * and call the optional update() hook on skills with timed internal state
    * (Earthquake aftershock, Blade Flurry channel release, Vortex tick).
-   * Weapon-slot timers are advanced by GameEngine's main weapon loop.
+  * Runtime-skill slot timers are advanced by GameEngine's main skill loop.
    * @param {number} dt
    * @param {object} [player]
    * @param {object} [entities]
@@ -163,7 +187,7 @@ export class ActiveSkillSystem {
       return true;
     }
 
-    // Weapon-based active skill: uses the weapon's own _timer
+    // Runtime active skill: uses the skill's own _timer
     if (skill.isActive) {
       if (skill._timer < skill.cooldown) return false;
       if (!player.spendMana(manaCost)) return false;
@@ -301,15 +325,7 @@ export class ActiveSkillSystem {
           id:    s.id,
           level: s.level  ?? 1,
           xp:    s._xp    ?? 0,
-          supportSlots: (s.supportSlots ?? []).map((sup) => {
-            if (!sup) return null;
-            // Store just enough to reconstruct: id + any override fields.
-            return {
-              id:   sup.id,
-              name: sup.name,
-              icon: sup.icon ?? '◆',
-            };
-          }),
+          supportSlots: (s.supportSlots ?? []).map(serializeSupportGemForSave),
         };
       }
       // weapon-based active skill
@@ -318,14 +334,7 @@ export class ActiveSkillSystem {
         id:   s.id,
         level: s.level ?? 1,
         xp: s._xp ?? 0,
-        supportSlots: (s.supportSlots ?? []).map((sup) => {
-          if (!sup) return null;
-          return {
-            id:   sup.id,
-            name: sup.name,
-            icon: sup.icon ?? '◆',
-          };
-        }),
+        supportSlots: (s.supportSlots ?? []).map(serializeSupportGemForSave),
       };
     });
   }

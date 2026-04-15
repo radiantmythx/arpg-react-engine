@@ -9,11 +9,11 @@
  * bypassing the EntityManager — no extra entity types needed.
  */
 
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import { resolvePenetrationMap } from '../data/skillTags.js';
 
-export class SacredRite extends Weapon {
+export class SacredRite extends Skill {
   constructor() {
     super(WEAPONS.SACRED_RITE);
     this.tags = ['Spell', 'AoE', 'Blaze', 'Duration'];

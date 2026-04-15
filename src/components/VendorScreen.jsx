@@ -33,12 +33,12 @@ function deriveSkillTags(row) {
   const text = `${row?.name ?? ''} ${row?.description ?? ''}`.toLowerCase();
   const tags = new Set();
 
-  const isWeaponSkill = row?.icon === '✦';
-  if (isWeaponSkill || /weapon|melee|blade|cleave|strike|spear|slam/.test(text)) {
+  const isActiveSkill = row?.icon === '✦';
+  if (isActiveSkill || /weapon|melee|blade|cleave|strike|spear|slam/.test(text)) {
     tags.add('attack');
   }
 
-  if (!isWeaponSkill || /spell|arcane|fire|frost|lightning|chaos|vortex|nova|gravity/.test(text)) {
+  if (!isActiveSkill || /spell|arcane|fire|frost|lightning|chaos|vortex|nova|gravity/.test(text)) {
     tags.add('spell');
   }
 

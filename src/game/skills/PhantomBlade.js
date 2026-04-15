@@ -1,4 +1,4 @@
-import { Weapon } from './Weapon.js';
+import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
 import {
   buildProjectileConfig,
@@ -7,7 +7,7 @@ import {
   scaleProjectileMotion,
 } from '../projectileSupport.js';
 
-export class PhantomBlade extends Weapon {
+export class PhantomBlade extends Skill {
   constructor() {
     super(WEAPONS.PHANTOM_BLADE);
     this.tags = ['Attack', 'Projectile', 'Physical'];

@@ -388,6 +388,7 @@ export class GameEngine {
 
     this._normalizePlayerVitals(savedHealth, { revive: true });
     this._normalizePlayerMana(savedMana);
+    this._refillPlayerResourcesOnTransition();
     this.player.resetManaFlowCounters?.();
     this._resetTrainingTelemetry();
     this._resetAreaLevelTelemetry();
@@ -429,7 +430,7 @@ export class GameEngine {
     let primary = this.player?.primarySkill ?? null;
     if (!primary || primary.id !== savedPrimary.id) {
       const offer = getSkillOfferById(savedPrimary.id);
-      if (!offer?.isWeaponSkill || typeof offer.create !== 'function') return;
+      if (!offer?.isActiveSkill || typeof offer.create !== 'function') return;
       primary = offer.create();
       primary._skillGemOfferId = offer.id;
       this.player.primarySkill = primary;
@@ -458,7 +459,7 @@ export class GameEngine {
 
       if (saved.type === 'weapon') {
         const offer = getSkillOfferById(saved.id);
-        if (!offer?.isWeaponSkill || typeof offer.create !== 'function') continue;
+        if (!offer?.isActiveSkill || typeof offer.create !== 'function') continue;
 
         let weapon = this.player.autoSkills.find((w) => w.id === saved.id);
         if (!weapon) {
@@ -551,6 +552,7 @@ export class GameEngine {
     this.player.y = this.mapLayout?.startWorld?.y ?? 0;
     this.player.health = Math.max(this.player.health, 1);
     this._applyMapPlayerModEffects();
+    this._refillPlayerResourcesOnTransition();
     this.entities.add(this.player);
 
     // C5: all non-scripted enemies are placed on map load.
@@ -1005,10 +1007,22 @@ export class GameEngine {
         xp: player.primarySkill?._xp ?? 0,
         supportSlots: (player.primarySkill?.supportSlots ?? []).map((sup) => {
           if (!sup) return null;
+          if (sup._itemDef) {
+            return { ...sup._itemDef, gemId: sup._itemDef.gemId ?? sup.id };
+          }
           return {
+            type: 'support_gem',
+            slot: 'support_gem',
+            rarity: 'magic',
+            gridW: 1,
+            gridH: 1,
+            gemId: sup.id,
             id: sup.id,
-            name: sup.name,
+            name: `${sup.name ?? 'Support'} Support`,
             icon: sup.icon ?? '◆',
+            level: 1,
+            maxLevel: 20,
+            stackable: false,
           };
         }),
       },
@@ -1037,6 +1051,21 @@ export class GameEngine {
     this.player.maxMana = Math.max(0, this.player.maxMana ?? 0);
     const targetMana = Number.isFinite(preferredMana) ? preferredMana : this.player.mana;
     this.player.mana = Math.max(0, Math.min(targetMana ?? this.player.maxMana, this.player.maxMana));
+  }
+
+  _refillPlayerResourcesOnTransition() {
+    if (!this.player) return;
+    this.player.health = this.player.maxHealth;
+    this.player.mana = this.player.maxMana;
+    this.player.energyShield = this.player.maxEnergyShield;
+    for (const slot of this._potionBelt ?? []) {
+      if (!slot?.item) continue;
+      const runtime = this._resolvePotionRuntime(slot);
+      if (!runtime) continue;
+      slot.charges = runtime.maxCharges;
+      slot.activeRemaining = 0;
+      slot.activeDuration = runtime.duration;
+    }
   }
 
   _spawnHubTrainingDummy() {
@@ -3305,6 +3334,31 @@ export class GameEngine {
     return { ok: true, gemItem };
   }
 
+  debugLevelUpSkillGem(slotKey) {
+    if (!this.debugMode) return { ok: false, reason: 'debug_disabled' };
+    if (!['primary', 'q', 'e', 'r'].includes(slotKey)) return { ok: false, reason: 'invalid_slot' };
+
+    const idx = slotKey === 'primary' ? -1 : this._slotIndexFromSkillSlotKey(slotKey);
+    const runtime = slotKey === 'primary'
+      ? (this.player?.primarySkill ?? null)
+      : (idx >= 0 ? (this.activeSkillSystem?.slots?.[idx] ?? null) : null);
+    if (!runtime) return { ok: false, reason: 'no_skill' };
+
+    const currentLevel = Math.max(1, runtime.level ?? 1);
+    const maxLevel = Math.max(1, runtime.maxLevel ?? 20);
+    if (currentLevel >= maxLevel) return { ok: false, reason: 'already_max' };
+
+    this._setSkillProgress(runtime, currentLevel + 1, 0);
+    if (runtime._skillGemItemDef) {
+      runtime._skillGemItemDef.skillLevel = runtime.level ?? (currentLevel + 1);
+      runtime._skillGemItemDef.skillXp = runtime._xp ?? 0;
+    }
+
+    this._flushHudUpdate();
+    this.checkpoint();
+    return { ok: true, level: runtime.level ?? (currentLevel + 1), maxLevel };
+  }
+
   equipSkillGemToSlot(slotKey, gemSource) {
     if (!this.player?.inventory) return { ok: false, reason: 'no_player' };
     if (!['primary', 'q', 'e', 'r'].includes(slotKey)) return { ok: false, reason: 'invalid_slot' };
@@ -3322,7 +3376,7 @@ export class GameEngine {
       return { ok: false, reason: 'offer_not_found' };
     }
 
-    if (slotKey === 'primary' && !offer.isWeaponSkill) {
+    if (slotKey === 'primary' && !offer.isActiveSkill) {
       this._returnGemInput(gemItem, fromInventory);
       return { ok: false, reason: 'primary_requires_weapon' };
     }
@@ -3346,7 +3400,7 @@ export class GameEngine {
       replacedGemItem = extraction.gemItem ?? null;
     }
 
-    const runtime = offer.isWeaponSkill ? offer.create?.() : offer.createSkill?.();
+    const runtime = offer.isActiveSkill ? offer.create?.() : offer.createSkill?.();
     if (!runtime) {
       this._returnGemInput(gemItem, fromInventory);
       if (replacedGemItem) this.player.inventory.autoPlace(replacedGemItem);
@@ -3359,12 +3413,12 @@ export class GameEngine {
 
     if (slotKey === 'primary') {
       this.player.primarySkill = runtime;
-      if (offer.isWeaponSkill) {
+      if (offer.isActiveSkill) {
         this.player.autoSkills.push(runtime);
       }
     } else {
       const idx = this._slotIndexFromSkillSlotKey(slotKey);
-      if (offer.isWeaponSkill) {
+      if (offer.isActiveSkill) {
         this.player.autoSkills.push(runtime);
       } else {
         this.player.pureSkills.push(runtime);
@@ -3593,9 +3647,9 @@ export class GameEngine {
       tab:   'skill',
       kind:  'skill_gem',
       name:  `${offer.name} Gem`,
-      icon:  offer.isWeaponSkill ? '✦' : '◇',
+      icon:  offer.isActiveSkill ? '✦' : '◇',
       description: offer.description,
-      price: offer.isWeaponSkill ? 8 : 6,
+      price: offer.isActiveSkill ? 8 : 6,
       offerId: offer.id,
     }));
 
@@ -3776,7 +3830,7 @@ export class GameEngine {
       this._removeEquippedSkillAtSlot(targetSlot);
     }
 
-    if (choice.isWeaponSkill) {
+    if (choice.isActiveSkill) {
       // Weapon-backed active skill: add to autoSkills[] if not already there.
       if (!player.autoSkills.some((w) => w.id === choice.id)) {
         player.autoSkills.push(choice.create());
