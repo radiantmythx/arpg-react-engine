@@ -5,6 +5,17 @@ import { BoneSpear } from '../../skills/BoneSpear.js';
 import { ChainLightning } from '../../skills/ChainLightning.js';
 import { VoidShardSwarm } from '../../skills/VoidShardSwarm.js';
 import {
+  PiercingShot,
+  SplitShot,
+  FrostVolley,
+  ThunderVolley,
+  EmberArrow,
+  GaleShot,
+  SeekerArrow,
+  Barrage,
+  StarfallArrow,
+} from '../../skills/BowSkillPack.js';
+import {
   ChaosBlink,
   FrostNova,
   GravityWell,
@@ -22,6 +33,78 @@ import {
 } from './skillClasses.js';
 
 export const SKILL_OFFER_POOL = [
+  {
+    id: 'PIERCING_SHOT',
+    name: 'Piercing Shot',
+    description: 'Fires a piercing bow shot that cuts through enemies.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'PIERCING_SHOT'),
+    create: () => new PiercingShot(),
+  },
+  {
+    id: 'SPLIT_SHOT',
+    name: 'Split Shot',
+    description: 'Fires a fan of arrows for broad coverage.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'SPLIT_SHOT'),
+    create: () => new SplitShot(),
+  },
+  {
+    id: 'FROST_VOLLEY',
+    name: 'Frost Volley',
+    description: 'Rapid frost-tipped bow shots that chill enemies.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'FROST_VOLLEY'),
+    create: () => new FrostVolley(),
+  },
+  {
+    id: 'THUNDER_VOLLEY',
+    name: 'Thunder Volley',
+    description: 'Electrified bow arrows strike in a tight burst.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'THUNDER_VOLLEY'),
+    create: () => new ThunderVolley(),
+  },
+  {
+    id: 'EMBER_ARROW',
+    name: 'Ember Arrow',
+    description: 'A blazing bow arrow with light blaze damage.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'EMBER_ARROW'),
+    create: () => new EmberArrow(),
+  },
+  {
+    id: 'GALE_SHOT',
+    name: 'Gale Shot',
+    description: 'A high-speed bow shot with rapid cadence.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'GALE_SHOT'),
+    create: () => new GaleShot(),
+  },
+  {
+    id: 'SEEKER_ARROW',
+    name: 'Seeker Arrow',
+    description: 'A focused bow shot tuned for heavy single-target hits.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'SEEKER_ARROW'),
+    create: () => new SeekerArrow(),
+  },
+  {
+    id: 'BARRAGE',
+    name: 'Barrage',
+    description: 'Rapid narrow spread of bow arrows.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'BARRAGE'),
+    create: () => new Barrage(),
+  },
+  {
+    id: 'STARFALL_ARROW',
+    name: 'Starfall Arrow',
+    description: 'Sacred bow arrow blending physical and holy damage.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'STARFALL_ARROW'),
+    create: () => new StarfallArrow(),
+  },
   {
     id: 'PHANTOM_BLADE',
     name: 'Phantom Blade',

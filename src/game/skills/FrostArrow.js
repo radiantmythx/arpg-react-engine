@@ -1,8 +1,8 @@
 /**
- * SwiftArrow — Rogue's default auto-fire starter skill.
+ * FrostArrow — Rogue starter auto-fire skill.
  *
- * Looses a fast arrow toward the cursor-facing direction.
- * Tags: Attack, Projectile, Physical.
+ * Fires a bow projectile that deals light Frost damage.
+ * Tags: Attack, Projectile, Bow, Frost.
  */
 import { Skill } from './Skill.js';
 import { WEAPONS } from '../config.js';
@@ -14,12 +14,11 @@ import {
   scaleProjectileMotion,
 } from '../projectileSupport.js';
 
-export class SwiftArrow extends Skill {
+export class FrostArrow extends Skill {
   constructor() {
-    super(WEAPONS.SWIFT_ARROW);
-    this.tags = ['Attack', 'Projectile', 'Physical', 'Bow'];
-    // isActive = false (default) — fires automatically on cooldown.
-    this._timer = this.cooldown; // start ready
+    super(WEAPONS.FROST_ARROW);
+    this.tags = ['Attack', 'Projectile', 'Bow', 'Frost'];
+    this._timer = this.cooldown;
   }
 
   fire(player, entities, engine) {
@@ -50,10 +49,10 @@ export class SwiftArrow extends Skill {
 
   _applyLevelStats() {
     const table = {
-      2: { damage: 15, cooldown: 0.80 },
-      3: { damage: 22, cooldown: 0.72 },
-      4: { damage: 30, cooldown: 0.62 },
-      5: { damage: 40, cooldown: 0.55, piercing: true },
+      2: { damage: 13, cooldown: 0.88 },
+      3: { damage: 18, cooldown: 0.80 },
+      4: { damage: 24, cooldown: 0.72 },
+      5: { damage: 31, cooldown: 0.65, piercing: true },
     };
     const s = table[this.level];
     if (!s) return;

@@ -1,5 +1,6 @@
 import { ELEMENT_TYPES, makeDamageRange, sumAverageDamageMap } from '../damageUtils.js';
 import { MAX_SUPPORT_SOCKETS, openSupportSlotsForLevel } from '../supportSockets.js';
+import { resolveScopedSkillBonuses } from '../data/modifierEngine.js';
 
 /**
  * Skill — base class for all auto-fire and active runtime skills.
@@ -33,6 +34,9 @@ export class Skill {
     this.castTime = config.castTime ?? 0;
     /** Resource cost used by active skills. */
     this.manaCost = config.manaCost ?? 0;
+    /** Optional equip requirements for activation gating. */
+    this.requiresWeaponType = Array.isArray(config.requiresWeaponType) ? [...config.requiresWeaponType] : [];
+    this.requirementHint = config.requirementHint ?? null;
     /**
      * Support gem sockets. Open sockets scale by gem level:
      * level 1 = 1, 4 = 2, 7 = 3, 10 = 4, 13+ = 5.
@@ -77,10 +81,12 @@ export class Skill {
 
     // Player tag-based bonuses — domain (Spell/Attack/AoE) + per-element flat/increased/more
     if (player) {
+      const scoped = resolveScopedSkillBonuses(player, this);
       let domainInc = 0;
       if (this.tags.includes('Spell')  && (player.spellDamage  ?? 0) > 0) domainInc += player.spellDamage;
       if (this.tags.includes('Attack') && (player.attackDamage ?? 0) > 0) domainInc += player.attackDamage;
       if (this.tags.includes('AoE')    && (player.aoeDamage    ?? 0) > 0) domainInc += player.aoeDamage;
+      domainInc += scoped.damageInc;
 
       // Flat passive-tree AoE bonus applies to all radius-like fields used by skills.
       if ((player.aoeSizeFlat ?? 0) !== 0) {

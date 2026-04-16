@@ -19,6 +19,7 @@ import { ELEMENT_TYPES, makeDamageRange, scaleDamageMap, sumAverageDamageMap } f
 import { SKILL_TUNING } from '../content/tuning/index.js';
 import { MAX_SUPPORT_SOCKETS, openSupportSlotsForLevel } from '../supportSockets.js';
 import { SCALING_CONFIG } from '../config/scalingConfig.js';
+import { resolveScopedSkillBonuses } from './modifierEngine.js';
 
 function tickVisuals(list, dt) {
   if (!Array.isArray(list) || list.length === 0) return;
@@ -156,10 +157,12 @@ class SkillDef {
 
     // 3. Player tag-based bonuses — domain (Spell/Attack/AoE) + per-element flat/increased/more
     if (stats.damage != null && player) {
+      const scoped = resolveScopedSkillBonuses(player, this);
       let domainInc = 0;
       if (this.tags.includes('Spell')  && (player.spellDamage  ?? 0) > 0) domainInc += player.spellDamage;
       if (this.tags.includes('Attack') && (player.attackDamage ?? 0) > 0) domainInc += player.attackDamage;
       if (this.tags.includes('AoE')    && (player.aoeDamage    ?? 0) > 0) domainInc += player.aoeDamage;
+      domainInc += scoped.damageInc;
 
       const activeElems = ELEMENT_TYPES.filter((e) => this.tags.includes(e));
       const typedElems = activeElems.length > 0 ? activeElems : ['Physical'];

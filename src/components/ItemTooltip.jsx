@@ -11,6 +11,7 @@
  */
 
 import { highlightElementalText } from './ElementalText.jsx';
+import { getWeaponTypeLabel } from '../game/data/weaponTypes.js';
 
 const RARITY_COLORS = {
   normal: '#9e9e9e',
@@ -101,18 +102,44 @@ function fmtStat(key, val) {
   }
 }
 
+function formatAffixLabel(affix, fallbackKind = null) {
+  if (!affix) return '';
+  const parts = [];
+  const affixKind = affix.kind ?? fallbackKind;
+  const affixType = affix.type ? `${affix.type[0].toUpperCase()}${affix.type.slice(1)}` : null;
+
+  if (affixKind === 'implicit') {
+    parts.push('Implicit');
+  } else if (affixType) {
+    parts.push(affixType);
+  }
+
+  if (affix.tier != null) {
+    parts.push(`T${affix.tier}`);
+  }
+
+  return parts.length > 0 ? `${affix.label} (${parts.join(' · ')})` : affix.label;
+}
+
 export function ItemTooltip({ itemData, mousePos, hint }) {
   if (!itemData || !mousePos) return null;
 
   const rarity      = itemData.rarity ?? 'normal';
   const rarityColor = RARITY_COLORS[rarity] ?? '#9e9e9e';
   const rarityLabel = RARITY_LABELS[rarity] ?? rarity;
-  const affixes     = itemData.affixes ?? [];
+  const explicitAffixes = Array.isArray(itemData.explicitAffixes)
+    ? itemData.explicitAffixes
+    : (itemData.affixes ?? []).filter((a) => (a?.kind ?? 'explicit') !== 'implicit');
+  const implicitAffixes = Array.isArray(itemData.implicitAffixes)
+    ? itemData.implicitAffixes
+    : (itemData.affixes ?? []).filter((a) => (a?.kind ?? 'explicit') === 'implicit');
   const baseStats   = itemData.baseStats ?? {};
   const statLines   = Object.entries(baseStats).map(([k, v]) => fmtStat(k, v));
   const description = itemData.description ?? null;
   const flavorText  = itemData.flavorText ?? null;
   const defType     = itemData.defenseType ?? null;
+  const weaponTypeLabel = itemData.weaponType ? getWeaponTypeLabel(itemData.weaponType) : null;
+  const handednessLabel = itemData.handedness === 'two_hand' ? 'Two-Handed' : 'One-Handed';
 
   const TOOLTIP_W = 290;
   // Anchor right of cursor; flip left if near the right edge
@@ -129,6 +156,11 @@ export function ItemTooltip({ itemData, mousePos, hint }) {
       {/* ── Header row: slot type + defense type ────────────────── */}
       <div className="itt-header">
         <span className="itt-slot">{SLOT_LABELS[itemData.slot] ?? itemData.slot}</span>
+        {weaponTypeLabel && (
+          <span className="itt-dt" style={{ color: '#f5c16c' }}>
+            {`${weaponTypeLabel} · ${handednessLabel}`}
+          </span>
+        )}
         {defType && (
           <span className="itt-dt" style={{ color: DEFENSE_TYPE_COLORS[defType] ?? '#aaa' }}>
             {DEFENSE_TYPE_LABELS[defType] ?? defType}
@@ -164,13 +196,27 @@ export function ItemTooltip({ itemData, mousePos, hint }) {
         </>
       )}
 
-      {/* ── Procedural affixes ──────────────────────────────────── */}
-      {affixes.length > 0 && (
+      {/* ── Implicit affixes ─────────────────────────────────────── */}
+      {implicitAffixes.length > 0 && (
         <>
           <div className="itt-divider" />
           <div className="itt-section">
-            {affixes.map((a) => (
-              <div key={a.id} className={`itt-stat itt-${a.type}`}>{highlightElementalText(a.label)}</div>
+            <div className="itt-section-label">Implicit</div>
+            {implicitAffixes.map((a) => (
+              <div key={a.id} className="itt-stat itt-prefix">{highlightElementalText(formatAffixLabel(a, 'implicit'))}</div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Explicit affixes (prefix/suffix) ────────────────────── */}
+      {explicitAffixes.length > 0 && (
+        <>
+          <div className="itt-divider" />
+          <div className="itt-section">
+            <div className="itt-section-label">Explicit Affixes</div>
+            {explicitAffixes.map((a) => (
+              <div key={a.id} className={`itt-stat itt-${a.type}`}>{highlightElementalText(formatAffixLabel(a))}</div>
             ))}
           </div>
         </>

@@ -17,6 +17,7 @@ export const ITEM_DEFS = [
     name: 'Voidforge',
     description: '+30% weapon damage. The void hungers.',
     slot: 'weapon',
+    weaponType: 'sword',
     color: '#8e44ad',
     basePrice: 20,
     gridW: 1, gridH: 3,
@@ -27,16 +28,29 @@ export const ITEM_DEFS = [
     name: 'Choir of the Storm',
     description: '–20% weapon cooldown. Lightning answers the call.',
     slot: 'weapon',
+    weaponType: 'wand',
     color: '#00bcd4',
     basePrice: 18,
     gridW: 1, gridH: 3,
     stats: { cooldownMult: 0.80 },
   },
   {
+    id: 'stormcaller_staff',
+    name: 'Stormcaller Staff',
+    description: '+22% weapon damage and +12 max mana. A conduit for controlled ruin.',
+    slot: 'weapon',
+    weaponType: 'staff',
+    color: '#6aa7ff',
+    basePrice: 21,
+    gridW: 2, gridH: 4,
+    stats: { damageMult: 1.22, maxManaFlat: 12 },
+  },
+  {
     id: 'replica_serpentscale',
     name: 'Replica Serpentscale',
     description: '+20% damage and –10% cooldown. An imperfect copy, still deadly.',
     slot: 'weapon',
+    weaponType: 'axe',
     color: '#27ae60',
     basePrice: 19,
     gridW: 1, gridH: 3,
@@ -177,6 +191,7 @@ export const ITEM_DEFS = [
     name: 'Aegis Aurora',
     description: '–15% weapon cooldown. A shield that strikes back.',
     slot: 'offhand',
+    weaponType: 'shield',
     color: '#74b9ff',
     basePrice: 14,
     gridW: 2, gridH: 2,
@@ -187,6 +202,7 @@ export const ITEM_DEFS = [
     name: 'Bloodseeker',
     description: '+15% weapon damage and +20 movement speed. The hunt never ends.',
     slot: 'offhand',
+    weaponType: 'axe',
     color: '#d63031',
     basePrice: 15,
     gridW: 2, gridH: 2,
@@ -197,6 +213,7 @@ export const ITEM_DEFS = [
     name: "Lioneye's Glare",
     description: '+20% weapon damage and –10% cooldown. Precision distilled.',
     slot: 'offhand',
+    weaponType: 'shield',
     color: '#ffeaa7',
     basePrice: 15,
     gridW: 2, gridH: 2,
@@ -210,6 +227,7 @@ export const ITEM_DEFS = [
     name: 'Void Edge',
     description: '+35% weapon damage. The sword remembers every life it has taken.',
     slot: 'weapon',
+    weaponType: 'sword',
     color: '#6c5ce7',
     basePrice: 20,
     gridW: 1, gridH: 3,
@@ -220,6 +238,7 @@ export const ITEM_DEFS = [
     name: 'Herald of Thunder',
     description: '−25% weapon cooldown. Call down the storm on your command.',
     slot: 'weapon',
+    weaponType: 'bow',
     color: '#f9ca24',
     basePrice: 19,
     gridW: 1, gridH: 3,
@@ -230,6 +249,7 @@ export const ITEM_DEFS = [
     name: 'Bone Reliquary',
     description: '+25% weapon damage and +20 max HP. Carved from what remains.',
     slot: 'weapon',
+    weaponType: 'lance',
     color: '#dfe6e9',
     basePrice: 19,
     gridW: 1, gridH: 3,
@@ -370,6 +390,7 @@ export const ITEM_DEFS = [
     name: 'Abyssal Focus',
     description: '−20% weapon cooldown. Channel the void directly through your offhand.',
     slot: 'offhand',
+    weaponType: 'tome',
     color: '#6c5ce7',
     basePrice: 14,
     gridW: 2, gridH: 2,
@@ -380,6 +401,7 @@ export const ITEM_DEFS = [
     name: "Warlord's Buckler",
     description: '+20% weapon damage and +25 max HP. War never favoured the timid.',
     slot: 'offhand',
+    weaponType: 'shield',
     color: '#d63031',
     basePrice: 14,
     gridW: 2, gridH: 2,
@@ -390,6 +412,7 @@ export const ITEM_DEFS = [
     name: 'Siphon Talisman',
     description: '+15% weapon damage and −12% cooldown. Drain the world of its power.',
     slot: 'offhand',
+    weaponType: 'tome',
     color: '#00b894',
     basePrice: 14,
     gridW: 2, gridH: 2,
@@ -806,6 +829,44 @@ export const ITEM_DEFS = [
     stats: { armorFlat: 10, evasionFlat: 14, energyShieldFlat: 8 },
   },
 ];
+
+const _LEGACY_WEAPON_TYPE_BY_ID = {
+  voidforge: 'sword',
+  choir_of_the_storm: 'wand',
+  replica_serpentscale: 'axe',
+  void_edge: 'sword',
+  herald_of_thunder: 'bow',
+  bone_reliquary: 'lance',
+  aegis_aurora: 'shield',
+  bloodseeker: 'axe',
+  lioneyes_glare: 'shield',
+  abyssal_focus: 'tome',
+  warlord_buckler: 'shield',
+  siphon_talisman: 'tome',
+};
+
+const _WEAPON_ARCHETYPE_DIMS = {
+  sword:  { gridW: 1, gridH: 3 },
+  axe:    { gridW: 1, gridH: 3 },
+  bow:    { gridW: 2, gridH: 3 },
+  lance:  { gridW: 1, gridH: 4 },
+  wand:   { gridW: 1, gridH: 2 },
+  staff:  { gridW: 2, gridH: 4 },
+  tome:   { gridW: 2, gridH: 2 },
+  shield: { gridW: 2, gridH: 2 },
+};
+
+for (const item of ITEM_DEFS) {
+  if (item.slot !== 'weapon' && item.slot !== 'offhand' && item.slot !== 'mainhand') continue;
+  const weaponType = item.weaponType ?? _LEGACY_WEAPON_TYPE_BY_ID[item.id] ?? (item.slot === 'offhand' ? 'shield' : 'sword');
+  const dims = _WEAPON_ARCHETYPE_DIMS[weaponType];
+  item.weaponType = weaponType;
+  item.handedness = weaponType === 'bow' || weaponType === 'lance' ? 'two_hand' : 'one_hand';
+  if (dims) {
+    item.gridW = dims.gridW;
+    item.gridH = dims.gridH;
+  }
+}
 
 /** Map of id → config for fast lookup. */
 export const ITEMS_BY_ID = Object.fromEntries(ITEM_DEFS.map((i) => [i.id, i]));

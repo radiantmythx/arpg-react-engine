@@ -285,6 +285,14 @@ body {
   padding: 0.3rem 0;
 }
 
+.vendor-filter-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #89a1bc;
+  padding-top: 0.2rem;
+}
+
 .vendor-skill-tag {
   border: 1px solid rgba(173, 189, 208, 0.26);
   border-radius: 999px;
@@ -362,6 +370,12 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.vendor-item-metrics {
+  color: #bccedf;
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .vendor-item-buy {
@@ -803,6 +817,11 @@ body {
 .mobile-skill-btn--oom {
   border-color: rgba(239, 68, 68, 0.85);
   box-shadow: 0 0 6px rgba(239, 68, 68, 0.3);
+}
+
+.mobile-skill-btn--blocked {
+  border-color: rgba(245, 158, 11, 0.85);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.32);
 }
 
 .mobile-skill-btn--cooling {
@@ -1604,6 +1623,14 @@ body {
   padding: 0.5rem 1.2rem;
 }
 
+.itt-section-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(236, 211, 158, 0.62);
+  margin-bottom: 0.18rem;
+}
+
 /* Stat line — D2 gold-white */
 .itt-stat {
   font-size: 0.9rem;
@@ -2149,6 +2176,68 @@ body {
   letter-spacing: 0.3px;
   text-align: center;
   margin: 0;
+}
+
+.inv-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.inv-filter-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(193, 209, 241, 0.62);
+}
+
+.inv-filter-chip {
+  border: 1px solid rgba(173, 189, 208, 0.26);
+  border-radius: 999px;
+  background: rgba(16, 23, 34, 0.72);
+  color: #b7c8da;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.28rem 0.62rem;
+  cursor: pointer;
+}
+
+.inv-filter-chip--active {
+  color: #eff9ff;
+  border-color: rgba(141, 191, 255, 0.62);
+  background: rgba(29, 53, 82, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(141, 191, 255, 0.2);
+}
+
+.inv-compare-panel {
+  margin-top: 0.55rem;
+  border: 1px solid rgba(141, 191, 255, 0.2);
+  border-radius: 9px;
+  background: rgba(10, 16, 28, 0.82);
+  padding: 0.55rem 0.68rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.inv-compare-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #dbe9fb;
+}
+
+.inv-compare-metrics {
+  font-size: 0.72rem;
+  color: #9eb7cc;
+  line-height: 1.4;
+}
+
+.inv-compare-metrics--delta {
+  color: #c7daef;
 }
 
 .inv-cell,
@@ -3813,6 +3902,32 @@ body {
   font-weight: 700;
 }
 
+.hud-tree-hint--ready {
+  color: #ffe7a5;
+  text-shadow: 0 0 8px rgba(245, 193, 108, 0.6);
+  animation: hudTreeHintPulse 1.1s ease-in-out infinite;
+}
+
+.hud-tree-hint--ready kbd {
+  border-color: rgba(245, 193, 108, 0.9);
+  box-shadow: 0 0 10px rgba(245, 193, 108, 0.45);
+}
+
+@keyframes hudTreeHintPulse {
+  0% {
+    transform: translateY(0);
+    opacity: 0.78;
+  }
+  50% {
+    transform: translateY(-1px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0.78;
+  }
+}
+
 .skill-slot {
   display: flex;
   flex-direction: column;
@@ -3838,6 +3953,28 @@ body {
 .skill-slot--oom {
   border-color: rgba(239, 68, 68, 0.9);
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+}
+
+.skill-slot--blocked {
+  border-color: rgba(245, 158, 11, 0.9);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+}
+
+.skill-requirement-flag {
+  margin-top: 1px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #f5c16c;
+}
+
+.hud-skill-tooltip__line--blocked {
+  color: #f5c16c;
+  font-weight: 700;
+}
+
+.hud-skill-tooltip__line--hint {
+  color: rgba(245, 193, 108, 0.9);
 }
 
 .hud--mobile .hud-bottom {

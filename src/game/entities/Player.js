@@ -9,9 +9,16 @@ import { VoltaicArc }     from '../skills/VoltaicArc.js';
 import { MagicBolt }      from '../skills/MagicBolt.js';
 import { SwiftArrow }     from '../skills/SwiftArrow.js';
 import { MeleeStrike }    from '../skills/MeleeStrike.js';
+import { FrostArrow }     from '../skills/FrostArrow.js';
+import { FireStrike }     from '../skills/FireStrike.js';
 import { PassiveItem } from '../PassiveItem.js';
 import { InventoryGrid } from '../InventoryGrid.js';
 import { applyStats, TREE_NODE_MAP } from '../data/passiveTree.js';
+import {
+  canEquipItemInSlot,
+  normalizeEquipSlotAlias,
+  normalizeWeaponItem,
+} from '../data/weaponTypes.js';
 
 /** Maps runtime skill ids to skill constructors. */
 const AUTO_SKILL_REGISTRY = {
@@ -19,6 +26,8 @@ const AUTO_SKILL_REGISTRY = {
   MAGIC_BOLT:      () => new MagicBolt(),
   SWIFT_ARROW:     () => new SwiftArrow(),
   MELEE_STRIKE:    () => new MeleeStrike(),
+  FROST_ARROW:     () => new FrostArrow(),
+  FIRE_STRIKE:     () => new FireStrike(),
   // Original active runtime skills (also available via skill offer)
   ARCANE_LANCE:    () => new ArcaneLance(),
   PHANTOM_BLADE:   () => new PhantomBlade(),
@@ -102,6 +111,20 @@ export class Player extends Entity {
     this.attackDamage        = 0;
     /** Fractional "increased" bonus applied to AoE-tagged skill damage. */
     this.aoeDamage           = 0;
+    /** Phase 5 scoped bonuses applied conditionally by tags/weapon requirements. */
+    this.increasedDamageWithSword = 0;
+    this.increasedDamageWithAxe = 0;
+    this.increasedDamageWithBow = 0;
+    this.increasedDamageWithLance = 0;
+    this.increasedDamageWithWand = 0;
+    this.increasedDamageWithTome = 0;
+    this.increasedDamageWithAttackSkills = 0;
+    this.increasedDamageWithSpellSkills = 0;
+    this.increasedDamageWithBowSkills = 0;
+    this.increasedAttackSpeedWithBow = 0;
+    this.increasedAttackSpeedWithWand = 0;
+    this.increasedAttackSpeedWithAttackSkills = 0;
+    this.increasedCastSpeedWithSpellSkills = 0;
     /** Speed multiplier for Spell castTimes (Phase 12.3). 1.0 = no change. */
     this.castSpeed           = 1.0;
     /** Speed multiplier for Attack castTimes (Phase 12.3). 1.0 = no change. */
@@ -161,6 +184,7 @@ export class Player extends Entity {
     // the player must path inward to unlock it.
     this.allocatedNodes = new Set(characterDef?.treeStartNodes ?? []);
     this.nodeSnapshots  = new Map();
+    this._activeModifierSnapshots = new Map();
 
     /**
      * Equipment slots — 10 total (Phase 12.5).
@@ -211,7 +235,11 @@ export class Player extends Entity {
     for (const nodeId of this.allocatedNodes) {
       const node = TREE_NODE_MAP[nodeId];
       if (node && node.stats && Object.keys(node.stats).length > 0) {
-        const snapshot = applyStats(this, node.stats);
+        const snapshot = applyStats(this, node.stats, {
+          id: `passive:${nodeId}`,
+          kind: node.type === 'keystone' ? 'keystone' : 'passiveTree',
+          label: node.label ?? node.name ?? nodeId,
+        });
         this.nodeSnapshots.set(nodeId, snapshot);
       }
     }
@@ -379,25 +407,51 @@ export class Player extends Entity {
    * @returns {object|null} the previously equipped itemDef (for placing on cursor), or null
    */
   equip(itemDef, preferredSlot) {
-    const targetSlot = preferredSlot ?? this._resolveEquipSlot(itemDef.slot);
+    const normalizedItem = normalizeWeaponItem(itemDef);
+    const targetSlot = preferredSlot ?? this._resolveEquipSlot(normalizedItem);
+    if (!this.canEquip(normalizedItem, targetSlot)) return null;
+
     const displaced = this.unequip(targetSlot);
-    const passiveItem = new PassiveItem(itemDef);
+    const passiveItem = new PassiveItem(normalizedItem);
     const snapshot = passiveItem.apply(this);
-    this.equipment[targetSlot] = { def: itemDef, passiveItem, snapshot };
+    this.equipment[targetSlot] = { def: normalizedItem, passiveItem, snapshot };
     return displaced;
   }
 
+  canEquip(itemDef, preferredSlot) {
+    const normalizedItem = normalizeWeaponItem(itemDef, { enforceWeaponDimensions: false });
+    const targetSlot = preferredSlot ?? this._resolveEquipSlot(normalizedItem);
+    return canEquipItemInSlot(normalizedItem, targetSlot, this.equipment);
+  }
+
   /** @private Resolve actual slot key from item's slot type. */
-  _resolveEquipSlot(itemSlot) {
+  _resolveEquipSlot(itemDefOrSlot) {
+    const itemSlot = typeof itemDefOrSlot === 'object'
+      ? normalizeEquipSlotAlias(itemDefOrSlot?.slot)
+      : normalizeEquipSlotAlias(itemDefOrSlot);
+
     if (itemSlot === 'ring') {
       if (!this.equipment.ring1) return 'ring1';
       if (!this.equipment.ring2) return 'ring2';
       return 'ring1'; // displace ring1 if both occupied
     }
-    // Backward compat: map legacy slot names to new keys
-    if (itemSlot === 'weapon') return 'mainhand';
-    if (itemSlot === 'armor')  return 'bodyarmor';
-    if (itemSlot === 'jewelry') return 'amulet';
+
+    if (itemSlot === 'mainhand') {
+      const normalized = typeof itemDefOrSlot === 'object'
+        ? normalizeWeaponItem(itemDefOrSlot, { enforceWeaponDimensions: false })
+        : null;
+      if (normalized?.weaponType) {
+        if (normalized.weaponType === 'tome' || normalized.weaponType === 'shield') {
+          return 'offhand';
+        }
+        const mainhandOccupied = !!this.equipment.mainhand;
+        const offhandEmpty = !this.equipment.offhand;
+        if (mainhandOccupied && offhandEmpty && normalized.handedness !== 'two_hand') {
+          return 'offhand';
+        }
+      }
+    }
+
     return itemSlot;
   }
 

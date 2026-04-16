@@ -5,3 +5,4 @@ export { validateEnemyProfiles } from './enemyProfile.schema.js';
 export { validateMapProfiles } from './mapProfile.schema.js';
 export { validateItems } from './item.schema.js';
 export { validateAffixesPlaceholder } from './affix.schema.js';
+export { validatePassiveTreeNodes } from './passiveTree.schema.js';

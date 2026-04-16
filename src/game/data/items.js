@@ -25,12 +25,12 @@ export const ITEM_DEFS = [
   {
     id: 'choir_of_the_storm',
     name: 'Choir of the Storm',
-    description: '–20% weapon cooldown. Lightning answers the call.',
+    description: '–20% weapon cooldown and +12% spell skill damage. Lightning answers the call.',
     slot: 'weapon',
     color: '#00bcd4',
     basePrice: 18,
     gridW: 1, gridH: 3,
-    stats: { cooldownMult: 0.80 },
+    stats: { cooldownMult: 0.80, increasedDamageWithSpellSkills: 0.12 },
   },
   {
     id: 'replica_serpentscale',
@@ -218,12 +218,12 @@ export const ITEM_DEFS = [
   {
     id: 'herald_of_thunder',
     name: 'Herald of Thunder',
-    description: '−25% weapon cooldown. Call down the storm on your command.',
+    description: '−25% weapon cooldown and +18% damage with bows. Call down the storm on your command.',
     slot: 'weapon',
     color: '#f9ca24',
     basePrice: 19,
     gridW: 1, gridH: 3,
-    stats: { cooldownMult: 0.75 },
+    stats: { cooldownMult: 0.75, increasedDamageWithBow: 0.18 },
   },
   {
     id: 'bone_reliquary',
@@ -806,6 +806,43 @@ export const ITEM_DEFS = [
     stats: { armorFlat: 10, evasionFlat: 14, energyShieldFlat: 8 },
   },
 ];
+
+const _LEGACY_WEAPON_TYPE_BY_ID = {
+  voidforge: 'sword',
+  choir_of_the_storm: 'wand',
+  replica_serpentscale: 'axe',
+  void_edge: 'sword',
+  herald_of_thunder: 'bow',
+  bone_reliquary: 'lance',
+  aegis_aurora: 'shield',
+  bloodseeker: 'axe',
+  lioneyes_glare: 'shield',
+  abyssal_focus: 'tome',
+  warlord_buckler: 'shield',
+  siphon_talisman: 'tome',
+};
+
+const _WEAPON_ARCHETYPE_DIMS = {
+  sword:  { gridW: 1, gridH: 3 },
+  axe:    { gridW: 1, gridH: 3 },
+  bow:    { gridW: 2, gridH: 3 },
+  lance:  { gridW: 1, gridH: 4 },
+  wand:   { gridW: 1, gridH: 2 },
+  tome:   { gridW: 2, gridH: 2 },
+  shield: { gridW: 2, gridH: 2 },
+};
+
+for (const item of ITEM_DEFS) {
+  if (item.slot !== 'weapon' && item.slot !== 'offhand' && item.slot !== 'mainhand') continue;
+  const weaponType = item.weaponType ?? _LEGACY_WEAPON_TYPE_BY_ID[item.id] ?? (item.slot === 'offhand' ? 'shield' : 'sword');
+  const dims = _WEAPON_ARCHETYPE_DIMS[weaponType];
+  item.weaponType = weaponType;
+  item.handedness = weaponType === 'bow' || weaponType === 'lance' ? 'two_hand' : 'one_hand';
+  if (dims) {
+    item.gridW = dims.gridW;
+    item.gridH = dims.gridH;
+  }
+}
 
 /** Map of id → config for fast lookup. */
 export const ITEMS_BY_ID = Object.fromEntries(ITEM_DEFS.map((i) => [i.id, i]));

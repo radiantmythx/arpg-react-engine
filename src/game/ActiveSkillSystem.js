@@ -1,5 +1,7 @@
 import { makeSupportInstance } from './data/supports.js';
 import { openSupportSlotsForSkill } from './supportSockets.js';
+import { evaluateSkillRequirements } from './data/skillRequirements.js';
+import { resolveScopedSkillBonuses } from './data/modifierEngine.js';
 
 function serializeSupportGemForSave(sup) {
   if (!sup) return null;
@@ -154,9 +156,15 @@ export class ActiveSkillSystem {
     // Block re-activation while a cast is already in progress for this slot
     if (this._castingTimers[slotIdx]) return false;
 
+    const requirementState = evaluateSkillRequirements(skill, player);
+    if (!requirementState.ok) return false;
+
     // Determine cast speed divisor by tag
     const isAttack = skill.tags?.includes('Attack');
-    const speed = isAttack ? (player.attackSpeed ?? 1.0) : (player.castSpeed ?? 1.0);
+    const scoped = resolveScopedSkillBonuses(player, skill);
+    const speed = isAttack
+      ? (player.attackSpeed ?? 1.0) * (1 + scoped.attackSpeedInc)
+      : (player.castSpeed ?? 1.0) * (1 + scoped.castSpeedInc);
     const actualCastTime = (skill.castTime ?? 0) / speed;
     const manaCost = this._resolveManaCost(skill, player);
 
@@ -255,6 +263,7 @@ export class ActiveSkillSystem {
       const computed = typeof s.computedStats === 'function' ? (s.computedStats(player) ?? {}) : {};
       const manaCost = this._resolveManaCost(s, player, computed);
       const canAfford = player ? player.canSpendMana(manaCost) : true;
+      const requirementState = evaluateSkillRequirements(s, player);
       const supportSlots = (s.supportSlots ?? []).map((sup) =>
         sup ? { id: sup.id, name: sup.name, icon: sup.icon ?? '◆' } : null
       );
@@ -266,10 +275,14 @@ export class ActiveSkillSystem {
         tags:         s.tags ?? [],
         cooldown:     s.cooldown,
         remaining:    parseFloat(remaining.toFixed(1)),
-        ready:        remaining <= 0 && !ct && canAfford,
+        ready:        remaining <= 0 && !ct && canAfford && requirementState.ok,
         casting:      ct ? parseFloat(Math.max(0, ct.remaining).toFixed(2)) : 0,
         manaCost,
         canAfford,
+        blocked: !requirementState.ok,
+        blockedReason: requirementState.blockedReason,
+        requirementHint: requirementState.requirementHint,
+        requiresWeaponType: requirementState.requiresWeaponType,
         openSlots:    this._openSupportSlots(s),
         supportSlots,
         // XP / levelling fields

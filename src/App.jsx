@@ -245,6 +245,8 @@ export default function App() {
   const [mapCompleteInfo, setMapCompleteInfo] = useState(null);
   const [vendorStock, setVendorStock] = useState([]);
   const [vendorFeedback, setVendorFeedback] = useState('');
+  const [sheetMode, setSheetMode] = useState('sheet');
+  const [sheetFeedback, setSheetFeedback] = useState('');
   const [actsCleared, setActsCleared] = useState([]);
   const [primedMapPortal, setPrimedMapPortal] = useState(null);
   // Options overlay: visible from main menu or pause screen
@@ -275,8 +277,7 @@ export default function App() {
   }, []);
 
   const handleLevelUp = useCallback(() => {
-    // ExperienceSystem already called engine.pause(); we just switch the screen.
-    setScreen('TREE');
+    // Level-up no longer auto-opens the passive tree. HUD indicators guide the player to press T.
   }, []);
 
   const handleGameOver = useCallback((stats) => {
@@ -542,6 +543,8 @@ export default function App() {
     }
     if (interactableId === 'crafting') {
       engine.pause();
+      setSheetMode('crafting');
+      setSheetFeedback('Crafting Bench: select equipped gear and choose a currency action.');
       setScreen('SHEET');
       return;
     }
@@ -759,15 +762,30 @@ export default function App() {
     const engine = engineRef.current;
     if (!engine || screen !== 'HUB') return;
     engine.pause();
+    setSheetMode('sheet');
+    setSheetFeedback('');
     setScreen('SHEET');
   }, [screen]);
 
   const closeCharacterSheet = useCallback(() => {
     const engine = engineRef.current;
     if (!engine || screen !== 'SHEET') return;
+    setSheetMode('sheet');
+    setSheetFeedback('');
     engine.resume();
     setScreen('HUB');
   }, [screen]);
+
+  const handleSheetCraftAction = useCallback((slot, actionId) => {
+    const engine = engineRef.current;
+    if (!engine || screen !== 'SHEET' || sheetMode !== 'crafting') return;
+    const result = engine.craftEquippedItem?.(slot, actionId);
+    if (!result?.ok) {
+      setSheetFeedback(result?.blockedReason ?? 'Crafting failed.');
+      return;
+    }
+    setSheetFeedback(`${result.action?.label ?? 'Crafting'} applied to ${result.afterItem?.name ?? result.beforeItem?.name ?? 'item'}.`);
+  }, [screen, sheetMode]);
 
   const openPortalConfirm = useCallback(() => {
     const engine = engineRef.current;
@@ -910,15 +928,10 @@ export default function App() {
     const engine = engineRef.current;
     if (!engine) return;
     if (cursorItem) {
-      // Accept rings in ring1/ring2, and support backward-compat slot aliases
-      const itemSlot = cursorItem.slot;
-      const isRingSlot = (slot === 'ring1' || slot === 'ring2') && itemSlot === 'ring';
-      const isAlias = (
-        (slot === 'mainhand'  && itemSlot === 'weapon') ||
-        (slot === 'bodyarmor' && itemSlot === 'armor')  ||
-        (slot === 'amulet'    && itemSlot === 'jewelry')
-      );
-      if (!isRingSlot && !isAlias && itemSlot !== slot) return;
+      if (!engine.canEquipItemInSlot(cursorItem, slot)) {
+        setVendorFeedback('That item cannot be equipped in this slot.');
+        return;
+      }
       const displaced = engine.player.equip(cursorItem, slot);
       engine._flushHudUpdate();
       setCursorItem(displaced ?? null);
@@ -1399,6 +1412,10 @@ export default function App() {
           characterName={activeCharacterName}
           onClose={closeCharacterSheet}
           mobileMode={mobileMode}
+          mode={sheetMode}
+          feedback={sheetFeedback}
+          craftingActions={engineRef.current?.getCraftingActions?.() ?? []}
+          onCraftAction={handleSheetCraftAction}
         />
       )}
 
@@ -1406,6 +1423,7 @@ export default function App() {
         <VendorScreen
           stock={vendorStock}
           inventory={hud.inventory}
+          equipment={hud.equipment}
           gold={hud.gold ?? 0}
           feedback={vendorFeedback}
           onBuy={handleVendorBuy}
@@ -1431,6 +1449,7 @@ export default function App() {
         <HUD
           hud={hud}
           hideTimer={hideHudTimer}
+          hideCoreOverlays={screen === 'TREE'}
           mobileMode={mobileMode}
           compactMode={isCompactPhoneUi}
           screenContext={screen}

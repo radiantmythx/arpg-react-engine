@@ -7,6 +7,7 @@ import {
   validateMapProfiles,
   validateItems,
   validateAffixesPlaceholder,
+  validatePassiveTreeNodes,
 } from '../src/game/content/schemas/index.js';
 import {
   validateSkillRegistry,
@@ -73,6 +74,7 @@ function collect() {
     ...validateItems(listItemDefs(), listUniqueItemDefs(), listGenericItemDefs()),
   });
   sections.push({ name: 'Affixes', ...validateAffixesPlaceholder() });
+  sections.push({ name: 'Passive Tree', ...validatePassiveTreeNodes() });
 
   return sections;
 }

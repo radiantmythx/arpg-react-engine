@@ -44,7 +44,7 @@ export const CHARACTERS = [
     name:           'Rogue',
     tagline:        'Shadow Runner',
     lore:           'Slippery and fast. Hard to catch, harder to contain. Vanishes before they see her coming.',
-    startingSkill: 'SWIFT_ARROW',
+    startingSkill: 'FROST_ARROW',
     baseStats:      { maxHealth: 70, speed: 220, maxMana: 85 },
     bonusStats:     { pickupRadiusFlat: 20 },  // +20 pickup radius
     // Tree starting position: Rogue's Gate — slot 12 (120°, Cold-aligned).
@@ -61,7 +61,7 @@ export const CHARACTERS = [
     name:           'Warrior',
     tagline:        'Unstoppable Force',
     lore:           'An immovable wall of steel and resolve. Slow, but nothing keeps him down for long.',
-    startingSkill: 'MELEE_STRIKE',
+    startingSkill: 'FIRE_STRIKE',
     baseStats:      { maxHealth: 140, speed: 140, maxMana: 105 },
     bonusStats:     { healthRegenPerS: 2 },    // +2 HP/s passive regen
     // Tree starting position: Warrior's Gate — slot 0 (0°, Blaze-aligned).

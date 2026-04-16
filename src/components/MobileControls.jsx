@@ -19,6 +19,7 @@ function SkillButton({ label, skill, className = '', onTouchStart, onTouchEnd, o
   let stateClass = '';
   if (skill) {
     if (ready) stateClass = ' mobile-skill-btn--ready';
+    else if (skill.blocked) stateClass = ' mobile-skill-btn--blocked';
     else if (!canAfford) stateClass = ' mobile-skill-btn--oom';
     else stateClass = ' mobile-skill-btn--cooling';
   }

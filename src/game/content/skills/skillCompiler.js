@@ -12,7 +12,14 @@ export function compileSkillTemplateToRuntime(template) {
   if (!Ctor) {
     throw new Error(`skillCompiler: unknown runtimeCtorId '${template.runtimeCtorId}'`);
   }
-  return new Ctor();
+  const runtime = new Ctor();
+  if (Array.isArray(template?.requiresWeaponType)) {
+    runtime.requiresWeaponType = [...template.requiresWeaponType];
+  }
+  if (typeof template?.requirementHint === 'string' && template.requirementHint.trim()) {
+    runtime.requirementHint = template.requirementHint;
+  }
+  return runtime;
 }
 
 /**

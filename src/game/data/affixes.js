@@ -21,6 +21,32 @@
 import { SCALING_CONFIG, clampAreaLevel } from '../config/scalingConfig.js';
 
 export const AFFIX_TIERS = ['minor', 'major', 'advanced', 'high', 'pinnacle'];
+export const AFFIX_KINDS = ['explicit', 'implicit'];
+export const AFFIX_LEVEL_BRACKETS = ['early', 'mid', 'late', 'endgame'];
+
+const TIER_TAGS = new Set(AFFIX_TIERS);
+const POOL_TAG_BY_DEFENSE = {
+  armor: 'armorDefence',
+  evasion: 'evasionDefence',
+  energyShield: 'energyShieldDefence',
+};
+const POOL_TAG_BY_WEAPON = {
+  sword: 'swordWeapon',
+  axe: 'axeWeapon',
+  bow: 'bowWeapon',
+  lance: 'lanceWeapon',
+  wand: 'wandWeapon',
+  staff: 'staffWeapon',
+  tome: 'tomeWeapon',
+  shield: 'shieldWeapon',
+};
+
+const DEFAULT_TIER_WEIGHTS_BY_BRACKET = {
+  early: { minor: 110, major: 28, advanced: 0, high: 0, pinnacle: 0 },
+  mid: { minor: 45, major: 65, advanced: 24, high: 0, pinnacle: 0 },
+  late: { minor: 16, major: 38, advanced: 54, high: 18, pinnacle: 0 },
+  endgame: { minor: 8, major: 24, advanced: 44, high: 30, pinnacle: 16 },
+};
 
 export function affixTierGate(tier, config = SCALING_CONFIG) {
   const gate = Number(config?.affixGates?.[tier]);
@@ -33,6 +59,18 @@ export function isAffixTierUnlocked(itemLevel, tier, config = SCALING_CONFIG) {
 
 export function unlockedAffixTiers(itemLevel, config = SCALING_CONFIG) {
   return AFFIX_TIERS.filter((tier) => isAffixTierUnlocked(itemLevel, tier, config));
+}
+
+export function getAffixLevelBracket(itemLevel) {
+  const level = clampAreaLevel(itemLevel);
+  if (level >= 75) return 'endgame';
+  if (level >= 45) return 'late';
+  if (level >= 20) return 'mid';
+  return 'early';
+}
+
+export function getTierWeightsForLevelBracket(levelBracket) {
+  return DEFAULT_TIER_WEIGHTS_BY_BRACKET[levelBracket] ?? DEFAULT_TIER_WEIGHTS_BY_BRACKET.early;
 }
 
 function inferAffixTier(id = '') {
@@ -69,14 +107,125 @@ function inferWeight(tier = 'advanced') {
   return 35;
 }
 
+function inferFamily(def = {}) {
+  if (typeof def.family === 'string' && def.family) return def.family;
+  if (typeof def.stat === 'string' && def.stat) return def.stat;
+  const id = String(def.id ?? 'affix').toLowerCase();
+  return id.replace(/_(minor|major|advanced|high|pinnacle|epic)$/i, '');
+}
+
+function inferGroup(def = {}, family = '') {
+  if (typeof def.group === 'string' && def.group) return def.group;
+  const scope = Array.isArray(def.slots) && def.slots.length ? def.slots.join('|') : 'global';
+  return `${family}:${scope}`;
+}
+
+function inferWeaponTypes(def = {}, family = '') {
+  if (Array.isArray(def.weaponTypes)) return [...new Set(def.weaponTypes.filter(Boolean))];
+  const lowerFamily = String(family ?? '').toLowerCase();
+  if (lowerFamily.includes('bow')) return ['bow'];
+  if (lowerFamily.includes('wand')) return ['wand'];
+  if (lowerFamily.includes('sword')) return ['sword'];
+  if (lowerFamily.includes('axe')) return ['axe'];
+  if (lowerFamily.includes('lance')) return ['lance'];
+  if (lowerFamily.includes('tome')) return ['tome'];
+  if (lowerFamily.includes('shield')) return ['shield'];
+  return [];
+}
+
+function inferPoolTags(def = {}, kind = 'explicit', family = '', weaponTypes = []) {
+  const tags = new Set(Array.isArray(def.poolTags) ? def.poolTags.filter(Boolean) : []);
+  tags.add(kind);
+  tags.add(def.type ?? 'prefix');
+  if (family) tags.add(family);
+
+  const stat = String(def.stat ?? '').toLowerCase();
+  const id = String(def.id ?? '').toLowerCase();
+  if (stat.includes('damage') || id.includes('damage') || id.startsWith('wpn_') || id.startsWith('flat_') || id.startsWith('inc_') || id.startsWith('more_')) {
+    tags.add('damage');
+  }
+  if (stat.includes('resistance') || id.includes('_resist_')) tags.add('resistance');
+  if (stat.includes('mana')) tags.add('mana');
+  if (stat.includes('health') || stat.includes('regen')) tags.add('life');
+  if (stat.includes('armor')) tags.add('armor');
+  if (stat.includes('evasion')) tags.add('evasion');
+  if (stat.includes('shield')) tags.add('energyShield');
+  if (stat.includes('blaze') || id.includes('blaze')) tags.add('blaze');
+  if (stat.includes('thunder') || id.includes('thunder')) tags.add('thunder');
+  if (stat.includes('frost') || id.includes('frost')) tags.add('frost');
+  if (stat.includes('holy') || id.includes('holy')) tags.add('holy');
+  if (stat.includes('unholy') || id.includes('unholy')) tags.add('unholy');
+  if (stat.includes('physical') || id.includes('physical')) tags.add('physical');
+
+  for (const defenseType of def.defenseTypes ?? []) {
+    tags.add(POOL_TAG_BY_DEFENSE[defenseType] ?? defenseType);
+  }
+  for (const weaponType of weaponTypes) {
+    tags.add(POOL_TAG_BY_WEAPON[weaponType] ?? weaponType);
+  }
+
+  return [...tags].filter((tag) => tag && !TIER_TAGS.has(tag));
+}
+
+function normalizePool(def = {}, tier = 'advanced', family = '', kind = 'explicit') {
+  const weaponTypes = inferWeaponTypes(def, family);
+  const poolTags = inferPoolTags(def, kind, family, weaponTypes);
+  return {
+    itemClasses: Array.isArray(def.itemClasses) && def.itemClasses.length > 0
+      ? [...new Set(def.itemClasses.filter(Boolean))]
+      : [...new Set((def.slots ?? []).filter(Boolean))],
+    weaponTypes,
+    defenseTypes: Array.isArray(def.defenseTypes) ? [...new Set(def.defenseTypes.filter(Boolean))] : [],
+    tags: poolTags,
+    levelBrackets: Array.isArray(def.levelBrackets) && def.levelBrackets.length > 0
+      ? [...new Set(def.levelBrackets.filter(Boolean))]
+      : AFFIX_LEVEL_BRACKETS.filter((bracket) => getTierWeightsForLevelBracket(bracket)[tier] > 0),
+  };
+}
+
+function normalizeModifier(def) {
+  if (def.modifier && typeof def.modifier === 'object') {
+    return {
+      statKey: def.modifier.statKey ?? def.stat,
+      operation: def.modifier.operation ?? 'add',
+      value: def.modifier.value ?? def.value,
+      target: def.modifier.target ?? 'player',
+      requiresTag: Array.isArray(def.modifier.requiresTag) ? [...def.modifier.requiresTag] : [],
+      requiresWeaponType: Array.isArray(def.modifier.requiresWeaponType) ? [...def.modifier.requiresWeaponType] : [],
+    };
+  }
+
+  const statKey = def.stat;
+  const value = def.value;
+  const isMult = typeof value === 'number' && (statKey === 'damageMult' || statKey === 'cooldownMult' || statKey === 'xpMultiplier' || statKey === 'manaCostMult');
+  return {
+    statKey,
+    operation: isMult ? 'multiply' : 'add',
+    value,
+    target: 'player',
+    requiresTag: [],
+    requiresWeaponType: [],
+  };
+}
+
 function enrichAffix(def) {
   const tier = def.tier ?? inferAffixTier(def.id);
+  const kind = AFFIX_KINDS.includes(def.kind) ? def.kind : 'explicit';
+  const family = inferFamily(def);
+  const group = inferGroup(def, family);
+  const pool = normalizePool(def, tier, family, kind);
   return {
     ...def,
+    kind,
+    family,
+    group,
     tier,
+    minItemLevel: Math.max(1, Math.floor(def.minItemLevel ?? affixTierGate(tier))),
     goldValue: def.goldValue ?? inferGoldValue(def.id, tier),
     weight: def.weight ?? inferWeight(tier),
-    tags: def.tags ?? [def.type, tier],
+    tags: def.tags ?? [kind, def.type, tier, family],
+    pool,
+    modifier: normalizeModifier(def),
   };
 }
 
@@ -113,6 +262,22 @@ const RAW_AFFIX_POOL = [
     stat: 'cooldownMult',
     value: 0.85,
     label: '−15% weapon cooldown',
+  },
+  {
+    id: 'wpn_bow_dmg_major',
+    type: 'prefix',
+    slots: ['weapon'],
+    stat: 'increasedDamageWithBow',
+    value: 0.18,
+    label: '+18% damage with bows',
+  },
+  {
+    id: 'wpn_wand_aspd_major',
+    type: 'prefix',
+    slots: ['weapon'],
+    stat: 'increasedAttackSpeedWithWand',
+    value: 0.16,
+    label: '+16% attack speed with wands',
   },
 
   // ─── Weapon Suffixes ──────────────────────────────────────────────────────
@@ -249,6 +414,14 @@ const RAW_AFFIX_POOL = [
     stat: 'maxManaFlat',
     value: 45,
     label: '+45 maximum mana',
+  },
+  {
+    id: 'jew_spell_focus_major',
+    type: 'prefix',
+    slots: ['jewelry'],
+    stat: 'increasedDamageWithSpellSkills',
+    value: 0.14,
+    label: '+14% spell skill damage',
   },
 
   // ─── Jewelry Suffixes ─────────────────────────────────────────────────────
@@ -859,5 +1032,69 @@ const RAW_AFFIX_POOL = [
   { id: 'of_unholy_resist_major',  type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'unholyResistance', value: 0.22, label: '+22% Unholy Resistance' },
 ];
 
-export const AFFIX_POOL = RAW_AFFIX_POOL.map(enrichAffix);
-export const AFFIX_BY_ID = Object.fromEntries(AFFIX_POOL.map((a) => [a.id, a]));
+const RAW_IMPLICIT_AFFIX_POOL = [
+  {
+    id: 'implicit_weapon_edge_minor',
+    kind: 'implicit',
+    type: 'prefix',
+    family: 'weapon_edge',
+    group: 'implicit_weapon_edge',
+    slots: ['weapon'],
+    stat: 'damageMult',
+    value: 1.06,
+    label: 'Implicit: +6% weapon damage',
+    tier: 'minor',
+  },
+  {
+    id: 'implicit_armor_guard_minor',
+    kind: 'implicit',
+    type: 'prefix',
+    family: 'armor_guard',
+    group: 'implicit_armor_guard',
+    slots: ['armor', 'helmet', 'boots', 'offhand'],
+    stat: 'maxHealthFlat',
+    value: 10,
+    label: 'Implicit: +10 maximum life',
+    tier: 'minor',
+  },
+  {
+    id: 'implicit_jewelry_focus_minor',
+    kind: 'implicit',
+    type: 'prefix',
+    family: 'jewelry_focus',
+    group: 'implicit_jewelry_focus',
+    slots: ['jewelry'],
+    stat: 'xpMultiplier',
+    value: 1.03,
+    label: 'Implicit: +3% experience gain',
+    tier: 'minor',
+  },
+];
+
+export const EXPLICIT_AFFIX_POOL = RAW_AFFIX_POOL.map((def) => enrichAffix({ ...def, kind: def.kind ?? 'explicit' }));
+export const IMPLICIT_AFFIX_POOL = RAW_IMPLICIT_AFFIX_POOL.map(enrichAffix);
+export const ALL_AFFIX_POOL = [...EXPLICIT_AFFIX_POOL, ...IMPLICIT_AFFIX_POOL];
+export const AFFIX_POOL = EXPLICIT_AFFIX_POOL;
+export const AFFIX_BY_ID = Object.fromEntries(ALL_AFFIX_POOL.map((a) => [a.id, a]));
+
+export function affixMatchesItemContext(affix, itemContext = {}) {
+  if (!affix?.pool) return false;
+
+  const itemClass = itemContext.itemClass ?? itemContext.slot ?? null;
+  const itemTags = Array.isArray(itemContext.tags) ? itemContext.tags : [];
+  const levelBracket = itemContext.levelBracket ?? getAffixLevelBracket(itemContext.itemLevel ?? 1);
+  const defenseTypes = Array.isArray(itemContext.defenseTypes) ? itemContext.defenseTypes : [];
+  const weaponType = itemContext.weaponType ?? null;
+
+  if (affix.minItemLevel != null && clampAreaLevel(itemContext.itemLevel ?? 1) < affix.minItemLevel) return false;
+  if (itemClass && affix.pool.itemClasses.length > 0 && !affix.pool.itemClasses.includes(itemClass)) return false;
+  if (weaponType && affix.pool.weaponTypes.length > 0 && !affix.pool.weaponTypes.includes(weaponType)) return false;
+  if (affix.pool.defenseTypes.length > 0 && !affix.pool.defenseTypes.some((dt) => defenseTypes.includes(dt))) return false;
+  if (affix.pool.levelBrackets.length > 0 && !affix.pool.levelBrackets.includes(levelBracket)) return false;
+  if (itemTags.length > 0 && affix.pool.tags.length > 0) {
+    const hasOverlap = affix.pool.tags.some((tag) => itemTags.includes(tag));
+    const requiresContextTag = affix.pool.tags.some((tag) => !AFFIX_KINDS.includes(tag) && tag !== affix.type && tag !== affix.family && tag !== 'damage' && tag !== 'life' && tag !== 'mana' && tag !== 'resistance' && tag !== 'armor' && tag !== 'evasion' && tag !== 'energyShield');
+    if (requiresContextTag && !hasOverlap) return false;
+  }
+  return true;
+}

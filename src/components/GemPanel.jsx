@@ -213,6 +213,8 @@ function SkillSocket({ skill, cursorGem, cursorSkillGem, onSocketGem, onUnsocket
     },
     affixes: [],
   };
+  const blockedReason = skill.blockedReason ?? null;
+  const requirementHint = skill.requirementHint ?? null;
 
   const canDropSkillGem = !!skill._slotKey;
 
@@ -239,6 +241,7 @@ function SkillSocket({ skill, cursorGem, cursorSkillGem, onSocketGem, onUnsocket
       mobileMode ? 'gem-skill-socket-block--mobile' : '',
       isFocused ? 'gem-skill-socket-block--focused' : '',
       isSuggested ? 'gem-skill-socket-block--suggested' : '',
+      skill.blocked ? 'gem-skill-socket-block--blocked' : '',
       dragOverSkillTarget ? 'gem-skill-socket-block--drop-target' : '',
     ].filter(Boolean).join(' ')}>
       <div className="gem-skill-compact">
@@ -288,6 +291,8 @@ function SkillSocket({ skill, cursorGem, cursorSkillGem, onSocketGem, onUnsocket
             <span className="gem-skill-level">
               Lv {skill.level ?? 1}{isMax ? ' ✦' : ` / ${skill.maxLevel ?? 20}`}
             </span>
+            {blockedReason && <span className="gem-skill-requirement">{blockedReason}</span>}
+            {requirementHint && <span className="gem-skill-requirement-hint">{requirementHint}</span>}
             {debugMode && !skill._isPlaceholder && (
               <button
                 type="button"
@@ -390,6 +395,8 @@ export function GemPanel({ primarySkill, activeSkills, cursorItem, selectedSuppo
     ? (skills.find((skill) => skill.id === selectedSkillId) ?? skills[0] ?? null)
     : null;
   const visibleSkills = mobileMode ? (focusedSkill ? [focusedSkill] : []) : skills;
+  const blockedSkills = skills.filter((skill) => !skill._isPlaceholder && skill.blocked);
+  const requirementHints = [...new Set(blockedSkills.map((skill) => skill.requirementHint).filter(Boolean))];
 
   const handleSocketGem = (skillId, slotIndex, gemUid) => {
     if (!skillId?.startsWith?.('empty_')) {
@@ -448,6 +455,20 @@ export function GemPanel({ primarySkill, activeSkills, cursorItem, selectedSuppo
               ? <>Held skill gem: <span className="gem-selected-name">{cursorSkillGem.name}</span> (click or drop into a skill slot)</>
               : 'Click a skill or support gem to pick it up, then click or drop it into a skill/support socket.'}
           </p>
+        )}
+
+        {blockedSkills.length > 0 && (
+          <div className="gem-gate-summary">
+            <div className="gem-gate-summary__title">
+              {blockedSkills.length} skill gate{blockedSkills.length === 1 ? '' : 's'} active
+            </div>
+            <div className="gem-gate-summary__copy">
+              {blockedSkills.map((skill) => `${skill._slotLabel}: ${skill.blockedReason}`).join(' · ')}
+            </div>
+            {requirementHints.map((hint, index) => (
+              <div key={`${hint}-${index}`} className="gem-gate-summary__hint">{hint}</div>
+            ))}
+          </div>
         )}
 
         {mobileMode && skills.length > 1 && (

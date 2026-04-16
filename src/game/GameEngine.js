@@ -15,7 +15,7 @@ import { ChaosShardGem } from './entities/ChaosShardGem.js';
 import { GoldGem } from './entities/GoldGem.js';
 import { ItemDrop } from './entities/ItemDrop.js';
 import { PassiveItem } from './PassiveItem.js';
-import { rollRarity, generateItem } from './data/itemGenerator.js';
+import { rollRarity, generateItem, hydrateItemAffixState } from './data/itemGenerator.js';
 import { applyStats, removeStats, TREE_NODE_MAP } from './data/passiveTree.js';
 import { CHARACTER_MAP } from './data/characters.js';
 import { AchievementSystem } from './systems/AchievementSystem.js';
@@ -43,6 +43,10 @@ import { AILMENT_DEFS, resolvePenetrationMap } from './data/skillTags.js';
 import { SCALING_CONFIG, areaLevelBucketLabel, clampAreaLevel } from './config/scalingConfig.js';
 import { POTION_TUNING } from './content/tuning/index.js';
 import { createDefaultPotionBelt, normalizePotionBelt, POTION_MAP, rollPotionDrop, formatPotionEffectLine } from './data/potions.js';
+import { canEquipItemInSlot, normalizeWeaponItem } from './data/weaponTypes.js';
+import { evaluateSkillRequirements } from './data/skillRequirements.js';
+import { summarizeActiveModifiers, summarizeCharacterBonuses } from './data/modifierEngine.js';
+import { applyCraftingAction, CRAFTING_ACTIONS } from './data/itemCrafting.js';
 
 /** World-space radius within which hovering the mouse highlights an ItemDrop. */
 const HOVER_RADIUS = 70;
@@ -353,7 +357,11 @@ export class GameEngine {
           const node = TREE_NODE_MAP[nodeId];
           if (node) {
             this.player.allocatedNodes.add(nodeId);
-            const snapshot = applyStats(this.player, node.stats);
+            const snapshot = applyStats(this.player, node.stats, {
+              id: `passive:${nodeId}`,
+              kind: node.type === 'keystone' ? 'keystone' : 'passiveTree',
+              label: node.label ?? node.name ?? nodeId,
+            });
             this.player.nodeSnapshots.set(nodeId, snapshot);
           }
         }
@@ -363,19 +371,20 @@ export class GameEngine {
       const eq = saveData.equipment ?? {};
       for (const [slot, itemDef] of Object.entries(eq)) {
         if (itemDef) {
-          // Ensure `stats` field is present (saved as full itemDef by checkpoint()).
-          // Pre-C2 saves may only have `baseStats`; fall back gracefully.
-          if (!itemDef.stats && itemDef.baseStats) {
-            itemDef.stats = itemDef.baseStats;
-          }
-          this.player.equip(itemDef, slot);
+          const hydrated = hydrateItemAffixState(itemDef);
+          this.player.equip(normalizeWeaponItem(hydrated, { enforceWeaponDimensions: false }), slot);
         }
       }
 
       // ── Restore inventory ─────────────────────────────────────────────────
       const invItems = saveData.inventory?.items ?? [];
       for (const item of invItems) {
-        this.player.inventory.place(item, item.gridX, item.gridY);
+        const hydrated = hydrateItemAffixState(item);
+        this.player.inventory.place(
+          normalizeWeaponItem(hydrated, { enforceWeaponDimensions: false }),
+          item.gridX,
+          item.gridY,
+        );
       }
 
       this._restorePrimarySkillFromSave(saveData);
@@ -1686,6 +1695,8 @@ export class GameEngine {
         activeSkills:    this.activeSkillSystem.serialize(this.player),
         equipment: this._serializeEquipment(),
         inventory: this.player.inventory.serialize(),
+        modifierDebug: summarizeActiveModifiers(this.player),
+        bonusDebug: summarizeCharacterBonuses(this.player),
         lockedTarget: this._serializeLockedTargetHud(),
       });
       this._emitHoveredInspect();
@@ -1831,6 +1842,8 @@ export class GameEngine {
   _activatePrimarySkill() {
     const skill = this.player?.primarySkill;
     if (!skill?.isActive) return false;
+    const requirementState = evaluateSkillRequirements(skill, this.player);
+    if (!requirementState.ok) return false;
     if (skill._timer < skill.cooldown) return false;
     const manaCost = this._resolveSkillManaCost(skill);
     if (!this.player.spendMana(manaCost)) return false;
@@ -1876,6 +1889,7 @@ export class GameEngine {
     const computed = typeof s.computedStats === 'function' ? (s.computedStats(this.player) ?? {}) : {};
     const manaCost = this._resolveSkillManaCost(s, computed);
     const canAfford = this.player?.canSpendMana(manaCost) ?? true;
+    const requirementState = evaluateSkillRequirements(s, this.player);
     const supportSlots = (s.supportSlots ?? []).map((sup) =>
       sup ? { id: sup.id, name: sup.name, icon: sup.icon ?? '◆' } : null
     );
@@ -1888,11 +1902,15 @@ export class GameEngine {
       castTime: s.castTime ?? 0,
       cooldown: s.cooldown,
       remaining: parseFloat(remaining.toFixed(1)),
-      ready: remaining <= 0 && canAfford,
+      ready: remaining <= 0 && canAfford && requirementState.ok,
       casting: 0,
       isPrimary: true,
       manaCost,
       canAfford,
+      blocked: !requirementState.ok,
+      blockedReason: requirementState.blockedReason,
+      requirementHint: requirementState.requirementHint,
+      requiresWeaponType: requirementState.requiresWeaponType,
       openSlots: this._openSupportSlots(s),
       supportSlots,
       level: s.level ?? 1,
@@ -2804,6 +2822,8 @@ export class GameEngine {
       rarity:      d.rarity  ?? 'normal',
       color:       d.color,
       slot:        d.slot,
+      explicitAffixes: d.explicitAffixes ?? [],
+      implicitAffixes: d.implicitAffixes ?? [],
       description: d.description,
       affixes:     d.affixes ?? [],
       gridW:       d.gridW,
@@ -2812,6 +2832,8 @@ export class GameEngine {
       flavorText:  d.flavorText ?? null,
       baseStats:   d.baseStats ?? d.stats ?? {},
       defenseType: d.defenseType ?? null,
+      weaponType: d.weaponType ?? null,
+      handedness: d.handedness ?? null,
       type: d.type,
       mapTheme: d.mapTheme,
       mapMods: d.mapMods ?? [],
@@ -2911,9 +2933,21 @@ export class GameEngine {
       this._flushHudUpdate();
       return null;
     }
+    const targetSlot = preferredSlot ?? this.player._resolveEquipSlot(itemDef);
+    if (!this.player.canEquip(itemDef, targetSlot)) {
+      this.player.inventory.autoPlace(itemDef);
+      this._flushHudUpdate();
+      return null;
+    }
     const displaced = this.player.equip(itemDef, preferredSlot);
     this._flushHudUpdate();
     return displaced; // null = slot was empty; def = slot was occupied, goes to cursor
+  }
+
+  canEquipItemInSlot(itemDef, slot) {
+    if (!this.player || !itemDef || !slot) return false;
+    const normalized = normalizeWeaponItem(itemDef, { enforceWeaponDimensions: false });
+    return canEquipItemInSlot(normalized, slot, this.player.equipment);
   }
 
   /**
@@ -2982,6 +3016,8 @@ export class GameEngine {
       training: this._serializeTrainingHud(),
       primarySkill:    this._serializePrimarySkill(),
       activeSkills:    this.activeSkillSystem.serialize(this.player),
+      modifierDebug: summarizeActiveModifiers(this.player),
+      bonusDebug: summarizeCharacterBonuses(this.player),
       lockedTarget: this._serializeLockedTargetHud(),
     });
     this._emitHoveredInspect();
@@ -3051,7 +3087,11 @@ export class GameEngine {
 
     player.skillPoints -= cost;
     player.allocatedNodes.add(nodeId);
-    const snapshot = applyStats(player, node.stats);
+    const snapshot = applyStats(player, node.stats, {
+      id: `passive:${nodeId}`,
+      kind: node.type === 'keystone' ? 'keystone' : 'passiveTree',
+      label: node.label ?? node.name ?? nodeId,
+    });
     player.nodeSnapshots.set(nodeId, snapshot);
 
     this.audio.play('level_up');
@@ -3549,10 +3589,14 @@ export class GameEngine {
       uid:         d.uid,
       slot:        d.slot,
       affixes:     d.affixes ?? [],
+      explicitAffixes: d.explicitAffixes ?? [],
+      implicitAffixes: d.implicitAffixes ?? [],
       isUnique:    d.isUnique ?? false,
       flavorText:  d.flavorText ?? null,
       baseStats:   d.baseStats ?? d.stats ?? {},
       defenseType: d.defenseType ?? null,
+      weaponType: d.weaponType ?? null,
+      handedness: d.handedness ?? null,
     };
   }
 
@@ -3768,6 +3812,62 @@ export class GameEngine {
     return { ok: true, itemName: itemDef.name, goldReceived: goldValue };
   }
 
+  getCraftingActions() {
+    return CRAFTING_ACTIONS;
+  }
+
+  craftEquippedItem(slot, actionId, options = {}) {
+    if (!this.player?.equipment) return { ok: false, reason: 'no_player', blockedReason: 'No player is active.' };
+    const entry = this.player.equipment?.[slot] ?? null;
+    if (!entry?.def) return { ok: false, reason: 'missing_item', blockedReason: 'Select an equipped item first.' };
+
+    const beforeItem = structuredClone(entry.def);
+    const result = applyCraftingAction(entry.def, actionId, options);
+    if (!result?.ok || !result.afterItem) {
+      return {
+        ok: false,
+        slot,
+        action: result?.action ?? null,
+        reason: result?.reason ?? 'craft_failed',
+        blockedReason: result?.blockedReason ?? 'Crafting failed.',
+        beforeItem,
+      };
+    }
+
+    let removed = null;
+    try {
+      removed = this.player.unequip(slot);
+      const displaced = this.player.equip(result.afterItem, slot);
+      if (displaced && displaced.uid !== beforeItem.uid) {
+        throw new Error('unexpected_displaced_item');
+      }
+    } catch (error) {
+      if (removed) {
+        this.player.equip(beforeItem, slot);
+      }
+      return {
+        ok: false,
+        slot,
+        action: result.action,
+        reason: 'craft_transaction_failed',
+        blockedReason: 'Crafting could not be applied safely.',
+        error: String(error?.message ?? error),
+        beforeItem,
+      };
+    }
+
+    this.audio.play('xp_collect');
+    this._flushHudUpdate();
+    this.checkpoint();
+    return {
+      ok: true,
+      slot,
+      action: result.action,
+      beforeItem,
+      afterItem: structuredClone(result.afterItem),
+    };
+  }
+
   pause() {
     if (this.state === 'RUNNING' || this.state === 'HUB') {
       this._pausedFrom = this.state;
@@ -3850,12 +3950,11 @@ export class GameEngine {
       this._flushHudUpdate();
       return { ok: true, slot: targetSlot };
     }
-    // Open the passive tree if there are skill points to spend.
+    // Notify UI, but do not auto-open passive tree. Player can open it manually with T.
     if (player.skillPoints > 0) {
-      this.onLevelUp();
-    } else {
-      this.resume();
+      this.onLevelUp?.(player.skillPoints);
     }
+    this.resume();
     return { ok: true, slot: targetSlot };
   }
 

@@ -43,6 +43,19 @@ function fmtStat(key, value) {
     armorFlat:        (v) => `+${v} armor`,
     evasionFlat:      (v) => `+${v} evasion`,
     energyShieldFlat: (v) => `+${v} energy shield`,
+    increasedDamageWithSword: (v) => `+${Math.round(v * 100)}% damage with swords`,
+    increasedDamageWithAxe: (v) => `+${Math.round(v * 100)}% damage with axes`,
+    increasedDamageWithBow: (v) => `+${Math.round(v * 100)}% damage with bows`,
+    increasedDamageWithLance: (v) => `+${Math.round(v * 100)}% damage with lances`,
+    increasedDamageWithWand: (v) => `+${Math.round(v * 100)}% damage with wands`,
+    increasedDamageWithTome: (v) => `+${Math.round(v * 100)}% damage with tomes`,
+    increasedDamageWithAttackSkills: (v) => `+${Math.round(v * 100)}% attack skill damage`,
+    increasedDamageWithSpellSkills: (v) => `+${Math.round(v * 100)}% spell skill damage`,
+    increasedDamageWithBowSkills: (v) => `+${Math.round(v * 100)}% bow skill damage`,
+    increasedAttackSpeedWithBow: (v) => `+${Math.round(v * 100)}% attack speed with bows`,
+    increasedAttackSpeedWithWand: (v) => `+${Math.round(v * 100)}% attack speed with wands`,
+    increasedAttackSpeedWithAttackSkills: (v) => `+${Math.round(v * 100)}% attack skill speed`,
+    increasedCastSpeedWithSpellSkills: (v) => `+${Math.round(v * 100)}% spell cast speed`,
   };
   return map[key] ? map[key](value) : `${key}: ${value}`;
 }
@@ -125,6 +138,16 @@ function SkillTooltip({ skill, pos }) {
       {skill.manaCost > 0 && (
         <div className="hud-skill-tooltip__line">Mana: {Math.round(skill.manaCost)}</div>
       )}
+      {skill.blockedReason && (
+        <div className="hud-skill-tooltip__line hud-skill-tooltip__line--blocked">
+          {skill.blockedReason}
+        </div>
+      )}
+      {skill.requirementHint && (
+        <div className="hud-skill-tooltip__line hud-skill-tooltip__line--hint">
+          {skill.requirementHint}
+        </div>
+      )}
       {skill.tags?.length > 0 && (
         <div className="hud-skill-tooltip__tags">
           {skill.tags.map((t) => (
@@ -157,6 +180,7 @@ function MiniSlot({ slotKey, entry, onHover }) {
 export function HUD({
   hud,
   hideTimer = false,
+  hideCoreOverlays = false,
   mobileMode = false,
   compactMode = false,
   screenContext = 'RUNNING',
@@ -184,68 +208,72 @@ export function HUD({
   return (
     <div className={`hud${mobileMode ? ' hud--mobile' : ''}${compactHud ? ' hud--compact' : ''}`}>
       {/* Timer / map entry banner — top center */}
-      <div className="hud-center">
-        {!mapContext && !hideTimer && <div className="timer">{formatTime(elapsed)}</div>}
-        {mapContext && mapName && elapsed < 3 && (
-          <div className="map-entry-banner" style={{ opacity: Math.max(0, 1 - elapsed / 3) }}>
-            <span className="map-entry-name">{mapName}</span>
-            <span className="map-entry-tier">Area Lv. {mapAreaLevel || 1}</span>
-          </div>
-        )}
-      </div>
-
-      <div className="hud-bottom">
-        <div className="bar-row">
-          <span className="bar-label">{compactHud ? '❤️' : 'HP'}</span>
-          <div className="bar-bg">
-            <div className="bar-fill" style={{ width: `${hpPct}%`, background: hpColor }} />
-          </div>
-          {!compactHud && (
-            <span className="bar-value">
-              {Math.ceil(health)}/{maxHealth}
-            </span>
+      {!hideCoreOverlays && (
+        <div className="hud-center">
+          {!mapContext && !hideTimer && <div className="timer">{formatTime(elapsed)}</div>}
+          {mapContext && mapName && elapsed < 3 && (
+            <div className="map-entry-banner" style={{ opacity: Math.max(0, 1 - elapsed / 3) }}>
+              <span className="map-entry-name">{mapName}</span>
+              <span className="map-entry-tier">Area Lv. {mapAreaLevel || 1}</span>
+            </div>
           )}
         </div>
-        <div className="bar-row">
-          <span className="bar-label">{compactHud ? '✨' : 'XP'}</span>
-          <div className="bar-bg">
-            <div className="bar-fill xp-fill" style={{ width: `${xpPct}%` }} />
-          </div>
-          {!compactHud && (
-            <span className="bar-value">
-              {xp}/{xpToNext}
-            </span>
-          )}
-        </div>
+      )}
 
-        {maxMana > 0 && (
+      {!hideCoreOverlays && (
+        <div className="hud-bottom">
           <div className="bar-row">
-            <span className="bar-label mana-label">{compactHud ? '💧' : 'MP'}</span>
+            <span className="bar-label">{compactHud ? '❤️' : 'HP'}</span>
             <div className="bar-bg">
-              <div className="bar-fill mana-fill" style={{ width: `${manaPct}%` }} />
+              <div className="bar-fill" style={{ width: `${hpPct}%`, background: hpColor }} />
             </div>
             {!compactHud && (
               <span className="bar-value">
-                {Math.ceil(mana)}/{Math.round(maxMana)}
+                {Math.ceil(health)}/{maxHealth}
               </span>
             )}
           </div>
-        )}
-
-        {maxEnergyShield > 0 && (
           <div className="bar-row">
-            <span className="bar-label es-label">{compactHud ? '🛡️' : 'ES'}</span>
+            <span className="bar-label">{compactHud ? '✨' : 'XP'}</span>
             <div className="bar-bg">
-              <div className="bar-fill es-fill" style={{ width: `${esPct}%` }} />
+              <div className="bar-fill xp-fill" style={{ width: `${xpPct}%` }} />
             </div>
             {!compactHud && (
               <span className="bar-value">
-                {Math.ceil(energyShield)}/{Math.round(maxEnergyShield)}
+                {xp}/{xpToNext}
               </span>
             )}
           </div>
-        )}
-      </div>
+
+          {maxMana > 0 && (
+            <div className="bar-row">
+              <span className="bar-label mana-label">{compactHud ? '💧' : 'MP'}</span>
+              <div className="bar-bg">
+                <div className="bar-fill mana-fill" style={{ width: `${manaPct}%` }} />
+              </div>
+              {!compactHud && (
+                <span className="bar-value">
+                  {Math.ceil(mana)}/{Math.round(maxMana)}
+                </span>
+              )}
+            </div>
+          )}
+
+          {maxEnergyShield > 0 && (
+            <div className="bar-row">
+              <span className="bar-label es-label">{compactHud ? '🛡️' : 'ES'}</span>
+              <div className="bar-bg">
+                <div className="bar-fill es-fill" style={{ width: `${esPct}%` }} />
+              </div>
+              {!compactHud && (
+                <span className="bar-value">
+                  {Math.ceil(energyShield)}/{Math.round(maxEnergyShield)}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Skill point ready badge */}
       {skillPoints > 0 && (
@@ -261,7 +289,7 @@ export function HUD({
         </div>
       )}
 
-      {mapContext && portalsRemaining >= 0 && (
+      {!hideCoreOverlays && mapContext && portalsRemaining >= 0 && (
         <div className="portal-hud-badge">
           <span className="portal-hud-label">Portals</span>
           <div className="portal-hud-pips">
@@ -415,7 +443,11 @@ export function HUD({
           <span><kbd>H</kbd> Minimap</span>
           <span><kbd>V</kbd> Inventory</span>
           <span><kbd>G</kbd> Gems</span>
-          {screenContext === 'HUB' && <span><kbd>T</kbd> Passive Tree</span>}
+          {(screenContext === 'HUB' || screenContext === 'RUNNING') && (
+            <span className={skillPoints > 0 ? 'hud-tree-hint hud-tree-hint--ready' : 'hud-tree-hint'}>
+              <kbd>T</kbd> Passive Tree {skillPoints > 0 ? `(${skillPoints})` : ''}
+            </span>
+          )}
           {mapContext && <span><kbd>B</kbd> Portal</span>}
         </div>
       )}
@@ -431,7 +463,7 @@ export function HUD({
             return (
               <div
                 key={i}
-                className={`skill-slot${s?.ready ? ' skill-slot--ready' : ''}${s && s.canAfford === false ? ' skill-slot--oom' : ''}${!s ? ' skill-slot--empty' : ''}`}
+                className={`skill-slot${s?.ready ? ' skill-slot--ready' : ''}${s && s.canAfford === false ? ' skill-slot--oom' : ''}${s?.blocked ? ' skill-slot--blocked' : ''}${!s ? ' skill-slot--empty' : ''}`}
                 onMouseEnter={(e) => {
                   if (!s) return;
                   const rect = e.currentTarget.getBoundingClientRect();
@@ -447,6 +479,7 @@ export function HUD({
                   <>
                     <span className="skill-icon">{s.icon}</span>
                     <span className="skill-name">{s.name}</span>
+                    {s.blockedReason && <span className="skill-requirement-flag">REQ</span>}
                     {!s.ready && s.remaining > 0 && (
                       <div className="skill-cd-bar">
                         <div className="skill-cd-fill" style={{ width: `${fillPct}%` }} />

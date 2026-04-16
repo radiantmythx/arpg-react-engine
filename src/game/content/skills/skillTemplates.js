@@ -14,6 +14,8 @@ export const MIGRATED_SKILL_TEMPLATES = [
     icon: '🔥',
     description: 'Launch an arcing fireball that detonates on impact, dealing fire damage in an area.',
     tags: ['Spell', 'Projectile', 'Blaze', 'AoE'],
+    requiresWeaponType: ['wand', 'staff'],
+    requirementHint: 'Equip a Wand or Staff to use Fireball.',
   },
   {
     id: 'frost_nova',

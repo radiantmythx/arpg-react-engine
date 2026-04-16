@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { calcSellPrice } from '../game/ItemPricing.js';
+import { getWeaponTypeLabel, listWeaponTypes, resolveWeaponType } from '../game/data/weaponTypes.js';
 import { ItemTooltip } from './ItemTooltip.jsx';
 
 const RARITY_COLORS = {
@@ -29,6 +30,14 @@ const SKILL_FILTERS = [
   { id: 'movement', label: 'Movement' },
 ];
 
+const WEAPON_FILTERS = [
+  { id: 'all', label: 'All' },
+  ...listWeaponTypes().map((weaponType) => ({
+    id: weaponType,
+    label: getWeaponTypeLabel(weaponType),
+  })),
+];
+
 function deriveSkillTags(row) {
   const text = `${row?.name ?? ''} ${row?.description ?? ''}`.toLowerCase();
   const tags = new Set();
@@ -53,8 +62,58 @@ function deriveSkillTags(row) {
   return tags;
 }
 
-function VendorRow({ row, canAfford, onBuy, onHoverItem, onClearHover }) {
+function countAffixes(item) {
+  return (item?.explicitAffixes?.length ?? 0) + (item?.implicitAffixes?.length ?? 0);
+}
+
+function resolveCompareItem(item, equipment = {}) {
+  if (!item) return null;
+  const slot = item.slot;
+  if (slot === 'ring') {
+    return equipment.ring1 ?? equipment.ring2 ?? null;
+  }
+  if (slot === 'weapon' || slot === 'mainhand') {
+    return equipment.mainhand ?? null;
+  }
+  if (slot === 'offhand') {
+    return equipment.offhand ?? null;
+  }
+  if (slot === 'armor') {
+    return equipment.bodyarmor ?? null;
+  }
+  if (slot === 'jewelry') {
+    return equipment.amulet ?? null;
+  }
+  return equipment[slot] ?? null;
+}
+
+function buildMetricLine(item, equipment = {}) {
+  if (!item) return '';
+  const parts = [];
+  const weaponType = resolveWeaponType(item);
+  if (weaponType) {
+    parts.push(getWeaponTypeLabel(weaponType));
+  }
+  parts.push(`${item.gridW ?? 1}×${item.gridH ?? 1}`);
+
+  const affixCount = countAffixes(item);
+  if (affixCount > 0) {
+    parts.push(`${affixCount} affix${affixCount === 1 ? '' : 'es'}`);
+  }
+
+  const compareItem = resolveCompareItem(item, equipment);
+  if (compareItem) {
+    const affixDelta = affixCount - countAffixes(compareItem);
+    parts.push(`${affixDelta >= 0 ? '+' : ''}${affixDelta} affix vs equipped`);
+  }
+
+  parts.push(`${calcSellPrice(item)}g value`);
+  return parts.join(' · ');
+}
+
+function VendorRow({ row, canAfford, onBuy, onHoverItem, onClearHover, equipment }) {
   const nameColor = row.rarity ? (RARITY_COLORS[row.rarity] ?? undefined) : undefined;
+  const metricLine = buildMetricLine(row.itemDef ?? null, equipment);
   return (
     <div
       className={`vendor-row vendor-row--${row.rarity ?? 'default'}`}
@@ -69,6 +128,7 @@ function VendorRow({ row, canAfford, onBuy, onHoverItem, onClearHover }) {
             {row.name}
           </span>
           <span className="vendor-item-desc">{row.description}</span>
+          {metricLine && <span className="vendor-item-metrics">{metricLine}</span>}
         </div>
       </div>
       <div className="vendor-item-buy">
@@ -83,10 +143,11 @@ function VendorRow({ row, canAfford, onBuy, onHoverItem, onClearHover }) {
   );
 }
 
-function SellInventoryRow({ item, onSell }) {
+function SellInventoryRow({ item, onSell, equipment }) {
   const sellPrice = calcSellPrice(item);
   const nameColor = item.rarity ? (RARITY_COLORS[item.rarity] ?? undefined) : undefined;
   const gridSize = `${item.gridW ?? 1}×${item.gridH ?? 1}`;
+  const metricLine = buildMetricLine(item, equipment);
 
   return (
     <div className={`vendor-row vendor-row--${item.rarity ?? 'default'}`}>
@@ -97,6 +158,7 @@ function SellInventoryRow({ item, onSell }) {
             {item.name}
           </span>
           <span className="vendor-item-desc">{item.description || `${gridSize} slot`}</span>
+          {metricLine && <span className="vendor-item-metrics">{metricLine}</span>}
         </div>
       </div>
       <div className="vendor-item-buy">
@@ -114,6 +176,7 @@ function SellInventoryRow({ item, onSell }) {
 export function VendorScreen({
   stock = [],
   inventory = null,
+  equipment = {},
   gold = 0,
   onBuy,
   onClose,
@@ -125,6 +188,7 @@ export function VendorScreen({
 }) {
   const [tab, setTab] = useState('skill');
   const [skillFilter, setSkillFilter] = useState('all');
+  const [weaponFilter, setWeaponFilter] = useState('all');
   const [hoveredItem, setHoveredItem] = useState(null);
   const [hoverPos, setHoverPos] = useState(null);
 
@@ -155,12 +219,15 @@ export function VendorScreen({
         return inventoryItems;
       }
       const tabRows = stock.filter((r) => r.tab === tab);
+      if (tab === 'weapons' && weaponFilter !== 'all') {
+        return tabRows.filter((row) => resolveWeaponType(row.itemDef ?? row) === weaponFilter);
+      }
       if (tab !== 'skill' || skillFilter === 'all') {
         return tabRows;
       }
       return tabRows.filter((row) => deriveSkillTags(row).has(skillFilter));
     },
-    [stock, tab, inventoryItems, skillFilter],
+    [stock, tab, inventoryItems, skillFilter, weaponFilter],
   );
 
   const canReroll       = REROLL_TABS.has(tab) && tab !== 'sell';
@@ -187,6 +254,9 @@ export function VendorScreen({
                 if (t.id !== 'skill') {
                   setSkillFilter('all');
                 }
+                if (t.id !== 'weapons') {
+                  setWeaponFilter('all');
+                }
               }}
             >
               {t.label}
@@ -209,10 +279,28 @@ export function VendorScreen({
           </div>
         )}
 
+        {tab === 'weapons' && (
+          <>
+            <div className="vendor-filter-label">Weapon Type</div>
+            <div className="vendor-skill-tags" aria-label="Weapon type filters">
+              {WEAPON_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  className={`vendor-skill-tag${weaponFilter === filter.id ? ' vendor-skill-tag--active' : ''}`}
+                  onClick={() => setWeaponFilter(filter.id)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         <div className="vendor-list phone-shell-scroll">
           {tab === 'sell' ? (
             filtered.map((item) => (
-              <SellInventoryRow key={item.uid} item={item} onSell={onSell} />
+              <SellInventoryRow key={item.uid} item={item} onSell={onSell} equipment={equipment} />
             ))
           ) : (
             filtered.map((row) => (
@@ -223,6 +311,7 @@ export function VendorScreen({
                 onBuy={onBuy}
                 onHoverItem={handleHoverItem}
                 onClearHover={clearHoverItem}
+                equipment={equipment}
               />
             ))
           )}

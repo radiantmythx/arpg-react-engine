@@ -13,7 +13,12 @@ export function ItemPopup({ itemDef, currentEquipped, onEquip, onLeave }) {
   const rarity      = itemDef.rarity ?? 'normal';
   const rarityColor = RARITY_COLORS[rarity];
   const slotIcon    = SLOT_ICONS[itemDef.slot] ?? '';
-  const affixes     = itemDef.affixes ?? [];
+  const explicitAffixes = Array.isArray(itemDef.explicitAffixes)
+    ? itemDef.explicitAffixes
+    : (itemDef.affixes ?? []).filter((a) => (a?.kind ?? 'explicit') !== 'implicit');
+  const implicitAffixes = Array.isArray(itemDef.implicitAffixes)
+    ? itemDef.implicitAffixes
+    : (itemDef.affixes ?? []).filter((a) => (a?.kind ?? 'explicit') === 'implicit');
 
   return (
     <div className="overlay item-popup-overlay">
@@ -37,10 +42,21 @@ export function ItemPopup({ itemDef, currentEquipped, onEquip, onLeave }) {
         {/* Base description */}
         <p className="item-popup-desc">{itemDef.description}</p>
 
-        {/* Procedural affixes */}
-        {affixes.length > 0 && (
+        {/* Implicit affixes */}
+        {implicitAffixes.length > 0 && (
           <ul className="item-affix-list">
-            {affixes.map((affix) => (
+            {implicitAffixes.map((affix) => (
+              <li key={affix.id} className="item-affix item-affix-prefix">
+                {affix.label}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Explicit affixes */}
+        {explicitAffixes.length > 0 && (
+          <ul className="item-affix-list">
+            {explicitAffixes.map((affix) => (
               <li key={affix.id} className={`item-affix item-affix-${affix.type}`}>
                 {affix.label}
               </li>

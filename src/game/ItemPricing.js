@@ -39,11 +39,19 @@ export function getBaseItemPrice(itemDef) {
 
 /** Get the list of active affixes on an item (those with a defined goldValue). */
 export function getAffixesWithPrice(itemDef) {
-  if (!itemDef || !Array.isArray(itemDef.affixes)) {
+  if (!itemDef) {
     return [];
   }
 
-  return itemDef.affixes
+  const merged = [
+    ...(Array.isArray(itemDef.implicitAffixes) ? itemDef.implicitAffixes : []),
+    ...(Array.isArray(itemDef.explicitAffixes) ? itemDef.explicitAffixes : []),
+  ];
+  const source = merged.length > 0
+    ? merged
+    : (Array.isArray(itemDef.affixes) ? itemDef.affixes : []);
+
+  return source
     .map((entry) => {
       if (!entry) return null;
       if (typeof entry === 'string') {

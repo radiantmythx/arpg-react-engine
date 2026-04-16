@@ -86,6 +86,9 @@ class SkillDef {
     this.castTime = cfg.castTime ?? 0;
     /** Reserved for future resource system. */
     this.manaCost = cfg.manaCost ?? 0;
+    /** Optional equip requirements for activation gating. */
+    this.requiresWeaponType = Array.isArray(cfg.requiresWeaponType) ? [...cfg.requiresWeaponType] : [];
+    this.requirementHint = cfg.requirementHint ?? null;
     /**
      * Support gem sockets. Open sockets scale by gem level:
      * level 1 = 1, 4 = 2, 7 = 3, 10 = 4, 13+ = 5.
@@ -750,6 +753,8 @@ class LightningStrike extends SkillDef {
       name:        'Lightning Strike',
       icon:        '⚡',
       description: 'Melee burst within 80 px (1.5× damage), then fire 3 lightning bolts forward.',
+      requiresWeaponType: ['sword', 'axe', 'lance', 'staff'],
+      requirementHint: 'Equip a Sword, Axe, Lance, or Staff to use Lightning Strike.',
       cooldown:    3.5,
       castTime:    0.40,
       manaCost:    11,
@@ -947,7 +952,7 @@ class Earthquake extends SkillDef {
       base:    { damage: 70, impactRadius: 80, afterRadius: 140 },
       scaling: { damage: { flat: 25, pct: 0 }, impactRadius: { flat: 10, pct: 0 }, afterRadius: { flat: 15, pct: 0 } },
     });
-    this.tags = ['Attack', 'AoE', 'Physical', 'Duration'];
+    this.tags = ['Attack', 'AoE', 'Physical', 'Duration', 'Melee'];
     this._aftershockPending = false;
     this._aftershockTimer   = 0;
     this._aftershockCtx     = null;

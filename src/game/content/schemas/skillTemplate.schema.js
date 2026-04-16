@@ -8,6 +8,7 @@ const REQUIRED_TEMPLATE_FIELDS = [
 ];
 
 const ALLOWED_STYLES = new Set(['projectile', 'aoe']);
+const ALLOWED_WEAPON_TYPES = new Set(['sword', 'axe', 'bow', 'lance', 'wand', 'staff', 'tome', 'shield']);
 
 function isNonEmptyString(v) {
   return typeof v === 'string' && v.trim().length > 0;
@@ -53,6 +54,18 @@ export function validateMigratedSkillTemplates(templates = [], skillOffers = [],
     }
     if (!Array.isArray(t.tags) || t.tags.length === 0) {
       errors.push(`${loc} (${t.id}): tags must be a non-empty array`);
+    }
+
+    if (t.requiresWeaponType != null) {
+      if (!Array.isArray(t.requiresWeaponType) || t.requiresWeaponType.length === 0) {
+        errors.push(`${loc} (${t.id}): requiresWeaponType must be a non-empty array when provided`);
+      } else {
+        for (const type of t.requiresWeaponType) {
+          if (typeof type !== 'string' || !ALLOWED_WEAPON_TYPES.has(type)) {
+            errors.push(`${loc} (${t.id}): unknown weapon requirement '${type}'`);
+          }
+        }
+      }
     }
 
     const linkedOffer = skillOffers.find((o) => o.id === t.id);

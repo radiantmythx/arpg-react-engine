@@ -46,6 +46,8 @@ export const WEAPONS = {
     id: 'SWIFT_ARROW',
     name: 'Swift Arrow',
     description: 'Looses a quick arrow toward the nearest enemy.',
+    requiresWeaponType: ['bow'],
+    requirementHint: 'Equip a Bow to use Swift Arrow.',
     cooldown: 0.9,
     castTime: 0,
     manaCost: 4,
@@ -54,6 +56,21 @@ export const WEAPONS = {
     projectileRadius: 4,
     projectileLifetime: 1.2,
     color: '#55efc4',   // teal green
+  },
+  FROST_ARROW: {
+    id: 'FROST_ARROW',
+    name: 'Frost Arrow',
+    description: 'Looses a chilled arrow that deals light Frost damage.',
+    requiresWeaponType: ['bow'],
+    requirementHint: 'Equip a Bow to use Frost Arrow.',
+    cooldown: 0.95,
+    castTime: 0,
+    manaCost: 4,
+    damage: 9,
+    projectileSpeed: 540,
+    projectileRadius: 4,
+    projectileLifetime: 1.2,
+    color: '#7fd6ff',
   },
   MELEE_STRIKE: {
     id: 'MELEE_STRIKE',
@@ -65,6 +82,19 @@ export const WEAPONS = {
     damage: 25,
     strikeRadius: 70,
     color: '#e17055',   // warm orange-red
+  },
+  FIRE_STRIKE: {
+    id: 'FIRE_STRIKE',
+    name: 'Fire Strike',
+    description: 'A melee slash that deals mostly physical damage with a small blaze hit.',
+    requiresWeaponType: ['sword', 'axe', 'lance', 'staff'],
+    requirementHint: 'Equip a melee weapon (Sword, Axe, Lance, or Staff) to use Fire Strike.',
+    cooldown: 1.45,
+    castTime: 0,
+    manaCost: 6,
+    damage: 24,
+    strikeRadius: 70,
+    color: '#ff8b5c',
   },
 
   // ── Original weapons (all remain available as hotbar active skills) ───────

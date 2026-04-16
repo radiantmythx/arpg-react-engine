@@ -21,9 +21,11 @@
  *   onCellClick(col, row)
  *   onSlotClick(slot)
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ItemTooltip } from './ItemTooltip.jsx';
 import { GemPanel } from './GemPanel.jsx';
+import { calcSellPrice } from '../game/ItemPricing.js';
+import { canEquipItemInSlot, getWeaponTypeLabel, listWeaponTypes, resolveWeaponType } from '../game/data/weaponTypes.js';
 
 const CELL_SIZE = 46;
 const LONG_PRESS_MS = 420;
@@ -79,33 +81,75 @@ const RARITY_COLORS = {
 };
 
 const EQUIPPABLE_SLOTS = new Set(['weapon', 'armor', 'jewelry', 'helmet', 'boots', 'offhand', 'ring', 'amulet', 'mainhand', 'bodyarmor', 'gloves', 'belt']);
+const WEAPON_FILTERS = [
+  { id: 'all', label: 'All' },
+  ...listWeaponTypes().map((weaponType) => ({
+    id: weaponType,
+    label: getWeaponTypeLabel(weaponType),
+  })),
+];
 
-// Slots that accept a given item.slot string
-const SLOT_ACCEPTS = {
-  mainhand:  ['mainhand', 'weapon'],
-  offhand:   ['offhand'],
-  bodyarmor: ['bodyarmor', 'armor'],
-  helmet:    ['helmet'],
-  boots:     ['boots'],
-  belt:      ['belt'],
-  ring1:     ['ring'],
-  ring2:     ['ring'],
-  amulet:    ['amulet', 'jewelry'],
-  gloves:    ['gloves'],
-};
-
-function slotIsCompatible(slotKey, cursorItem) {
+function slotIsCompatible(slotKey, cursorItem, equipment) {
   if (!cursorItem) return false;
-  return SLOT_ACCEPTS[slotKey]?.includes(cursorItem.slot) ?? false;
+  return canEquipItemInSlot(cursorItem, slotKey, equipment ?? {});
+}
+
+function countAffixes(item) {
+  return (item?.explicitAffixes?.length ?? 0) + (item?.implicitAffixes?.length ?? 0);
+}
+
+function resolveCompareItem(item, equipment = {}) {
+  if (!item) return null;
+  const slot = item.slot;
+  if (slot === 'ring') {
+    return equipment.ring1 ?? equipment.ring2 ?? null;
+  }
+  if (slot === 'weapon' || slot === 'mainhand') {
+    return equipment.mainhand ?? null;
+  }
+  if (slot === 'offhand') {
+    return equipment.offhand ?? null;
+  }
+  if (slot === 'armor') {
+    return equipment.bodyarmor ?? null;
+  }
+  if (slot === 'jewelry') {
+    return equipment.amulet ?? null;
+  }
+  return equipment[slot] ?? null;
+}
+
+function buildMetricLine(item, equipment = {}) {
+  if (!item) return '';
+  const parts = [];
+  const weaponType = resolveWeaponType(item);
+  if (weaponType) {
+    parts.push(getWeaponTypeLabel(weaponType));
+  }
+  parts.push(`${item.gridW ?? 1}×${item.gridH ?? 1}`);
+
+  const affixCount = countAffixes(item);
+  if (affixCount > 0) {
+    parts.push(`${affixCount} affix${affixCount === 1 ? '' : 'es'}`);
+  }
+
+  const compareItem = resolveCompareItem(item, equipment);
+  if (compareItem) {
+    const affixDelta = affixCount - countAffixes(compareItem);
+    parts.push(`${affixDelta >= 0 ? '+' : ''}${affixDelta} affix vs equipped`);
+  }
+
+  parts.push(`${calcSellPrice(item)}g value`);
+  return parts.join(' · ');
 }
 
 // ─── Single equip slot tile ───────────────────────────────────────────────────
-function EquipSlotTile({ slotKey, entry, cursorItem, onSlotClick, mobileMode = false, tileSize = CELL_SIZE }) {
+function EquipSlotTile({ slotKey, entry, cursorItem, equipment, onSlotClick, mobileMode = false, tileSize = CELL_SIZE }) {
   const cfg      = SLOT_CONFIG[slotKey];
   const w        = cfg.w * tileSize;
   const h        = cfg.h * tileSize;
   const rarity   = entry?.rarity ?? 'normal';
-  const isTarget = slotIsCompatible(slotKey, cursorItem);
+  const isTarget = slotIsCompatible(slotKey, cursorItem, equipment);
 
   const activateSlot = (e) => {
     if (e) {
@@ -184,6 +228,7 @@ export function InventoryScreen({
   const [selectedSupportGemUid, setSelectedSupportGemUid] = useState(null);
   const [selectedSkillGemUid, setSelectedSkillGemUid] = useState(null);
   const [selectedMobileItemUid, setSelectedMobileItemUid] = useState(null);
+  const [weaponFilter, setWeaponFilter] = useState('all');
   const touchTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
   const suppressClickUntilRef = useRef(0);
@@ -202,6 +247,14 @@ export function InventoryScreen({
   const selectedSupportGem = items.find((item) => item.uid === selectedSupportGemUid && item.type === 'support_gem') ?? null;
   const selectedSkillGem = items.find((item) => item.uid === selectedSkillGemUid && item.type === 'skill_gem') ?? null;
   const selectedMobileItem = items.find((item) => item.uid === selectedMobileItemUid) ?? null;
+  const filteredInventoryItems = useMemo(() => {
+    if (tab !== 'equipment' || weaponFilter === 'all') {
+      return items;
+    }
+    return items.filter((item) => resolveWeaponType(item) === weaponFilter);
+  }, [items, tab, weaponFilter]);
+  const inspectedInventoryItem = hoveredItem ?? selectedMobileItem ?? null;
+  const inspectedMetrics = inspectedInventoryItem ? buildMetricLine(inspectedInventoryItem, equipment ?? {}) : '';
   const canQuickAction = !!selectedMobileItem && (selectedMobileItem.type === 'skill_gem' || EQUIPPABLE_SLOTS.has(selectedMobileItem.slot));
   const canManageInGems = !!selectedMobileItem && isGemItem(selectedMobileItem);
   const quickActionLabel = selectedMobileItem?.type === 'skill_gem' ? 'Open Gems' : 'Quick Equip';
@@ -328,6 +381,7 @@ export function InventoryScreen({
       slotKey={key}
       entry={eq[key]}
       cursorItem={cursorItem}
+      equipment={eq}
       onSlotClick={handleSlotActivation}
       mobileMode={mobileMode}
       tileSize={tileSize}
@@ -369,7 +423,7 @@ export function InventoryScreen({
           );
         })}
 
-        {items.map((item) => (
+        {filteredInventoryItems.map((item) => (
           <div
             key={item.uid}
             className={`inv-item inv-item--${item.rarity}`}
@@ -422,6 +476,20 @@ export function InventoryScreen({
           </div>
         ))}
       </div>
+
+      {tab === 'equipment' && inspectedInventoryItem && (
+        <div className="inv-compare-panel">
+          <div className="inv-compare-title" style={{ color: RARITY_COLORS[inspectedInventoryItem.rarity] ?? RARITY_COLORS.normal }}>
+            {inspectedInventoryItem.name}
+          </div>
+          <div className="inv-compare-metrics">{inspectedMetrics}</div>
+          {resolveCompareItem(inspectedInventoryItem, equipment ?? {}) && (
+            <div className="inv-compare-metrics inv-compare-metrics--delta">
+              Equipped compare: {(resolveCompareItem(inspectedInventoryItem, equipment ?? {})?.name) ?? 'None'}
+            </div>
+          )}
+        </div>
+      )}
 
       {showHint && (
         <p className="inv-hint inv-hint--help">
@@ -667,6 +735,19 @@ export function InventoryScreen({
         {/* ── Tab Content ─────────────────────────────────── */}
         {tab === 'equipment' && (
         <div className={`inv-body${mobileMode ? ' inv-body--mobile' : ''}`}>
+          <div className="inv-filter-bar">
+            <span className="inv-filter-label">Weapon Filter</span>
+            {WEAPON_FILTERS.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                className={`inv-filter-chip${weaponFilter === filter.id ? ' inv-filter-chip--active' : ''}`}
+                onClick={() => setWeaponFilter(filter.id)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
           {/* ── ARPG Paper Doll ─────────────────────────── */}
           <div className={`equip-doll-arpg${showGearPanel ? '' : ' inv-mobile-hidden'}`} style={{ gap }}>
 
