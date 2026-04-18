@@ -251,25 +251,59 @@ export class CollisionSystem {
   }
 
   /**
-   * Player vs Enemies — broad phase via enemy grid.
-   * Player takes damage on overlap (invulnerability frames prevent spam).
+   * Player vs Enemies — body-blocking with slide.
+   * Only the player is repositioned; enemies stay planted.
+   * A tangential nudge lets the player slide around enemies
+   * instead of getting stuck against them.
    */
-  checkPlayerVsEnemies(player, entities, engine) {
+  checkPlayerVsEnemies(player, entities, _engine) {
     const { _enemyGrid, _candidates } = this;
     _candidates.length = 0;
     _enemyGrid.query(player, _candidates);
     for (const enemy of _candidates) {
       if (!enemy.active) continue;
-      if (circlesOverlap(player, enemy)) {
-        player.takeDamage(enemy.damage);
-        if (player.health <= 0) {
-          engine.gameOver();
-          return;
-        }
-        // Only fire onPlayerHit when the damage actually landed (invulnerability)
-        if (player.invulnerable > 0.45) engine.onPlayerHit(enemy.damage);
-      }
+      if (enemy.isWarning) continue;
+      this._slidePlayerOutOfEnemy(player, enemy);
     }
+  }
+
+  /**
+   * Push the player just outside an enemy's circle.
+   * Adds a small tangential component so the player slides around the
+   * enemy rather than sticking to its surface.
+   */
+  _slidePlayerOutOfEnemy(player, enemy) {
+    let dx = player.x - enemy.x;
+    let dy = player.y - enemy.y;
+    const distSq = dx * dx + dy * dy;
+    const minDist = player.radius + enemy.radius;
+    if (distSq >= minDist * minDist) return;
+
+    let dist = Math.sqrt(distSq);
+    if (dist < 0.001) {
+      // Exactly overlapping — pick an arbitrary direction to escape.
+      dx = 1;
+      dy = 0;
+      dist = 0.001;
+    }
+
+    // Normal: direction from enemy center to player
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const overlap = minDist - dist + 0.5; // +0.5 tiny gap to avoid re-triggering
+
+    // Tangent perpendicular to the collision normal (always same winding)
+    const tx = -ny;
+    const ty = nx;
+    // Dot the player's facing/velocity proxy against the tangent to decide
+    // which way to slide. Uses player.facingX/Y which tracks last input direction.
+    const faceDot = (player.facingX ?? 0) * tx + (player.facingY ?? 0) * ty;
+    const slideSign = faceDot >= 0 ? 1 : -1;
+    // Slide strength: fraction of the overlap so the nudge is proportional.
+    const slideAmount = overlap * 0.45;
+
+    player.x = enemy.x + nx * minDist + tx * slideSign * slideAmount;
+    player.y = enemy.y + ny * minDist + ty * slideSign * slideAmount;
   }
 
   /**
@@ -418,5 +452,38 @@ export class CollisionSystem {
     entity.x += dx * (overlap + 0.01);
     entity.y += dy * (overlap + 0.01);
     return true;
+  }
+
+  /**
+   * Push overlapping enemies apart so they can't stack on top of each other.
+   * Uses the enemy spatial grid built by buildGrids() for broad-phase.
+   * Call once per frame, after enemies have moved.
+   */
+  separateEnemies(entities) {
+    const allEnemies = [];
+    for (const e of entities.enemies) { if (e.active) allEnemies.push(e); }
+    for (const b of entities.bosses) { if (b.active && !b.isWarning) allEnemies.push(b); }
+
+    for (const a of allEnemies) {
+      this._candidates.length = 0;
+      this._enemyGrid.query(a.x, a.y, (a.radius ?? 12) * 2 + 4, this._candidates);
+      for (const b of this._candidates) {
+        if (b === a || !b.active) continue;
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const distSq = dx * dx + dy * dy;
+        const minDist = (a.radius ?? 12) + (b.radius ?? 12);
+        if (distSq >= minDist * minDist || distSq === 0) continue;
+        const dist = Math.sqrt(distSq);
+        const push = (minDist - dist) * 0.5;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        // Push each enemy half the overlap distance away from the other.
+        a.x += nx * push;
+        a.y += ny * push;
+        b.x -= nx * push;
+        b.y -= ny * push;
+      }
+    }
   }
 }

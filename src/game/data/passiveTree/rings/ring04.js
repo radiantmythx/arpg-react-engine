@@ -1118,92 +1118,87 @@ export const RING_04_NODES = [
   },
   {
     id: "r4bs00",
-    label: "Tempered Guard I",
+    label: "Reach Vein I",
     type: "minor",
     section: "warrior",
     ring: 4,
     slot: 1,
     radiusOverride: 643,
     stats: {
-      totalArmor: 4,
-      maxHealth: 20
+      meleeStrikeRange: 0.10
     },
     connections: [
       "r4s00",
       "r4bs01"
     ],
-    description: "+4 total armor. +20 max health. Outer spur clockwise of Warrior connector."
+    description: "+10% melee strike range. Outer spur clockwise of Warrior connector."
   },
   {
     id: "r4bs01",
-    label: "Tempered Guard II",
+    label: "Reach Vein II",
     type: "minor",
     section: "warrior",
     ring: 4,
     slot: 2,
     radiusOverride: 643,
     stats: {
-      totalArmor: 4,
-      maxHealth: 20
+      meleeStrikeRange: 0.10
     },
     connections: [
       "r4bs00",
       "r4bs02"
     ],
-    description: "+4 total armor. +20 max health."
+    description: "+10% melee strike range."
   },
   {
     id: "r4bs02",
-    label: "Tempered Guard III",
+    label: "Reach Vein III",
     type: "minor",
     section: "warrior",
     ring: 4,
     slot: 3,
     radiusOverride: 643,
     stats: {
-      totalArmor: 4,
-      maxHealth: 20
+      meleeStrikeRange: 0.10
     },
     connections: [
       "r4bs01",
       "r4bs03"
     ],
-    description: "+4 total armor. +20 max health."
+    description: "+10% melee strike range."
   },
   {
     id: "r4bs03",
-    label: "Tempered Guard IV",
+    label: "Reach Vein IV",
     type: "minor",
     section: "warrior",
     ring: 4,
     slot: 4,
     radiusOverride: 643,
     stats: {
-      totalArmor: 4,
-      maxHealth: 20
+      meleeStrikeRange: 0.10
     },
     connections: [
       "r4bs02",
       "r4bs04"
     ],
-    description: "+4 total armor. +20 max health."
+    description: "+10% melee strike range."
   },
   {
     id: "r4bs04",
-    label: "Tempered Hide",
+    label: "Titan's Reach",
     type: "notable",
     section: "warrior",
     ring: 4,
     slot: 5,
     radiusOverride: 643,
     stats: {
-      totalArmor: 10,
-      maxHealth: 50
+      meleeStrikeRange: 0.35
     },
     connections: [
       "r4bs03"
     ],
-    description: "+10 total armor. +50 max health."
+    description: "+35% melee strike range. The titan's blow lands where none dare stand."
   },
   {
     id: "r4bs06",

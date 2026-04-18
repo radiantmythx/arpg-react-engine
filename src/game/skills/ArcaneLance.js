@@ -63,17 +63,17 @@ export class ArcaneLance extends Skill {
   }
 
   _applyLevelStats() {
-    // Progressive improvements per level
+    // Progressive improvements per level — castTime drops as you invest levels
     const table = {
-      2: { damage: 30, cooldown: 0.85 },
-      3: { damage: 40, cooldown: 0.70 },
-      4: { damage: 55, cooldown: 0.60 },
-      5: { damage: 70, cooldown: 0.50, piercing: true },
+      2: { damage: 30, castTime: 0.57 },
+      3: { damage: 40, castTime: 0.50 },
+      4: { damage: 55, castTime: 0.43 },
+      5: { damage: 70, castTime: 0.36, piercing: true },
     };
     const stats = table[this.level];
     if (!stats) return;
-    if (stats.damage !== undefined) this.damage = stats.damage;
-    if (stats.cooldown !== undefined) this.cooldown = stats.cooldown;
+    if (stats.damage   !== undefined) this.damage   = stats.damage;
+    if (stats.castTime !== undefined) this.castTime = stats.castTime;
     if (stats.piercing) this.config = { ...this.config, piercing: true };
   }
 }

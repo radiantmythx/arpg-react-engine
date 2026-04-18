@@ -798,7 +798,9 @@ function resolvePhase9MapModEffects(mapDef = {}, layoutFamily = DEFAULT_LAYOUT_F
     const hintFamily = layoutFamily === 'bsp_fortress'
       ? 'meandering_cavern'
       : layoutFamily === 'meandering_cavern'
-        ? 'gauntlet_lane'
+        ? 'strand_corridor'
+        : layoutFamily === 'strand_corridor'
+          ? 'gauntlet_lane'
         : 'bsp_fortress';
     hybridRemix = {
       enabled: true,
@@ -808,7 +810,7 @@ function resolvePhase9MapModEffects(mapDef = {}, layoutFamily = DEFAULT_LAYOUT_F
     if (hintFamily === 'meandering_cavern') {
       pre.cavernExtraLoopsMult *= 1.15;
       pre.laneDriftBoost += 1;
-    } else if (hintFamily === 'gauntlet_lane') {
+    } else if (hintFamily === 'gauntlet_lane' || hintFamily === 'strand_corridor') {
       pre.laneCountDelta += 1;
       pre.chokepointTightness *= 1.08;
     } else {
@@ -1202,6 +1204,7 @@ export class MapGenerator {
     const handlers = {
       bsp_fortress: this._generateBspFortressLayout,
       meandering_cavern: this._generateMeanderingCavernLayout,
+      strand_corridor: this._generateStrandCorridorLayout,
       gauntlet_lane: this._generateGauntletLaneLayout,
       open_fields: this._generateOpenFieldsLayout,
     };
@@ -2040,6 +2043,301 @@ export class MapGenerator {
         const maxSq = maxR * maxR;
 
         for (let i = 0; i < 130; i++) {
+          const pickTile = this.floorTiles[Math.floor(rng() * this.floorTiles.length)];
+          if (!pickTile) break;
+          const point = toWorld(pickTile.tx, pickTile.ty);
+          const dx = point.x - player.x;
+          const dy = point.y - player.y;
+          const dSq = dx * dx + dy * dy;
+          if (dSq >= minSq && dSq <= maxSq) return point;
+        }
+
+        const fallback = this.floorTiles[Math.floor(rng() * this.floorTiles.length)] ?? startTile;
+        return toWorld(fallback.tx, fallback.ty);
+      },
+    };
+
+    map.floorTiles = buildFloorTileLists(typedRooms, map, obstacleMask, obstacleOccupancyMask, terrain.terrainMask);
+    return map;
+  }
+
+  static _generateStrandCorridorLayout(mapDef, seed) {
+    const rng = mulberry32(seed >>> 0);
+    const areaLevel = Math.max(1, mapDef?.areaLevel ?? mapDef?.sourceMapItemLevel ?? 1);
+    const progression = Math.max(1, Math.floor((areaLevel + 1) / 12));
+    const mapModEffects = resolvePhase9MapModEffects(mapDef, 'strand_corridor');
+
+    const cols = 112 + Math.min(30, progression * 4);
+    const rows = 70 + Math.min(22, progression * 3);
+    const tiles = Array.from({ length: rows }, () => Array(cols).fill(1));
+
+    const vertical = rng() < 0.5;
+    const hubCount = Math.max(8, Math.min(14, 8 + Math.floor(progression / 2) + (mapModEffects.pre.laneCountDelta ?? 0)));
+
+    const majorMin = 8;
+    const majorMax = (vertical ? rows : cols) - 9;
+    const minorBase = Math.floor((vertical ? cols : rows) / 2);
+    const driftAmp = Math.max(2, 4 + (mapModEffects.pre.laneDriftBoost ?? 0));
+
+    const hubs = [];
+    for (let i = 0; i < hubCount; i++) {
+      const t = hubCount <= 1 ? 0 : i / (hubCount - 1);
+      const major = Math.round(majorMin + (majorMax - majorMin) * t + randInt(rng, -1, 1));
+      const curve = Math.round(Math.sin((t * Math.PI * 1.1) + 0.35) * driftAmp);
+      const minor = Math.max(8, Math.min((vertical ? cols : rows) - 9, minorBase + curve + randInt(rng, -1, 1)));
+
+      const centerX = vertical ? minor : major;
+      const centerY = vertical ? major : minor;
+
+      let radius = randInt(rng, 4, 6);
+      if (i === 0) radius = 6;
+      if (i === hubCount - 1) radius = 8;
+      if (i === Math.floor(hubCount / 2)) radius = 7;
+
+      hubs.push({
+        id: `room_${i}`,
+        index: i,
+        centerX,
+        centerY,
+        radius,
+      });
+    }
+
+    const chokepointSegment = Math.max(1, Math.floor(hubs.length * 0.68));
+    const corridorWidths = [];
+
+    for (let i = 0; i < hubs.length - 1; i++) {
+      const from = hubs[i];
+      const to = hubs[i + 1];
+      const isChokepoint = i === chokepointSegment;
+      const tightness = Math.max(0.88, mapModEffects.pre.chokepointTightness ?? 1);
+      const minRadius = isChokepoint ? (2.15 / tightness) : 2.6;
+      const maxRadius = isChokepoint ? (2.65 / tightness) : 3.25;
+
+      carveWormTunnel(
+        tiles,
+        rows,
+        cols,
+        { x: from.centerX, y: from.centerY },
+        { x: to.centerX, y: to.centerY },
+        rng,
+        minRadius,
+        maxRadius,
+      );
+
+      corridorWidths.push(Math.max(4, Math.round((minRadius + maxRadius) * 1.05)));
+
+      if (!isChokepoint && i % 2 === 1) {
+        const mx = Math.round((from.centerX + to.centerX) / 2);
+        const my = Math.round((from.centerY + to.centerY) / 2);
+        const sideOffset = randInt(rng, 3, 5) * (rng() < 0.5 ? -1 : 1);
+        if (vertical) carveDisk(tiles, rows, cols, mx + sideOffset, my, randInt(rng, 2, 3), 0);
+        else carveDisk(tiles, rows, cols, mx, my + sideOffset, randInt(rng, 2, 3), 0);
+      }
+    }
+
+    for (const hub of hubs) {
+      carveDisk(tiles, rows, cols, hub.centerX, hub.centerY, hub.radius, 0);
+    }
+
+    const startHub = hubs[0];
+    carveRect(
+      tiles,
+      rows,
+      cols,
+      startHub.centerX - 5,
+      startHub.centerY - 4,
+      10,
+      8,
+      0,
+    );
+
+    const bossHub = hubs[hubs.length - 1];
+    carveRect(
+      tiles,
+      rows,
+      cols,
+      bossHub.centerX - 8,
+      bossHub.centerY - 6,
+      16,
+      12,
+      0,
+    );
+
+    const midHub = Math.floor(hubs.length / 2);
+    const typedRooms = hubs.map((hub) => {
+      let type = 'combat';
+      if (hub.index === 0) type = 'start';
+      else if (hub.index === hubs.length - 1) type = 'boss';
+      else if (hub.index === midHub || hub.index === Math.max(1, midHub - 2)) type = 'elite';
+      else if (rng() < 0.10) type = 'treasure';
+
+      const x = Math.max(1, hub.centerX - hub.radius - 2);
+      const y = Math.max(1, hub.centerY - hub.radius - 2);
+      const maxX = Math.min(cols - 2, hub.centerX + hub.radius + 2);
+      const maxY = Math.min(rows - 2, hub.centerY + hub.radius + 2);
+      const room = {
+        id: hub.id,
+        x,
+        y,
+        w: maxX - x + 1,
+        h: maxY - y + 1,
+        centerX: hub.centerX,
+        centerY: hub.centerY,
+        roomShape: 'strand_hub',
+        bossArenaStyle: null,
+        type,
+      };
+
+      if (type === 'boss') {
+        room.x = Math.max(1, hub.centerX - 9);
+        room.y = Math.max(1, hub.centerY - 7);
+        room.w = Math.min(cols - 2, hub.centerX + 9) - room.x + 1;
+        room.h = Math.min(rows - 2, hub.centerY + 7) - room.y + 1;
+      }
+
+      return room;
+    });
+
+    const startRoom = typedRooms.find((r) => r.type === 'start') ?? typedRooms[0];
+    const bossRoom = typedRooms.find((r) => r.type === 'boss') ?? typedRooms[typedRooms.length - 1];
+
+    const obstacleMask = new Uint8Array(cols * rows);
+    const obstacleOccupancyMask = new Uint8Array(cols * rows);
+    const obstacles = [];
+    applyBossArenaTemplate(bossRoom, tiles, cols, rows, rng, obstacleMask, obstacleOccupancyMask, obstacles);
+    seedCombatObstacles(typedRooms, tiles, cols, rows, rng, obstacleMask, obstacleOccupancyMask, obstacles);
+    const terrain = seedSoftTerrain(typedRooms, tiles, cols, rows, rng, obstacleOccupancyMask, mapDef, mapModEffects.post);
+    const encounterMetadata = buildEncounterMetadata(typedRooms, startRoom, bossRoom, mapDef);
+    const corruptionVariant = applyPhase9CorruptionVariant({
+      bossRoom,
+      typedRooms,
+      encounterMetadata,
+      modEffects: mapModEffects,
+      rng,
+    });
+    const phase9Notes = applyPhase9PostGenerationDecor({
+      typedRooms,
+      tiles,
+      cols,
+      rows,
+      rng,
+      obstacleMask,
+      obstacleOccupancyMask,
+      obstacles,
+      terrainMask: terrain.terrainMask,
+      encounterMetadata,
+      modEffects: mapModEffects,
+    });
+    const phase9SummaryNotes = corruptionVariant
+      ? [...phase9Notes, `Corrupted boss arena variant: ${corruptionVariant}.`]
+      : phase9Notes;
+
+    const startTile = { tx: startRoom.centerX, ty: startRoom.centerY };
+    const worldLeft = -(cols * TILE_SIZE) / 2;
+    const worldTop = -(rows * TILE_SIZE) / 2;
+
+    const toWorld = (tx, ty) => ({
+      x: worldLeft + tx * TILE_SIZE + TILE_SIZE * 0.5,
+      y: worldTop + ty * TILE_SIZE + TILE_SIZE * 0.5,
+    });
+
+    const map = {
+      seed,
+      mapId: mapDef?.id ?? 'unknown',
+      tier: mapDef?.tier ?? 1,
+      tileSize: TILE_SIZE,
+      cols,
+      rows,
+      widthPx: cols * TILE_SIZE,
+      heightPx: rows * TILE_SIZE,
+      worldLeft,
+      worldTop,
+      tiles,
+      obstacleMask,
+      obstacleOccupancyMask,
+      terrainMask: terrain.terrainMask,
+      terrainPalette: terrain.terrainPalette,
+      terrainDefs: TERRAIN_DEFS,
+      obstacles,
+      encounterMetadata,
+      mapModMetadata: {
+        activeModIds: mapModEffects.activeModIds,
+        hybridRemix: mapModEffects.hybridRemix,
+        bossArenaCorruptionVariant: corruptionVariant ?? null,
+        preGeneration: mapModEffects.pre,
+        postGeneration: mapModEffects.post,
+        notes: [...mapModEffects.notes, ...phase9SummaryNotes, `Strand corridor orientation: ${vertical ? 'north_south' : 'east_west'}.`],
+      },
+      corridorWidths,
+      rooms: typedRooms,
+      startRoom,
+      bossRoom,
+      clusterRooms: typedRooms.filter((r) => r.type !== 'start' && r.type !== 'boss'),
+      startTile,
+      startWorld: toWorld(startTile.tx, startTile.ty),
+      roomShapePalette: {
+        strand_hub: '#5e666f',
+        lane_pocket: '#4b4e62',
+        rect: '#223043',
+        clipped: '#24354b',
+        pill: '#263851',
+        offset: '#2a3d57',
+        courtyard: '#2c425f',
+        hall: '#23364d',
+      },
+      bossArenaPalette: {
+        duel_circle: '#466b8d',
+        pillar_hall: '#6d6aa8',
+        throne_dais: '#8f6f48',
+        broken_arena: '#7b5353',
+        chapel_cross: '#5b7f7c',
+      },
+
+      isWall(tx, ty) {
+        if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return true;
+        return tiles[ty][tx] === 1 || obstacleMask[keyOf(tx, ty, cols)] === 1;
+      },
+
+      isWalkableTile(tx, ty) {
+        return !this.isWall(tx, ty);
+      },
+
+      terrainCodeAtTile(tx, ty) {
+        if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return TERRAIN_CODE.NONE;
+        return this.terrainMask[keyOf(tx, ty, cols)] ?? TERRAIN_CODE.NONE;
+      },
+
+      terrainTypeAtTile(tx, ty) {
+        const code = this.terrainCodeAtTile(tx, ty);
+        return this.terrainDefs?.[code]?.id ?? null;
+      },
+
+      terrainSpeedMultiplierAtTile(tx, ty) {
+        const code = this.terrainCodeAtTile(tx, ty);
+        return this.terrainDefs?.[code]?.speedMult ?? 1;
+      },
+
+      worldToTile(x, y) {
+        const tx = Math.floor((x - worldLeft) / TILE_SIZE);
+        const ty = Math.floor((y - worldTop) / TILE_SIZE);
+        return { tx, ty };
+      },
+
+      tileToWorld(tx, ty) {
+        return toWorld(tx, ty);
+      },
+
+      isWalkableWorld(x, y) {
+        const { tx, ty } = this.worldToTile(x, y);
+        return this.isWalkableTile(tx, ty);
+      },
+
+      findSpawnPointNear(player, minR = 240, maxR = 760) {
+        const minSq = minR * minR;
+        const maxSq = maxR * maxR;
+
+        for (let i = 0; i < 140; i++) {
           const pickTile = this.floorTiles[Math.floor(rng() * this.floorTiles.length)];
           if (!pickTile) break;
           const point = toWorld(pickTile.tx, pickTile.ty);

@@ -95,6 +95,13 @@ export class Skill {
         }
       }
 
+      if (this.tags.includes('Melee') && (player.meleeStrikeRange ?? 0) !== 0) {
+        const rangeMult = Math.max(0.1, 1 + Number(player.meleeStrikeRange ?? 0));
+        for (const key of ['strikeRadius', 'meleeRadius']) {
+          if (stats[key] != null) stats[key] = Math.max(1, Math.round(stats[key] * rangeMult));
+        }
+      }
+
       const activeElems = ELEMENT_TYPES.filter((e) => this.tags.includes(e));
       const typedElems = activeElems.length > 0 ? activeElems : ['Physical'];
       if (stats.damage != null) {
@@ -124,22 +131,90 @@ export class Skill {
 
   /**
    * Called every frame. Accumulates time and fires when cooldown is reached.
+   * For skills with a castTime, enters a casting phase that freezes the player
+   * and fills a cast bar before delivering the effect.
    * @param {number} dt - delta time in seconds
    * @param {import('../entities/Player.js').Player} player
    * @param {import('../EntityManager.js').EntityManager} entities
    * @param {import('../GameEngine.js').GameEngine} engine
    */
   update(dt, player, entities, engine) {
+    // ── Active cast in progress ──────────────────────────────────────────
+    if (this._castElapsed != null) {
+      this._castElapsed += dt;
+      const castDuration = this._castDuration ?? 0;
+      // Update player casting state each frame so it persists while we cast
+      player.casting = { elapsed: this._castElapsed, duration: castDuration };
+      if (this._castElapsed >= castDuration) {
+        // Cast complete — deliver the skill
+        this._castElapsed = null;
+        this._castDuration = null;
+        player.casting = null;
+        this.fire(player, entities, engine);
+      }
+      return;
+    }
+
     this._timer += dt;
     // Active skills only fire when triggered by the hotbar, not automatically.
     if (!this.isActive && this._timer >= this.cooldown) {
-      this._timer -= this.cooldown; // carry over remainder to keep rhythm steady
-      this.fire(player, entities, engine);
+      const ct = this.castTime ?? this.config.castTime ?? 0;
+      if (ct > 0) {
+        // If another skill is already casting, hold — don't decrement timer yet.
+        // This queues the cast naturally: when the player is free it fires.
+        if (player.casting) return;
+        this._timer -= this.cooldown;
+        this._castElapsed = 0;
+        this._castDuration = ct;
+        player.casting = { elapsed: 0, duration: ct };
+      } else {
+        this._timer -= this.cooldown; // carry over remainder to keep rhythm steady
+        this.fire(player, entities, engine);
+      }
     }
   }
 
   /** Override in subclasses to produce the skill's effect. */
   fire(_player, _entities, _engine) {}
+
+  /**
+   * Tick any in-progress cast. Call at the TOP of overriding update() methods.
+   * Returns true if currently casting (caller should return early — no other logic).
+   */
+  _tickCast(dt, player, entities, engine) {
+    if (this._castElapsed == null) return false;
+    this._castElapsed += dt;
+    player.casting = { elapsed: this._castElapsed, duration: this._castDuration ?? 0 };
+    if (this._castElapsed >= (this._castDuration ?? 0)) {
+      this._castElapsed = null;
+      this._castDuration = null;
+      player.casting = null;
+      this.fire(player, entities, engine);
+    }
+    return true;
+  }
+
+  /**
+   * Attempt to start a cast or fire immediately. Call when cooldown has elapsed.
+   * If this skill has a castTime and player is already casting, returns false and does
+   * NOT decrement the timer — the caller should skip so the skill retries next frame.
+   * @returns {boolean} true if the cast started or the skill already fired
+   */
+  _claimCooldownAndCastOrFire(player, entities, engine) {
+    const ct = this.castTime ?? this.config?.castTime ?? 0;
+    if (ct > 0) {
+      if (player.casting) return false; // player busy — retry next frame
+      this._timer -= this.cooldown;
+      this._castElapsed = 0;
+      this._castDuration = ct;
+      player.casting = { elapsed: 0, duration: ct };
+      return true;
+    }
+    // No cast time — fire instantly
+    this._timer -= this.cooldown;
+    this.fire(player, entities, engine);
+    return true;
+  }
 
   /**
   * Called each render frame for skills that need to draw auras, rings, or zones.

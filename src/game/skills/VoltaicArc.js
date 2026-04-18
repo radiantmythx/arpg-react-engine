@@ -56,11 +56,13 @@ export class VoltaicArc extends Skill {
     // Remove arcs that have expanded beyond their max radius.
     this._arcs = this._arcs.filter((a) => a.radius < this.config.maxRadius);
 
+    // Cast phase — freeze player and deliver after cast duration.
+    if (this._tickCast(dt, player, entities, engine)) return;
+
     // --- Weapon cooldown ---
     this._timer += dt;
     if (this._timer >= this.cooldown) {
-      this._timer -= this.cooldown;
-      this.fire(player, entities, engine);
+      this._claimCooldownAndCastOrFire(player, entities, engine);
     }
   }
 

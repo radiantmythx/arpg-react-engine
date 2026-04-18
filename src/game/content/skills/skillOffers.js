@@ -1,4 +1,7 @@
 import { ArcaneLance } from '../../skills/ArcaneLance.js';
+import { MagicBolt } from '../../skills/MagicBolt.js';
+import { FrostArrow } from '../../skills/FrostArrow.js';
+import { FireStrike } from '../../skills/FireStrike.js';
 import { PhantomBlade } from '../../skills/PhantomBlade.js';
 import { TectonicCleave } from '../../skills/TectonicCleave.js';
 import { BoneSpear } from '../../skills/BoneSpear.js';
@@ -33,6 +36,30 @@ import {
 } from './skillClasses.js';
 
 export const SKILL_OFFER_POOL = [
+  {
+    id: 'MAGIC_BOLT',
+    name: 'Magic Bolt',
+    description: 'Fire a basic magical bolt at your target.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'MAGIC_BOLT'),
+    create: () => new MagicBolt(),
+  },
+  {
+    id: 'FROST_ARROW',
+    name: 'Frost Arrow',
+    description: 'Fires a chilling arrow that can slow enemies.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'FROST_ARROW'),
+    create: () => new FrostArrow(),
+  },
+  {
+    id: 'FIRE_STRIKE',
+    name: 'Fire Strike',
+    description: 'A searing melee strike that applies blaze damage.',
+    isActiveSkill: true,
+    available: (player) => !player.autoSkills.some((w) => w.id === 'FIRE_STRIKE'),
+    create: () => new FireStrike(),
+  },
   {
     id: 'PIERCING_SHOT',
     name: 'Piercing Shot',

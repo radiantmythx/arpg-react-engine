@@ -50,14 +50,14 @@ export class MagicBolt extends Skill {
 
   _applyLevelStats() {
     const table = {
-      2: { damage: 20, cooldown: 1.05 },
-      3: { damage: 28, cooldown: 0.9 },
-      4: { damage: 38, cooldown: 0.78 },
-      5: { damage: 50, cooldown: 0.65 },
+      2: { damage: 20, castTime: 0.44 },
+      3: { damage: 28, castTime: 0.38 },
+      4: { damage: 38, castTime: 0.32 },
+      5: { damage: 50, castTime: 0.26 },
     };
     const s = table[this.level];
     if (!s) return;
     if (s.damage   !== undefined) this.damage   = s.damage;
-    if (s.cooldown !== undefined) this.cooldown = s.cooldown;
+    if (s.castTime !== undefined) this.castTime = s.castTime;
   }
 }

@@ -130,11 +130,13 @@ export class ChainLightning extends Skill {
     for (const f of this._flashes) f.age += dt;
     this._flashes = this._flashes.filter((f) => f.age < FLASH_LIFETIME);
 
+    // Cast phase — freeze player and deliver after cast duration.
+    if (this._tickCast(dt, player, entities, engine)) return;
+
     // Standard cooldown — only auto-fires when NOT an active skill.
     this._timer += dt;
     if (!this.isActive && this._timer >= this.cooldown) {
-      this._timer -= this.cooldown;
-      this.fire(player, entities, engine);
+      this._claimCooldownAndCastOrFire(player, entities, engine);
     }
   }
 
@@ -150,14 +152,14 @@ export class ChainLightning extends Skill {
       2: { damage: 30, maxChains: 4 },
       3: { damage: 42, maxChains: 5, chainRadius: 180 },
       4: { damage: 58, maxChains: 6, chainDecay: 0.15 },
-      5: { damage: 75, maxChains: 6, chainRadius: 220, cooldown: 1.4 },
+      5: { damage: 75, maxChains: 6, chainRadius: 220, castTime: 0.42 },
     };
     const s = table[this.level];
     if (!s) return;
-    if (s.damage     !== undefined) this.damage              = s.damage;
-    if (s.maxChains  !== undefined) this.config              = { ...this.config, maxChains: s.maxChains };
-    if (s.chainRadius !== undefined) this.config             = { ...this.config, chainRadius: s.chainRadius };
-    if (s.chainDecay  !== undefined) this.config             = { ...this.config, chainDecay: s.chainDecay };
-    if (s.cooldown    !== undefined) this.cooldown           = s.cooldown;
+    if (s.damage      !== undefined) this.damage    = s.damage;
+    if (s.castTime    !== undefined) this.castTime  = s.castTime;
+    if (s.maxChains   !== undefined) this.config    = { ...this.config, maxChains: s.maxChains };
+    if (s.chainRadius !== undefined) this.config    = { ...this.config, chainRadius: s.chainRadius };
+    if (s.chainDecay  !== undefined) this.config    = { ...this.config, chainDecay: s.chainDecay };
   }
 }

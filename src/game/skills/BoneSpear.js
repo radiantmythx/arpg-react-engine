@@ -77,10 +77,12 @@ export class BoneSpear extends Skill {
     for (const c of this._cracks) c.age += dt;
     this._cracks = this._cracks.filter((c) => c.age < CRACK_LIFETIME);
 
+    // Cast phase — freeze player and deliver after cast duration.
+    if (this._tickCast(dt, player, entities, engine)) return;
+
     this._timer += dt;
     if (!this.isActive && this._timer >= this.cooldown) {
-      this._timer -= this.cooldown;
-      this.fire(player, entities, engine);
+      this._claimCooldownAndCastOrFire(player, entities, engine);
     }
   }
 
@@ -98,16 +100,17 @@ export class BoneSpear extends Skill {
   }
 
   _applyLevelStats() {
+    // castTime drops as you invest levels (cooldown: 0.5 stays fixed as recharge)
     const table = {
-      2: { damage: 70, cooldown: 1.2 },
-      3: { damage: 90, cooldown: 1.1, projectileRadius: 14 },
-      4: { damage: 115, cooldown: 1.0 },
-      5: { damage: 145, cooldown: 0.9, projectileRadius: 16 },
+      2: { damage: 70,  castTime: 0.90 },
+      3: { damage: 90,  castTime: 0.82, projectileRadius: 14 },
+      4: { damage: 115, castTime: 0.72 },
+      5: { damage: 145, castTime: 0.62, projectileRadius: 16 },
     };
     const s = table[this.level];
     if (!s) return;
-    if (s.damage          !== undefined) this.damage   = s.damage;
-    if (s.cooldown        !== undefined) this.cooldown = s.cooldown;
-    if (s.projectileRadius !== undefined) this.config  = { ...this.config, projectileRadius: s.projectileRadius };
+    if (s.damage           !== undefined) this.damage    = s.damage;
+    if (s.castTime         !== undefined) this.castTime  = s.castTime;
+    if (s.projectileRadius !== undefined) this.config    = { ...this.config, projectileRadius: s.projectileRadius };
   }
 }

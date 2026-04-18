@@ -26,7 +26,7 @@ function makeStarterUid(classId = 'starter') {
   return `starter_${classId}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 }
 
-function createStarterWeaponForClass(classId = 'sage') {
+export function createStarterWeaponForClass(classId = 'sage') {
   const normalizedClassId = String(classId || 'sage').toLowerCase();
 
   if (normalizedClassId === 'rogue') {

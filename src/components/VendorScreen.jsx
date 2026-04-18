@@ -11,13 +11,14 @@ const RARITY_COLORS = {
 };
 
 const VENDOR_TABS = [
-  { id: 'sell',    label: '💰 Sell' },
-  { id: 'skill',   label: '◇ Skills'   },
-  { id: 'support', label: '◆ Supports' },
-  { id: 'weapons', label: '⚔ Weapons'  },
-  { id: 'armour',  label: '🛡 Armour'  },
-  { id: 'jewelry', label: '💍 Jewelry'  },
-  { id: 'maps',    label: '🗺 Maps'    },
+  { id: 'sell',     label: '💰 Sell' },
+  { id: 'skill',    label: '◇ Skills'   },
+  { id: 'support',  label: '◆ Supports' },
+  { id: 'currency', label: '○ Currency' },
+  { id: 'weapons',  label: '⚔ Weapons'  },
+  { id: 'armour',   label: '🛡 Armour'  },
+  { id: 'jewelry',  label: '💍 Jewelry'  },
+  { id: 'maps',     label: '🗺 Maps'    },
 ];
 
 // Tabs that consume vendor reroll (equipment/maps — not infinite gems)

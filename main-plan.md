@@ -273,20 +273,21 @@ Exit criteria:
 
 ---
 
-## P4 - Item Economy and Crafting [ ]
+## P4 - Item Economy and Crafting [~]
 
 (Consolidates legacy 13 + 16)
 
 ### Goals
 
-- [ ] Turn items into a long-form crafting game
-- [ ] Introduce deterministic and stochastic upgrade paths
+- [~] Turn items into a long-form crafting game
+- [~] Introduce deterministic and stochastic upgrade paths
 - [ ] Support long-tail economy decisions per character/account
 
 ### Core Checklist
 
-- [ ] Currency orb system and drop economy
-- [ ] Item level + tiered affix gating
+- [x] Currency orb system and drop economy — 5 orbs (Transmutation, Augmentation, Alteration, Regal, Annulment) purchasable from vendor; right-click-hold + left-click glow apply workflow; drops not yet weighted into loot tables
+- [x] Crafting actions MVP — transmute (normal→magic), augment (add affix), alteration (reroll magic), regal (magic→rare+affix), annul (remove affix) wired through applyCraftingAction / applyCurrencyToInventoryItem
+- [x] Item level + tiered affix gating — affix tiers unlock by item level across crafting/generation, now extended to map-item crafting candidates as well
 - [ ] Enemy resistance and penetration interactions aligned with itemization
 - [ ] Crafting bench operations (add/remove/lock/reroll)
 - [ ] Influence systems and dual-influence outcomes
@@ -294,44 +295,6 @@ Exit criteria:
 - [ ] Divination card collection + turn-in flow
 - [ ] Expanded stash model (currency/crafting tabs)
 
-### Elemental Damage System (foundation complete)
-
-The six damage types are now defined and wired. Remaining work:
-
-- [x] Damage type tags: Physical, Blaze (Fire), Thunder (Lightning), Frost (Cold), Holy (new), Unholy (replaces Chaos)
-- [x] Flat / increased / more affixes added to affix pool for all six types
-- [x] Elemental resistance affixes added (Blaze/Thunder/Frost/Holy/Unholy)
-- [x] `Player` stat fields for all 18 damage bonuses + 5 resistances
-- [x] `SkillDef.computedStats()` reads flat/increased/more per tag at fire time
-- [x] `PassiveItem` apply/remove handles all elemental stat keys
-- [x] Apply resistance mitigation in damage delivery code (CollisionSystem/Enemy)
-- [x] Enemy resistance values per archetype (integration with P5 monster classes)
-- [ ] Penetration affixes (ignore X% of enemy elemental resistance)
-- [ ] Holy ailment design and implementation
-- [ ] Tooltip display of elemental damage breakdown on items and skills
-
-### Typed Damage Map (split damage delivery) — 3 chunks
-
-**Chunk A — Typed damage map in `computedStats` and hit delivery**
-- `computedStats()` returns `{ damageBreakdown: { Frost: N, Physical: N, ... } }` instead of a single pooled `damage` scalar
-- Each element in the skill's tag list contributes its own `flat + increased + more` calculation independently
-- Base damage is split evenly across elemental tags (e.g. a `['Physical', 'Frost']` skill splits base 50/50 before applying per-type bonuses)
-- All weapon classes and skill fire sites pass `damageBreakdown` instead of `damage` scalar; projectile and AoE zone carry the map
-- `CollisionSystem` extracts the map from the projectile and passes it forward
-
-**Chunk B — Per-type resistance application in `Enemy.takeDamage`**
-- Signature becomes `takeDamage(damageMap, sourceTags = null)` where `damageMap` is `{ Physical: N, Frost: N, ... }` (plain number still accepted for backward-compat DoT ticks)
-- For each `[type, amount]` entry, look up `this.resistances[type.toLowerCase()]`; apply `amount * (1 - clamp(res, -Infinity, 0.75))` independently
-- Remove the `break` — all matching resistances now apply to their respective portion
-- Total mitigated = sum of all per-type mitigated values, then multiply by `this.shockedMult`
-- DoT tick calls (`_tickAilments`) remain plain-number — backward-compat path handles this silently
-
-**Chunk C — Ailment scaling and penetration off the typed map**
-- `applyAilmentsOnHit` receives the full `damageMap` instead of a flat `damage` number; ailment magnitude (ignite dps, bleed dps, etc.) scales off the matching elemental portion (Blaze for ignite, Physical for bleed, etc.)
-- Penetration affixes (`player.blazePenetration`, etc.) read in Chunk B's per-type loop: effective resistance = `res - player[type.toLowerCase() + 'Penetration']` before clamping
-- After Chunk C the full elemental loop is: flat+inc+more per type → base split → resistance mitigated per type → ailment scaled per type → penetration reduces effective resistance
-
-Exit criteria:
 
 - [ ] At least 3 distinct item progression paths are viable (drop-only, light craft, heavy craft)
 - [ ] Crafting outcomes feel learnable and worth investment
@@ -441,7 +404,7 @@ Exit criteria:
 
 ## Immediate Implementation Queue (Suggested)
 
-1. [ ] Start P4 currency + crafting vertical slice (single orb family + bench MVP)
+1. [x] Start P4 currency + crafting vertical slice (single orb family + bench MVP)
 2. [ ] Begin P5 elite modifier MVP with 6 high-impact modifiers
 3. [ ] Add P6 run modifiers MVP tied to reward multiplier
 4. [ ] Resolve remaining legacy wave schedule ownership (`WAVE_SCHEDULE`) into content-layer contract

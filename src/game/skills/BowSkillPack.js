@@ -61,7 +61,8 @@ export class PiercingShot extends BowProjectileSkill {
       description: 'Fires a piercing bow shot that cuts through enemies.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 1.05,
+      cooldown: 0,
+      castTime: 0.30,   // draw time; reduced by attack speed
       damage: 18,
       manaCost: 6,
       projectileSpeed: 560,
@@ -85,7 +86,8 @@ export class SplitShot extends BowProjectileSkill {
       description: 'Fires a fan of arrows for broad coverage.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 1.25,
+      cooldown: 0,
+      castTime: 0.40,   // draw time; reduced by attack speed
       damage: 14,
       manaCost: 8,
       projectileSpeed: 520,
@@ -108,7 +110,8 @@ export class FrostVolley extends BowProjectileSkill {
       description: 'Rapid frost-tipped arrows that chill foes.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 0.9,
+      cooldown: 0,
+      castTime: 0.28,   // rapid nock; reduced by attack speed
       damage: 13,
       manaCost: 6,
       projectileSpeed: 550,
@@ -131,7 +134,8 @@ export class ThunderVolley extends BowProjectileSkill {
       description: 'Electrified arrows streak forward in a tight burst.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 1.1,
+      cooldown: 0,
+      castTime: 0.35,   // draw time; reduced by attack speed
       damage: 16,
       manaCost: 7,
       projectileSpeed: 600,
@@ -154,7 +158,8 @@ export class EmberArrow extends BowProjectileSkill {
       description: 'A blazing arrow that carries light blaze damage.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 1.0,
+      cooldown: 0,
+      castTime: 0.32,   // draw time; reduced by attack speed
       damage: 17,
       manaCost: 7,
       projectileSpeed: 540,
@@ -177,7 +182,8 @@ export class GaleShot extends BowProjectileSkill {
       description: 'A high-speed arrow that favors quick firing cadence.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 0.78,
+      cooldown: 0,
+      castTime: 0.22,   // fastest draw; reduced by attack speed
       damage: 12,
       manaCost: 5,
       projectileSpeed: 700,
@@ -200,7 +206,8 @@ export class SeekerArrow extends BowProjectileSkill {
       description: 'A focused shot tuned for heavier single target hits.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 1.35,
+      cooldown: 0,
+      castTime: 0.45,   // held draw; reduced by attack speed
       damage: 24,
       manaCost: 9,
       projectileSpeed: 580,
@@ -223,7 +230,8 @@ export class Barrage extends BowProjectileSkill {
       description: 'Rapid sequence of arrows in a narrow spread.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 0.72,
+      cooldown: 0,
+      castTime: 0.22,   // rapid fire; reduced by attack speed
       damage: 10,
       manaCost: 6,
       projectileSpeed: 590,
@@ -246,7 +254,8 @@ export class StarfallArrow extends BowProjectileSkill {
       description: 'Sacred arrow that blends physical and holy damage.',
       requiresWeaponType: BOW_REQ,
       requirementHint: BOW_HINT,
-      cooldown: 1.22,
+      cooldown: 0,
+      castTime: 0.38,   // draw time; reduced by attack speed
       damage: 19,
       manaCost: 8,
       projectileSpeed: 560,

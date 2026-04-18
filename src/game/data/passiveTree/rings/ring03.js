@@ -1139,20 +1139,20 @@ export const RING_03_NODES = [
   },
   {
     id: "r3bs00",
-    label: "Inferno Focus I",
+    label: "Reach Focus I",
     type: "minor",
     section: "warrior",
     ring: 3,
     slot: 1,
     radiusOverride: 423,
     stats: {
-      increasedBlazeDamage: 0.05
+      meleeStrikeRange: 0.12
     },
     connections: [
       "r3s00",
       "r3bs01"
     ],
-    description: "+5% increased blaze damage. Outer spur clockwise of Warrior connector."
+    description: "+12% melee strike range. Outer spur clockwise of Warrior connector."
   },
   {
     id: "r3bs01",

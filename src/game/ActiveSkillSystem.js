@@ -117,9 +117,13 @@ export class ActiveSkillSystem {
       const ct = this._castingTimers[i];
       if (!ct) continue;
       ct.remaining -= dt;
+      // Keep player.casting updated so movement freeze + cast bar work
+      ct._elapsed = (ct._elapsed ?? 0) + dt;
+      player.casting = { elapsed: ct._elapsed, duration: ct._elapsed + Math.max(0, ct.remaining) };
       if (ct.remaining <= 0) {
         ct.action();
         this._castingTimers[i] = null;
+        player.casting = null;
       }
     }
   }

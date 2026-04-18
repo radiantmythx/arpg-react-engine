@@ -1,4 +1,5 @@
 import { getAffixCapsForRarity } from './rarityProfiles.js';
+import { affixTierGate, isAffixTierUnlocked } from './affixes.js';
 import {
   buildExplicitCandidates,
   buildImplicitCandidates,
@@ -8,6 +9,7 @@ import {
   RARITY_COLORS,
   weightRollWithRng,
 } from './itemGenerator.js';
+import { MAP_MOD_POOL } from '../content/maps/mapMods.js';
 import { normalizeWeaponItem } from './weaponTypes.js';
 
 export const CRAFTING_ACTIONS = [
@@ -16,9 +18,52 @@ export const CRAFTING_ACTIONS = [
   { id: 'reroll_suffixes', label: 'Reroll Suffixes', description: 'Keep prefixes, replace all suffixes with new rolls.' },
   { id: 'augment', label: 'Augment', description: 'Add one legal explicit affix if there is room.' },
   { id: 'regal_upgrade', label: 'Regal Upgrade', description: 'Upgrade a magic item to rare and add one legal explicit affix.' },
+  { id: 'transmute', label: 'Transmute', description: 'Upgrade a normal item to magic and add one explicit affix.' },
+  { id: 'alteration', label: 'Alteration', description: 'Reroll all explicit affixes on a magic item.' },
+  { id: 'annul', label: 'Annul', description: 'Remove one random explicit affix from the item.' },
 ];
 
 const CRAFTING_ACTION_BY_ID = Object.fromEntries(CRAFTING_ACTIONS.map((action) => [action.id, action]));
+
+const MAP_MOD_TIER_BY_ID = {
+  pack_size: 'major',
+  enemy_life: 'advanced',
+  enemy_speed: 'major',
+  area_of_effect: 'advanced',
+  extra_champion_packs: 'high',
+  twisting: 'minor',
+  fortified: 'minor',
+  flooded: 'minor',
+  overgrown: 'minor',
+  volatile: 'minor',
+  reduced_player_regen: 'high',
+  elemental_weakness: 'advanced',
+};
+
+const MAP_MOD_WEIGHT_BY_TIER = {
+  minor: 100,
+  major: 65,
+  advanced: 45,
+  high: 30,
+  pinnacle: 18,
+};
+
+const MAP_EXPLICIT_CRAFTING_POOL = [
+  ...(MAP_MOD_POOL.prefix ?? []),
+  ...(MAP_MOD_POOL.suffix ?? []),
+].map((mod) => {
+  const tier = MAP_MOD_TIER_BY_ID[mod.id] ?? 'major';
+  return {
+    ...mod,
+    kind: 'explicit',
+    slots: ['map'],
+    family: `map_${mod.id}`,
+    group: `map_${mod.type}:${mod.id}`,
+    tier,
+    minItemLevel: Math.max(1, Math.floor(affixTierGate(tier))),
+    weight: MAP_MOD_WEIGHT_BY_TIER[tier] ?? 45,
+  };
+});
 
 function cloneItem(itemDef) {
   return structuredClone(itemDef);
@@ -70,7 +115,7 @@ function rollExplicitSet(baseItem, itemLevel, rng, preservedExplicitAffixes = []
   const blockedGroups = new Set(preservedExplicitAffixes.map((affix) => affix?.group).filter(Boolean));
   const blockedFamilies = new Set(preservedExplicitAffixes.map((affix) => affix?.family).filter(Boolean));
   const chosen = [];
-  const candidates = buildExplicitCandidates(baseItem, itemLevel);
+  const candidates = buildCraftingExplicitCandidates(baseItem, itemLevel);
 
   for (let i = 0; i < count; i += 1) {
     const options = candidates.filter((affix) => affix.type === type
@@ -112,7 +157,28 @@ function finalizeCraftedItem(baseItem, rarity, explicitAffixes, implicitAffixes)
     explicitAffixes,
     implicitAffixes,
   });
-  return normalizeWeaponItem(hydrated);
+  const normalized = normalizeWeaponItem(hydrated);
+  if (!isMapCraftingItem(normalized)) return normalized;
+
+  const mapMods = (normalized.explicitAffixes ?? []).map((affix) => ({
+    id: affix.id,
+    type: affix.type,
+    label: affix.label,
+    value: affix.value,
+    tier: affix.tier ?? null,
+  }));
+
+  return {
+    ...normalized,
+    // Map instances consume mapMods; keep it synced with crafted explicit affixes.
+    mapMods,
+    affixes: [...mapMods],
+    implicitAffixes: [],
+    baseStats: {
+      ...(normalized.baseStats ?? {}),
+      modCount: mapMods.length,
+    },
+  };
 }
 
 export function applyCraftingAction(itemDef, actionId, options = {}) {
@@ -212,5 +278,99 @@ export function applyCraftingAction(itemDef, actionId, options = {}) {
     };
   }
 
+  if (actionId === 'transmute') {
+    if ((current.rarity ?? 'normal') !== 'normal') {
+      return { ok: false, reason: 'transmute_requires_normal', blockedReason: 'Orb of Transmutation requires a Normal item.', action };
+    }
+    const augment = rollSingleAugment(current, itemLevel, 'magic', rng, []);
+    if (!augment.ok) {
+      return { ok: false, reason: augment.reason, blockedReason: describeBlockedReason(augment.reason, current, action), action };
+    }
+    return {
+      ok: true,
+      action,
+      beforeItem: current,
+      afterItem: finalizeCraftedItem(current, 'magic', [augment.affix], currentImplicits),
+    };
+  }
+
+  if (actionId === 'alteration') {
+    if ((current.rarity ?? 'normal') !== 'magic') {
+      return { ok: false, reason: 'alteration_requires_magic', blockedReason: 'Orb of Alteration requires a Magic item.', action };
+    }
+    const caps = getAffixCapsForRarity('magic');
+    const targetCount = prefixes.length + suffixes.length;
+    if (targetCount === 0) {
+      return { ok: false, reason: 'no_legal_affix', blockedReason: 'This item has no affixes to reroll.', action };
+    }
+    // Roll fresh prefix(es) then suffix(es) in same quantity.
+    const rolledPrefixes = prefixes.length > 0
+      ? rollExplicitSet(current, itemLevel, rng, [], 'prefix', Math.min(prefixes.length, caps.prefix))
+      : [];
+    const rolledSuffixes = suffixes.length > 0
+      ? rollExplicitSet(current, itemLevel, rng, rolledPrefixes, 'suffix', Math.min(suffixes.length, caps.suffix))
+      : [];
+    return {
+      ok: true,
+      action,
+      beforeItem: current,
+      afterItem: finalizeCraftedItem(current, 'magic', [...rolledPrefixes, ...rolledSuffixes], currentImplicits),
+    };
+  }
+
+  if (actionId === 'annul') {
+    const allExplicits = [...prefixes, ...suffixes];
+    if (allExplicits.length === 0) {
+      return { ok: false, reason: 'no_prefixes', blockedReason: 'This item has no explicit affixes to remove.', action };
+    }
+    const removeIdx = Math.floor(rng() * allExplicits.length);
+    const remaining = allExplicits.filter((_, i) => i !== removeIdx);
+    // Rarity downgrades if we strip the last explicit and item was magic.
+    const newRarity = remaining.length === 0 && (current.rarity === 'magic') ? 'normal' : (current.rarity ?? 'normal');
+    return {
+      ok: true,
+      action,
+      beforeItem: current,
+      afterItem: finalizeCraftedItem(current, newRarity, remaining, currentImplicits),
+    };
+  }
+
   return { ok: false, reason: 'unknown_action', blockedReason: describeBlockedReason('unknown_action', current, action), action };
+}
+
+/**
+ * Returns true when the given currency action can legally be applied to `itemDef`.
+ * Used by the inventory UI to highlight compatible items when a currency is held.
+ * @param {object} itemDef
+ * @param {string} currencyAction — e.g. 'transmute', 'augment', 'alteration', 'regal_upgrade', 'annul'
+ * @returns {boolean}
+ */
+export function canApplyCurrencyToItem(itemDef, currencyAction) {
+  if (!itemDef || !currencyAction) return false;
+  const current = hydrateItemAffixState(cloneItem(itemDef));
+  if (current.isUnique) return false;
+  if (current.type === 'currency' || current.type === 'skill_gem' || current.type === 'support_gem' || current.type === 'potion') return false;
+  const rarity = current.rarity ?? 'normal';
+  const allExplicits = Array.isArray(current.explicitAffixes) ? current.explicitAffixes : [];
+  const caps = getAffixCapsForRarity(rarity);
+  const prefixCount = allExplicits.filter((a) => a?.type === 'prefix').length;
+  const suffixCount = allExplicits.filter((a) => a?.type === 'suffix').length;
+  const hasOpenSlot = prefixCount < caps.prefix || suffixCount < caps.suffix;
+  if (currencyAction === 'transmute') return rarity === 'normal';
+  if (currencyAction === 'augment') return (rarity === 'magic' || rarity === 'rare') && hasOpenSlot;
+  if (currencyAction === 'alteration') return rarity === 'magic' && allExplicits.length > 0;
+  if (currencyAction === 'regal_upgrade') return rarity === 'magic';
+  if (currencyAction === 'annul') return allExplicits.length > 0;
+  return false;
+}
+
+function isMapCraftingItem(baseItem = {}) {
+  return baseItem?.type === 'map_item' || baseItem?.slot === 'map';
+}
+
+function buildCraftingExplicitCandidates(baseItem, itemLevel) {
+  if (isMapCraftingItem(baseItem)) {
+    return MAP_EXPLICIT_CRAFTING_POOL.filter((affix) => isAffixTierUnlocked(itemLevel, affix.tier));
+  }
+  return buildExplicitCandidates(baseItem, itemLevel);
 }

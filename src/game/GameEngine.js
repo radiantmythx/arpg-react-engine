@@ -31,8 +31,9 @@ import {
   listSkillOffers,
 } from './content/registries/skillRegistry.js';
 import { listUniqueItemDefs, listGenericItemDefs } from './content/registries/itemRegistry.js';
+import { CURRENCY_DEFS, rollCurrencyOrb } from './content/items/itemCatalog.js';
 import { createMapItemDrop, isMapItem, mapItemToMapDef } from './data/mapItems.js';
-import { CharacterSave } from './CharacterSave.js';
+import { CharacterSave, createStarterWeaponForClass } from './CharacterSave.js';
 import { MapInstance } from './MapInstance.js';
 import { HubWorld } from './HubWorld.js';
 import { MapGenerator } from './MapGenerator.js';
@@ -46,7 +47,7 @@ import { createDefaultPotionBelt, normalizePotionBelt, POTION_MAP, rollPotionDro
 import { canEquipItemInSlot, normalizeWeaponItem } from './data/weaponTypes.js';
 import { evaluateSkillRequirements } from './data/skillRequirements.js';
 import { summarizeActiveModifiers, summarizeCharacterBonuses } from './data/modifierEngine.js';
-import { applyCraftingAction, CRAFTING_ACTIONS } from './data/itemCrafting.js';
+import { applyCraftingAction, CRAFTING_ACTIONS, canApplyCurrencyToItem } from './data/itemCrafting.js';
 
 /** World-space radius within which hovering the mouse highlights an ItemDrop. */
 const HOVER_RADIUS = 70;
@@ -54,6 +55,62 @@ const HOVER_HOSTILE_EXTRA_RADIUS = 14;
 const HOVER_INTERACTABLE_EXTRA_RADIUS = 30;
 const UNIQUE_ITEM_DEFS = listUniqueItemDefs();
 const GENERIC_ITEM_DEFS = listGenericItemDefs();
+const STARTER_VENDOR_CLASS_ORDER = ['sage', 'rogue', 'warrior'];
+
+/**
+ * DROP_RATES — centralised loot configuration. Easy to tweak across all monsters.
+ *
+ * All top-level values are independent roll probabilities (0–1).
+ * The `uniqueFraction` inside `champion.item` / `boss.item` is the sub-chance
+ * that a rolled gear item comes from the Unique pool.
+ *
+ * ┌────────────────────────────────────────────────────────────────────────┐
+ * │ How drop resolution works (per kill): │
+ * │ 1. Roll gold independently. │
+ * │ 2. Roll currency (Chaos Shard) independently. │
+ * │ 3. Roll gear item. If hit, pick pool by uniqueFraction sub-chance. │
+ * │ 4. Roll skill gem independently. │
+ * │ 5. Map item rolled separately (controlled by SCALING_CONFIG.mapDrop). │
+ * └────────────────────────────────────────────────────────────────────────┘
+ */
+const DROP_RATES = {
+  /** Normal enemies — common monsters in any map. */
+  normal: {
+    gold:          0.85,  // Very common — gold is the primary feedback loop
+    currency:      0.08,  // Chaos Shard — meaningful but not spammy
+    currencyOrb:   0.25,  // Currency orbs drop fairly frequently — weighted rarity internally
+    skillGem:      0.008, // Very rare — exciting finds only
+    item:          0.00,  // Normal enemies do NOT drop gear — champions/bosses only
+    //              ↑ Set to >0 to let normal enemies roll gear (disabled by default)
+  },
+  /** Champions — rare elite enemies with crown marker. */
+  champion: {
+    gold:          1.00,  // Always drop gold
+    currency:      0.22,  // Higher shard chance — worth hunting
+    currencyOrb:   0.55,  // Champions nearly always drop a currency orb
+    skillGem:      0.035, // Still rare but meaningfully more than normals
+    item:          0.35,  // Decent gear drop chance
+    uniqueFraction: 0.04, // Of those item drops, only 4% are unique
+  },
+  /** Boss — one per map, guaranteed big drops. */
+  boss: {
+    item:          1.00,  // Always drops one gear item
+    uniqueFraction: 0.35, // 35% of boss gear drops are unique
+    shardCount:    5,     // Fixed Chaos Shard piles around corpse
+  },
+};
+
+/**
+ * Scatter an item drop around a death position so items don't stack.
+ * Returns { x, y } with a random radial offset (18–40 world units).
+ * @param {number} cx  centre X (enemy death position)
+ * @param {number} cy  centre Y
+ */
+function scatterDrop(cx, cy) {
+  const angle  = Math.random() * Math.PI * 2;
+  const radius = 18 + Math.random() * 22;
+  return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
+}
 
 /**
  * GameEngine
@@ -1621,6 +1678,7 @@ export class GameEngine {
     this.collision.checkPlayerVsShardGems(this.player, this.entities, this);
     this.collision.checkPlayerVsGoldGems(this.player, this.entities, this);
     this.collision.checkPlayerVsAoeZones(this.player, this.entities, this);
+    this.collision.separateEnemies(this.entities);
     // Large gear remains click-based; optional mobile assist can auto-loot nearby small drops.
 
     // Boss spawning
@@ -1845,9 +1903,20 @@ export class GameEngine {
     const requirementState = evaluateSkillRequirements(skill, this.player);
     if (!requirementState.ok) return false;
     if (skill._timer < skill.cooldown) return false;
+    // Don't start a new cast while one is already in progress for this skill.
+    if (this.player.casting || skill._castElapsed != null) return false;
     const manaCost = this._resolveSkillManaCost(skill);
     if (!this.player.spendMana(manaCost)) return false;
-    skill.fire(this.player, this.entities, this);
+
+    const ct = skill.castTime ?? skill.config?.castTime ?? 0;
+    if (ct > 0) {
+      // Enter cast phase — Skill.update() in the autoSkills loop ticks it each frame.
+      skill._castElapsed = 0;
+      skill._castDuration = ct;
+      this.player.casting = { elapsed: 0, duration: ct };
+    } else {
+      skill.fire(this.player, this.entities, this);
+    }
     skill._timer = 0;
 
     // ── Sage keystone: Overload ───────────────────────────────────────────
@@ -2157,7 +2226,8 @@ export class GameEngine {
 
     const potionDrop = this._rollPotionDropOnKill(enemy);
     if (potionDrop) {
-      this.entities.itemDrops.push(new ItemDrop(enemy.x, enemy.y, potionDrop));
+      const pd = scatterDrop(enemy.x, enemy.y);
+      this.entities.itemDrops.push(new ItemDrop(pd.x, pd.y, potionDrop));
     }
 
     if (enemy.isBoss) {
@@ -2168,14 +2238,18 @@ export class GameEngine {
       this._shakeIntensity = 20;
       this.particles.emit('death', enemy.x, enemy.y, { color: enemy.color });
       this.entities.acquireGem(enemy.x, enemy.y, enemy.xpValue);
-      // Bosses always drop a Unique item.
-      const bossPool = UNIQUE_ITEM_DEFS.length ? UNIQUE_ITEM_DEFS : GENERIC_ITEM_DEFS;
+      // Boss gear drop — uses DROP_RATES.boss.uniqueFraction to decide rarity.
+      const bossPool = Math.random() < DROP_RATES.boss.uniqueFraction && UNIQUE_ITEM_DEFS.length
+        ? UNIQUE_ITEM_DEFS
+        : GENERIC_ITEM_DEFS;
       const baseDef = bossPool[Math.floor(Math.random() * bossPool.length)];
-      const itemDef = generateItem(baseDef, 'unique', {
+      const itemRarity = bossPool === UNIQUE_ITEM_DEFS ? 'unique' : 'rare';
+      const itemDef = generateItem(baseDef, itemRarity, {
         itemLevel: this.mapInstance?.areaLevel ?? this.player?.level ?? 1,
       });
-      this.entities.itemDrops.push(new ItemDrop(enemy.x, enemy.y, itemDef));
-      const bossShards = Math.round(5 * this._shardGainMult);
+      const dropPos = scatterDrop(enemy.x, enemy.y);
+      this.entities.itemDrops.push(new ItemDrop(dropPos.x, dropPos.y, itemDef));
+      const bossShards = Math.round(DROP_RATES.boss.shardCount * this._shardGainMult);
       for (let i = 0; i < bossShards; i++) {
         const angle = (i / bossShards) * Math.PI * 2;
         this.entities.addShardGem(new ChaosShardGem(
@@ -2211,7 +2285,8 @@ export class GameEngine {
           sourceMapItemLevel: this.mapInstance?.sourceMapItemLevel ?? this.mapInstance?.areaLevel ?? 1,
           badLuckState: inInstanceMap ? this._mapDropBadLuckState : null,
         });
-        this.entities.itemDrops.push(new ItemDrop(enemy.x, enemy.y, mapItem));
+        const bmd = scatterDrop(enemy.x, enemy.y);
+        this.entities.itemDrops.push(new ItemDrop(bmd.x, bmd.y, mapItem));
       }
 
       this.state = 'MAP_COMPLETE';
@@ -2236,45 +2311,74 @@ export class GameEngine {
     this.particles.emit('death', enemy.x, enemy.y, { color: enemy.color });
     this.audio.play('enemy_death');
 
-    // Chaos Shard drops — 12% for champions, 4% for normal enemies
-    const shardChance = enemy.isChampion ? 0.12 : 0.04;
+    // ── Currency (Chaos Shard) ──────────────────────────────────────────
+    const shardChance = enemy.isChampion ? DROP_RATES.champion.currency : DROP_RATES.normal.currency;
     if (Math.random() < shardChance) {
-      this.entities.addShardGem(new ChaosShardGem(enemy.x, enemy.y, 1));
+      const { x, y } = scatterDrop(enemy.x, enemy.y);
+      this.entities.addShardGem(new ChaosShardGem(x, y, 1));
     }
 
-    // Gold drops are intentionally common and scale by area level.
+    // ── Gold (scales by area level) ─────────────────────────────────────
     const areaLevel = Math.max(1, this.mapInstance?.areaLevel ?? 1);
     const mapId = this.mapInstance?.mapDef?.id ?? '';
     const isActOneMap = areaLevel <= 12 || mapId.startsWith('act1_');
     const goldChance = enemy.isChampion
-      ? 1.0
-      : Math.min(0.96, 0.70 + Math.max(0, areaLevel - 11) * 0.003 + (isActOneMap ? 0.14 : 0));
+      ? DROP_RATES.champion.gold
+      : DROP_RATES.normal.gold;
     if (Math.random() < goldChance) {
       const areaBonus = Math.floor((areaLevel - 1) / 12);
       const baseValue = enemy.isChampion
         ? (3 + areaBonus * 2) + Math.floor(Math.random() * (4 + Math.floor(areaLevel / 20)))
         : (1 + areaBonus) + (Math.random() < (0.25 + Math.min(0.25, areaLevel * 0.003)) ? 1 : 0);
       const value = Math.max(1, Math.round((baseValue + (isActOneMap ? (enemy.isChampion ? 2 : 1) : 0)) * goldDropMult));
-      this.entities.addGoldGem(new GoldGem(enemy.x, enemy.y, value));
+      const { x, y } = scatterDrop(enemy.x, enemy.y);
+      this.entities.addGoldGem(new GoldGem(x, y, value));
     }
 
-    // Item drop chance: 20% for champions, 6% for normal enemies
-    const dropChance = enemy.isChampion ? 0.20 : 0.06;
-    if (Math.random() < dropChance) {
-      // Champions: 30% chance for a Unique; otherwise generic procedural base
-      const useUnique = enemy.isChampion && Math.random() < 0.30 && UNIQUE_ITEM_DEFS.length;
-      const pool      = useUnique ? UNIQUE_ITEM_DEFS : GENERIC_ITEM_DEFS;
-      const baseDef   = pool[Math.floor(Math.random() * pool.length)];
+    // ── Gear item ───────────────────────────────────────────────────────
+    // Normal enemies skip gear drops (DROP_RATES.normal.item = 0 by default).
+    const itemDropChance = enemy.isChampion ? DROP_RATES.champion.item : DROP_RATES.normal.item;
+    if (itemDropChance > 0 && Math.random() < itemDropChance) {
+      const uniqueFrac = enemy.isChampion ? DROP_RATES.champion.uniqueFraction : 0;
+      const useUnique = uniqueFrac > 0 && Math.random() < uniqueFrac && UNIQUE_ITEM_DEFS.length;
+      const pool    = useUnique ? UNIQUE_ITEM_DEFS : GENERIC_ITEM_DEFS;
+      const baseDef = pool[Math.floor(Math.random() * pool.length)];
       const difficulty = Math.min(1 + this.elapsed / 120, 5);
-      const rarity    = rollRarity(difficulty, enemy.isChampion);
-      const itemDef   = generateItem(baseDef, rarity, {
+      const rarity  = rollRarity(difficulty, enemy.isChampion);
+      const itemDef = generateItem(baseDef, rarity, {
         itemLevel: this.mapInstance?.areaLevel ?? this.player?.level ?? 1,
       });
-      const drop = new ItemDrop(enemy.x, enemy.y, itemDef);
-      this.entities.itemDrops.push(drop);
+      const { x, y } = scatterDrop(enemy.x, enemy.y);
+      this.entities.itemDrops.push(new ItemDrop(x, y, itemDef));
     }
 
-    // Phase 4 map-item drops in both campaign and endgame instances.
+    // ── Currency orb ────────────────────────────────────────────────────────
+    const currencyOrbChance = enemy.isChampion ? DROP_RATES.champion.currencyOrb : DROP_RATES.normal.currencyOrb;
+    if (Math.random() < currencyOrbChance) {
+      const orb = rollCurrencyOrb();
+      const { x, y } = scatterDrop(enemy.x, enemy.y);
+      this.entities.itemDrops.push(new ItemDrop(x, y, orb));
+    }
+
+    // ── Skill gem / Support gem ─────────────────────────────────────────
+    const skillGemChance = enemy.isChampion ? DROP_RATES.champion.skillGem : DROP_RATES.normal.skillGem;
+    if (Math.random() < skillGemChance) {
+      const isSupportDrop = Math.random() < 0.45; // 45% chance: support gem instead of skill gem
+      if (isSupportDrop && SUPPORT_POOL.length > 0) {
+        const supportDef = SUPPORT_POOL[Math.floor(Math.random() * SUPPORT_POOL.length)];
+        const { x, y } = scatterDrop(enemy.x, enemy.y);
+        this.entities.itemDrops.push(new ItemDrop(x, y, createSupportGemItem(supportDef)));
+      } else {
+        const offers = getAvailableSkillOffers(this.player, this);
+        if (offers.length > 0) {
+          const offer = offers[Math.floor(Math.random() * offers.length)];
+          const { x, y } = scatterDrop(enemy.x, enemy.y);
+          this.entities.itemDrops.push(new ItemDrop(x, y, createSkillGemItem(offer)));
+        }
+      }
+    }
+
+    // ── Map item (campaign + endgame instances) ─────────────────────────
     if (inCampaignMap || inInstanceMap) {
       const mapDropChance = enemy.isChampion
         ? SCALING_CONFIG.mapDrop.championKillDropChance
@@ -2288,17 +2392,8 @@ export class GameEngine {
           sourceMapItemLevel: this.mapInstance?.sourceMapItemLevel ?? this.mapInstance?.areaLevel ?? 1,
           badLuckState: inInstanceMap ? this._mapDropBadLuckState : null,
         });
-        this.entities.itemDrops.push(new ItemDrop(enemy.x, enemy.y, mapItem));
-      }
-    }
-
-    // Skill gem drops replace level milestone skill assignment.
-    const skillGemChance = enemy.isChampion ? 0.15 : 0.05;
-    if (Math.random() < skillGemChance) {
-      const offers = getAvailableSkillOffers(this.player, this);
-      if (offers.length > 0) {
-        const offer = offers[Math.floor(Math.random() * offers.length)];
-        this.entities.itemDrops.push(new ItemDrop(enemy.x, enemy.y, createSkillGemItem(offer)));
+        const { x, y } = scatterDrop(enemy.x, enemy.y);
+        this.entities.itemDrops.push(new ItemDrop(x, y, mapItem));
       }
     }
 
@@ -2411,19 +2506,29 @@ export class GameEngine {
     this._updateHoveredWorldTarget();
   }
 
-  /** @private Recompute which ItemDrop the mouse is closest to within HOVER_RADIUS. */
+  /** @private Recompute which ItemDrop the mouse is closest to within HOVER_RADIUS or over its nameplate. */
   _updateHoveredDrop() {
     const mouseWorldX = this._mouseScreenX + this.renderer.camX;
     const mouseWorldY = this._mouseScreenY + this.renderer.camY;
+    const mx = this._mouseScreenX;
+    const my = this._mouseScreenY;
     const hoverSq = HOVER_RADIUS * HOVER_RADIUS;
     let nearest = null;
     let nearestSq = hoverSq;
     for (const drop of this.entities.itemDrops) {
       if (!drop.active) continue;
+      // World-space proximity (orb hit zone)
       const dx = drop.x - mouseWorldX;
       const dy = drop.y - mouseWorldY;
       const dSq = dx * dx + dy * dy;
-      if (dSq <= nearestSq) { nearestSq = dSq; nearest = drop; }
+      if (dSq <= nearestSq) { nearestSq = dSq; nearest = drop; continue; }
+      // Screen-space nameplate hit zone
+      if (typeof drop.getNameplateBounds === 'function') {
+        const nb = drop.getNameplateBounds(this.renderer);
+        if (mx >= nb.left && mx <= nb.right && my >= nb.top && my <= nb.bottom) {
+          nearestSq = dSq; nearest = drop;
+        }
+      }
     }
     if (nearest !== this._hoveredDrop) {
       this._hoveredDrop = nearest;
@@ -2845,7 +2950,7 @@ export class GameEngine {
   _shouldAutoPickupDrop(drop) {
     const item = drop?.itemDef;
     if (!item) return false;
-    if (item.type === 'skill_gem' || item.type === 'support_gem' || item.type === 'map_item' || item.type === 'potion') return true;
+    if (item.type === 'skill_gem' || item.type === 'support_gem' || item.type === 'currency' || item.type === 'map_item' || item.type === 'potion') return true;
     const area = Math.max(1, (item.gridW ?? 99) * (item.gridH ?? 99));
     return area <= 1;
   }
@@ -3113,13 +3218,11 @@ export class GameEngine {
 
   /**
    * Passive points required to allocate a node.
-   * - hub / start: 0 (free, permanent)
-   * - r0–r2 minor: 5 pts (foundational inner ring cost)
-   * - r3+:  ring − 2 pts  (r3=1, r4=2, … r15=13)
+   * All non-hub, non-start nodes cost exactly 1 point.
    */
   static nodePointCost(node) {
     if (!node || node.type === 'hub' || node.type === 'start') return 0;
-    return node.ring <= 2 ? 5 : Math.max(1, node.ring - 2);
+    return 1;
   }
 
   /**
@@ -3641,7 +3744,23 @@ export class GameEngine {
       });
     };
 
+    const starterWeaponRows = STARTER_VENDOR_CLASS_ORDER.map((classId) => {
+      const starterDef = normalizeWeaponItem(createStarterWeaponForClass(classId), { enforceWeaponDimensions: false });
+      return {
+        id:    `equip:${starterDef.uid}`,
+        tab:   'weapons',
+        kind:  'equipment',
+        name:  starterDef.name,
+        icon:  SLOT_ICON[starterDef.slot] ?? '⚔',
+        description: starterDef.description ?? 'Class starter weapon.',
+        price: 2,
+        rarity: starterDef.rarity ?? 'normal',
+        itemDef: starterDef,
+      };
+    });
+
     const weapons = [
+      ...starterWeaponRows,
       ...rollSlots(['weapon', 'mainhand'], 4, 'weapons'),
       ...rollSlots(['offhand'],            3, 'weapons'),
     ];
@@ -3713,7 +3832,18 @@ export class GameEngine {
     }
     const { weapons = [], armour = [], jewelry = [], maps = [] } = this._vendorEquipStock;
 
-    return [...skillRows, ...supportRows, ...weapons, ...armour, ...jewelry, ...maps];
+    const currencyRows = CURRENCY_DEFS.map((def) => ({
+      id:    `currency:${def.id}`,
+      tab:   'currency',
+      kind:  'currency',
+      name:  def.name,
+      icon:  def.icon ?? '○',
+      description: def.description,
+      price: def.basePrice ?? 3,
+      currencyId: def.id,
+    }));
+
+    return [...skillRows, ...supportRows, ...currencyRows, ...weapons, ...armour, ...jewelry, ...maps];
   }
 
   /**
@@ -3761,6 +3891,10 @@ export class GameEngine {
       itemDef = createSupportGemItem(support);
     } else if (listing.kind === 'equipment' || listing.kind === 'map_item') {
       itemDef = listing.itemDef ?? null;
+    } else if (listing.kind === 'currency') {
+      const currDef = CURRENCY_DEFS.find((d) => d.id === listing.currencyId);
+      if (!currDef) return { ok: false, reason: 'not_found' };
+      itemDef = { ...currDef, uid: `${currDef.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, gridW: 1, gridH: 1 };
     }
 
     if (!itemDef) return { ok: false, reason: 'invalid_item' };
@@ -3866,6 +4000,36 @@ export class GameEngine {
       beforeItem,
       afterItem: structuredClone(result.afterItem),
     };
+  }
+
+  /**
+   * Apply a currency orb (held as cursorItem) to an inventory item by uid.
+   * Consumes nothing — the caller must remove the currency from inventory/cursor after success.
+   * @param {string} targetUid — uid of the inventory item to modify
+   * @param {string} currencyAction — crafting action id ('transmute', 'augment', etc.)
+   * @returns {{ ok: boolean, reason?: string, blockedReason?: string, afterItem?: object }}
+   */
+  applyCurrencyToInventoryItem(targetUid, currencyAction) {
+    if (!this.player?.inventory) return { ok: false, reason: 'no_player', blockedReason: 'No player active.' };
+    const entry = this.player.inventory._items?.get(targetUid);
+    if (!entry) return { ok: false, reason: 'not_found', blockedReason: 'Item not found in inventory.' };
+    const { itemDef: targetItem, gridX, gridY } = entry;
+
+    const result = applyCraftingAction(targetItem, currencyAction);
+    if (!result?.ok || !result.afterItem) {
+      return { ok: false, reason: result?.reason ?? 'craft_failed', blockedReason: result?.blockedReason ?? 'Could not apply currency.' };
+    }
+
+    // Swap the item in-place, preserving grid position.
+    this.player.inventory.remove(targetUid);
+    result.afterItem.gridX = gridX;
+    result.afterItem.gridY = gridY;
+    this.player.inventory.place(result.afterItem, gridX, gridY);
+
+    this.audio.play('xp_collect');
+    this._flushHudUpdate();
+    this.checkpoint();
+    return { ok: true, afterItem: result.afterItem };
   }
 
   pause() {

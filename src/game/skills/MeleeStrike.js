@@ -23,6 +23,7 @@ export class MeleeStrike extends Skill {
     this._slashX = 0;
     this._slashY = 0;
     this._slashAngle = 0;
+    this._slashRadius = this.config.strikeRadius;
   }
 
   update(dt, player, entities, engine) {
@@ -37,6 +38,7 @@ export class MeleeStrike extends Skill {
     const stats = this.computedStats(player);
     const hitDamage = stats.damage;
     const hitBreakdown = stats.damageBreakdown;
+    const strikeRadius = Math.max(8, Number(stats.strikeRadius ?? this.config.strikeRadius ?? 0));
     const penMap = resolvePenetrationMap(this.tags, player);
 
     let dirX = player.facingX ?? 1;
@@ -61,7 +63,7 @@ export class MeleeStrike extends Skill {
       const distSq = dx * dx + dy * dy;
       // Extend reach by the enemy's own radius so the strike connects when touching any enemy,
       // including large bosses whose body extends well beyond their centre-point.
-      const effectiveR = this.config.strikeRadius + (enemy.radius ?? 0);
+      const effectiveR = strikeRadius + (enemy.radius ?? 0);
       if (distSq > effectiveR * effectiveR) continue;
 
       const dist = Math.sqrt(distSq);
@@ -79,6 +81,7 @@ export class MeleeStrike extends Skill {
     this._slashX = player.x;
     this._slashY = player.y;
     this._slashAngle = aimAngle;
+    this._slashRadius = strikeRadius;
     this._slashAge = 0;
     if (hit && engine) engine.onSkillFire();
   }
@@ -86,7 +89,8 @@ export class MeleeStrike extends Skill {
   draw(renderer, _player) {
     if (this._slashAge === null) return;
     const t = this._slashAge / SLASH_DURATION;  // 0 → 1
-    const r = this.config.strikeRadius * (0.55 + t * 0.55);
+    const baseRadius = Math.max(8, Number(this._slashRadius ?? this.config.strikeRadius ?? 0));
+    const r = baseRadius * (0.55 + t * 0.55);
     const alpha = 0.8 * (1 - t);
     const { ctx } = renderer;
     const p = renderer.toScreen(this._slashX, this._slashY);
@@ -102,14 +106,14 @@ export class MeleeStrike extends Skill {
   _applyLevelStats() {
     const table = {
       2: { damage: 35, strikeRadius: 80 },
-      3: { damage: 48, strikeRadius: 88, cooldown: 1.35 },
-      4: { damage: 64, strikeRadius: 96, cooldown: 1.20 },
-      5: { damage: 85, strikeRadius: 110, cooldown: 1.05 },
+      3: { damage: 48, strikeRadius: 88, castTime: 0.38 },
+      4: { damage: 64, strikeRadius: 96, castTime: 0.32 },
+      5: { damage: 85, strikeRadius: 110, castTime: 0.26 },
     };
     const s = table[this.level];
     if (!s) return;
-    if (s.damage      !== undefined) this.damage   = s.damage;
-    if (s.cooldown    !== undefined) this.cooldown = s.cooldown;
-    if (s.strikeRadius !== undefined) this.config = { ...this.config, strikeRadius: s.strikeRadius };
+    if (s.damage       !== undefined) this.damage    = s.damage;
+    if (s.castTime     !== undefined) this.castTime  = s.castTime;
+    if (s.strikeRadius !== undefined) this.config    = { ...this.config, strikeRadius: s.strikeRadius };
   }
 }

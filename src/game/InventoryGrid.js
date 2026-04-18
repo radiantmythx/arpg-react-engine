@@ -157,6 +157,9 @@ export class InventoryGrid {
         mapTheme:    itemDef.mapTheme ?? null,
         mapMods:     itemDef.mapMods ?? [],
         mapItemLevel: itemDef.mapItemLevel ?? null,
+        // Currency orb fields
+        icon:        itemDef.icon ?? null,
+        currencyAction: itemDef.currencyAction ?? null,
       })),
     };
   }

@@ -10,6 +10,7 @@ const DUMMY_CONFIG = {
   color: '#8f9aa5',
   aggroRadius: 99999,
   propagationRadius: 0,
+  skills: [], // dummies don't attack
 };
 
 export class TrainingDummy extends Enemy {

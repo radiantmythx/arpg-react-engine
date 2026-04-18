@@ -40,6 +40,7 @@ function fmtStat(key, value) {
     manaCostMult:     (v) => `${Math.round((v - 1) * 100)}% mana costs`,
     speedFlat:        (v) => `+${v} move speed`,
     pickupRadiusFlat: (v) => `+${v} pickup radius`,
+    meleeStrikeRange: (v) => `+${Math.round(v * 100)}% melee strike range`,
     armorFlat:        (v) => `+${v} armor`,
     evasionFlat:      (v) => `+${v} evasion`,
     energyShieldFlat: (v) => `+${v} energy shield`,

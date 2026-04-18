@@ -3,4 +3,6 @@ export {
   ITEMS_BY_ID,
   UNIQUE_ITEM_DEFS,
   GENERIC_ITEM_DEFS,
+  CURRENCY_DEFS,
+  CURRENCY_DEFS_BY_ID,
 } from './itemCatalog.js';

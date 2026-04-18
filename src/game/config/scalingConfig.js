@@ -5,16 +5,20 @@ export const SCALING_CONFIG = {
     levelMax: 100,
     // Baseline challenge floor. Level 1 starts at 2x old baseline.
     scalingPivotAreaLevel: 1,
+    // Map density: how many times more enemies spawn per level above 1.
+    // At level 1 → 1.0x; at level 100 → 1 + densityLinear*99 + densityQuad*99² ≈ 10x.
+    densityLinear: 0.055,
+    densityQuad: 0.00045,
     baseLifeMultiplier: 2,
     baseDamageMultiplier: 2,
     baseXpMultiplier: 2,
     // More dramatic ramp for health/damage as levels rise.
-    lifeLinear: 0.014,
-    lifeQuad: 0.00045,
-    damageLinear: 0.011,
-    damageQuad: 0.00035,
-    xpLinear: 0.009,
-    xpQuad: 0.00028,
+    lifeLinear: 0.14,
+    lifeQuad: 0.0045,
+    damageLinear: 0.11,
+    damageQuad: 0.0035,
+    xpLinear: 0.09,
+    xpQuad: 0.0028,
     speedPerLevel: 0.0025,
     speedCap: 0.22,
     armorPenPerLevel: 0.0035,
@@ -114,6 +118,18 @@ export function enemyXpMultiplier(areaLevel, config = SCALING_CONFIG) {
   const x = level - (c.scalingPivotAreaLevel ?? 11);
   const curve = 1 + c.xpLinear * x + c.xpQuad * x * x;
   return Math.max(0.1, curve) * (c.baseXpMultiplier ?? 1);
+}
+
+/**
+ * Returns a density multiplier for how many enemies populate a map.
+ * Level 1 → 1.0x; level 100 → ~10x (via tuneable linear + quadratic).
+ */
+export function enemyDensityMultiplier(areaLevel, config = SCALING_CONFIG) {
+  const level = clampAreaLevel(areaLevel);
+  const c = config.enemy;
+  const x = Math.max(0, level - 1);
+  const curve = 1 + (c.densityLinear ?? 0.055) * x + (c.densityQuad ?? 0.00045) * x * x;
+  return Math.max(1, curve);
 }
 
 export function enemySpeedMultiplier(areaLevel, config = SCALING_CONFIG) {

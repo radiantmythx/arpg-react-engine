@@ -74,6 +74,7 @@ function fmtStat(key, val) {
     case 'manaRegenPerS':    return `${sign(val)} mana regenerated per second`;
     case 'speedFlat':        return `${sign(val)} movement speed`;
     case 'pickupRadiusFlat': return `${sign(val)} pickup radius`;
+    case 'meleeStrikeRange': return `${sign(Math.round(val * 100))}% melee strike range`;
     case 'xpMultiplier': {
       const p = Math.round((val - 1) * 100);
       return `${sign(p)}% experience gain`;

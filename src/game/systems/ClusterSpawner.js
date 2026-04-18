@@ -1,14 +1,8 @@
 import { Enemy } from '../entities/Enemy.js';
 import { BossEnemy } from '../entities/BossEnemy.js';
-import { ItemDrop } from '../entities/ItemDrop.js';
 import { WAVE_SCHEDULE, SPAWN_RADIUS, DESPAWN_RADIUS, BOSS_DEFS, ENEMY_AI } from '../config.js';
-import { generateItem } from '../data/itemGenerator.js';
 import { getEnemyById, listEnemyIds } from '../content/registries/enemyRegistry.js';
-import { listGenericItemDefs, listUniqueItemDefs } from '../content/registries/itemRegistry.js';
-import { enemyDamageMultiplier, enemyLifeMultiplier, enemyXpMultiplier } from '../config/scalingConfig.js';
-
-const GENERIC_ITEM_DEFS = listGenericItemDefs();
-const UNIQUE_ITEM_DEFS = listUniqueItemDefs();
+import { enemyDamageMultiplier, enemyLifeMultiplier, enemyXpMultiplier, enemyDensityMultiplier } from '../config/scalingConfig.js';
 
 /**
  * ClusterSpawner (C5)
@@ -33,6 +27,7 @@ export class ClusterSpawner {
 
     let total = 0;
     const enemyPool = this._resolveEnemyPool(mapDef, areaLevel);
+    const densityMult = enemyDensityMultiplier(areaLevel);
     const modEffects = mapInstance?.modEffects ?? {
       enemyLifeMult: 1,
       enemySpeedMult: 1,
@@ -50,7 +45,7 @@ export class ClusterSpawner {
       const roomMult = room.type === 'elite' ? 1.6 : room.type === 'treasure' ? 0.6 : 1.0;
       const packsPerRoom = Math.max(
         1,
-        Math.round((mapDef.packsPerRoom ?? 2) * roomMult * modEffects.packSizeMult * encounterTuning.packMult),
+        Math.round((mapDef.packsPerRoom ?? 2) * roomMult * modEffects.packSizeMult * encounterTuning.packMult * densityMult),
       );
       const roomCount = packsPerRoom + this._rollInt(1, 3);
 
@@ -72,18 +67,8 @@ export class ClusterSpawner {
         }
       }
 
-      // Treasure rooms get a guaranteed item drop.
-      const shouldDropReward = room.type === 'treasure' || encounterTuning.guaranteedRewardDrop;
-      if (shouldDropReward) {
-        const pool = Math.random() < 0.2 && UNIQUE_ITEM_DEFS.length ? UNIQUE_ITEM_DEFS : GENERIC_ITEM_DEFS;
-        const base = pool[Math.floor(Math.random() * pool.length)];
-        const rarity = encounterTuning.rewardRarity ?? (room.type === 'elite' ? 'rare' : 'magic');
-        const itemDef = generateItem(base, rarity, {
-          itemLevel: mapDef?.rewards?.itemLevel ?? mapDef?.areaLevel ?? areaLevel,
-        });
-        const { x, y } = this._randomPointInRoom(room, mapLayout);
-        entities.itemDrops.push(new ItemDrop(x, y, itemDef));
-      }
+      // Treasure/reward rooms no longer pre-place items at spawn time.
+      // Items are dropped by enemies when they are killed (see GameEngine.onEnemyKilled).
     }
 
     // C9 modifier: guaranteed extra champion packs added after baseline seeding.
@@ -167,6 +152,7 @@ export class ClusterSpawner {
       health: Math.round(base.health * healthScale * (isChampion ? 2 : 1) * mods.enemyLifeMult),
       speed: Math.round(base.speed * (isChampion ? 1.2 : 1) * mods.enemySpeedMult),
       damage: Math.round(base.damage * damageScale),
+      damageScale,
       xpValue: Math.round(base.xpValue * xpScale * (isChampion ? 2 : 1)),
       aggroRadius: ENEMY_AI.baseAggroRadius + (isChampion ? ENEMY_AI.championAggroBonus : 0),
       propagationRadius: ENEMY_AI.propagationRadius,

@@ -9,6 +9,7 @@ export function compileMapDefinitionToRuntime(mapDef) {
 
   const campaignProgress = inferCampaignProgress(mapDef);
   const campaignAreaLevel = resolveCampaignAreaLevel(campaignProgress);
+  const isCampaignBossArea = (campaignProgress?.partIndex ?? 1) >= 4;
 
   const layout = LAYOUT_PROFILE_BY_ID[mapDef.layoutProfileId];
   const encounter = ENCOUNTER_PROFILE_BY_ID[mapDef.encounterProfileId];
@@ -30,6 +31,7 @@ export function compileMapDefinitionToRuntime(mapDef) {
     ?? 'ruins';
 
   const resolvedLayoutFamily = mapDef.layoutFamily
+    ?? (!isCampaignBossArea ? 'strand_corridor' : null)
     ?? layout.layoutFamily
     ?? biomePack?.layoutFamily
     ?? 'bsp_fortress';

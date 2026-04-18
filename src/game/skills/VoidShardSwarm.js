@@ -113,25 +113,27 @@ export class VoidShardSwarm extends Skill {
       }
     }
 
+    // Cast phase — freeze player and deliver after cast duration.
+    if (this._tickCast(dt, player, entities, engine)) return;
+
     // Standard cooldown — only auto-fires when NOT an active skill.
     this._timer += dt;
     if (!this.isActive && this._timer >= this.cooldown) {
-      this._timer -= this.cooldown;
-      this.fire(player, entities, engine);
+      this._claimCooldownAndCastOrFire(player, entities, engine);
     }
   }
 
   _applyLevelStats() {
     const table = {
-      2: { damage: 20, cooldown: 1.6 },
-      3: { damage: 28, cooldown: 1.4, projectileLifetime: 2.4 },
-      4: { damage: 38, cooldown: 1.2 },
-      5: { damage: 50, cooldown: 1.0, projectileLifetime: 3.0 },
+      2: { damage: 20, castTime: 0.62 },
+      3: { damage: 28, castTime: 0.55, projectileLifetime: 2.4 },
+      4: { damage: 38, castTime: 0.48 },
+      5: { damage: 50, castTime: 0.40, projectileLifetime: 3.0 },
     };
     const s = table[this.level];
     if (!s) return;
-    if (s.damage           !== undefined) this.damage   = s.damage;
-    if (s.cooldown         !== undefined) this.cooldown = s.cooldown;
-    if (s.projectileLifetime !== undefined) this.config = { ...this.config, projectileLifetime: s.projectileLifetime };
+    if (s.damage             !== undefined) this.damage   = s.damage;
+    if (s.castTime           !== undefined) this.castTime = s.castTime;
+    if (s.projectileLifetime !== undefined) this.config   = { ...this.config, projectileLifetime: s.projectileLifetime };
   }
 }

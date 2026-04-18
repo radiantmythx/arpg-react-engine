@@ -46,15 +46,15 @@ export class PhantomBlade extends Skill {
 
   _applyLevelStats() {
     const table = {
-      2: { damage: 22, cooldown: 1.2 },
-      3: { damage: 30, cooldown: 1.0 },
-      4: { damage: 38, cooldown: 0.8 },
-      5: { damage: 50, cooldown: 0.7, piercing: true },
+      2: { damage: 22, castTime: 0.47 },
+      3: { damage: 30, castTime: 0.40 },
+      4: { damage: 38, castTime: 0.33 },
+      5: { damage: 50, castTime: 0.27, piercing: true },
     };
     const stats = table[this.level];
     if (!stats) return;
-    if (stats.damage !== undefined) this.damage = stats.damage;
-    if (stats.cooldown !== undefined) this.cooldown = stats.cooldown;
+    if (stats.damage   !== undefined) this.damage   = stats.damage;
+    if (stats.castTime !== undefined) this.castTime = stats.castTime;
     if (stats.piercing) this.config = { ...this.config, piercing: true };
   }
 }

@@ -29,6 +29,8 @@ export class BossEnemy extends Enemy {
     this._warningTime    = 2.5;
     this.isWarning       = true;
     this._deathHandled   = false; // set by GameEngine to avoid double processing
+    // Bosses use their own AoE attack system; clear inherited enemy skills.
+    this.skills          = [];
   }
 
   /**
@@ -42,6 +44,13 @@ export class BossEnemy extends Enemy {
       if (this._warningTime <= 0) this.isWarning = false;
       return; // frozen during entrance
     }
+
+    // Boss only engages when the player is within aggro radius.
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const distSq = dx * dx + dy * dy;
+    const aggroR = this.aggroRadius ?? 500;
+    if (distSq > aggroR * aggroR) return;
 
     // Move toward player (inherited Enemy AI)
     super.update(dt, player, engine);

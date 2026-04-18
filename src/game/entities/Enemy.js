@@ -1,6 +1,8 @@
 import { Entity } from './Entity.js';
-import { ENEMY_AI } from '../config.js';
+import { ENEMY_AI, DEFAULT_ENEMY_SKILLS } from '../config.js';
 import { firstTaggedElement, makeDamageRange, rollDamageEntry } from '../damageUtils.js';
+
+const ATTACK_VISUAL_DURATION = 0.2; // seconds for the enemy attack arc to fade
 
 export class Enemy extends Entity {
   constructor(x, y, config) {
@@ -37,6 +39,8 @@ export class Enemy extends Entity {
     // Values are fractional: 0.20 = 20% less damage; -0.15 = 15% more damage (weakness).
     // Sourced from config; defaults to empty object (no resistances).
     this.resistances = config.resistances ?? {};
+    /** Multiplier applied to all skill damage at delivery time — set by ClusterSpawner from area level. */
+    this.damageScale  = config.damageScale ?? 1;
     this.aggroRadius = config.aggroRadius ?? ENEMY_AI.baseAggroRadius;
     this.propagationRadius = config.propagationRadius ?? ENEMY_AI.propagationRadius;
     this.packId = config.packId ?? null;
@@ -49,9 +53,28 @@ export class Enemy extends Entity {
     this._path = null;
     this._pathIndex = 0;
     this._repathTimer = 0;
+
+    // ── Enemy skill system ────────────────────────────────────────────────
+    // Each skill: { id, name, damage: {min,max}, cooldown, castTime, range, tags, _timer }
+    const skillDefs = config.skills ?? DEFAULT_ENEMY_SKILLS;
+    this.skills = skillDefs.map((s) => ({
+      ...s,
+      _timer: s.cooldown * (0.3 + Math.random() * 0.4), // stagger first attack
+    }));
+    /** Visual attack arc state — null when hidden. */
+    this._attackAge = null;
+    this._attackAngle = 0;
+    /** Active cast state — null when idle. */
+    this._casting = null; // { skill, elapsed, duration, player, engine }
   }
 
   update(dt, player, engine) {
+    // Tick attack visual
+    if (this._attackAge !== null) {
+      this._attackAge += dt;
+      if (this._attackAge >= ATTACK_VISUAL_DURATION) this._attackAge = null;
+    }
+
     this.tryAcquireAggro(player);
     if (!this.isBoss && this.aiState !== 'aggro') {
       return;
@@ -63,7 +86,7 @@ export class Enemy extends Entity {
     // ── Debuff ticks ─────────────────────────────────────────────────────
     if (this.frozenTimer > 0) {
       this.frozenTimer = Math.max(0, this.frozenTimer - dt);
-      if (this.frozenTimer > 0) return; // frozen: skip movement this frame
+      if (this.frozenTimer > 0) { this._casting = null; return; } // frozen: cancel cast, skip frame
     }
     if (this.speedTimer > 0) {
       this.speedTimer = Math.max(0, this.speedTimer - dt);
@@ -76,12 +99,43 @@ export class Enemy extends Entity {
       return;
     }
 
+    // ── Tick skill cooldowns ─────────────────────────────────────────────
+    for (const skill of this.skills) {
+      if (skill._timer > 0) skill._timer -= dt;
+    }
+
+    // ── Active cast — tick and deliver ───────────────────────────────────
+    if (this._casting) {
+      this._casting.elapsed += dt;
+      if (this._casting.elapsed >= this._casting.duration) {
+        this._deliverSkill(this._casting.skill, player, engine);
+        this._casting.skill._timer = this._casting.skill.cooldown;
+        this._casting = null;
+      }
+      return; // stand still while casting
+    }
+
+    // ── Check skill range vs player ─────────────────────────────────────
+    const dxP = player.x - this.x;
+    const dyP = player.y - this.y;
+    const distToPlayer = Math.sqrt(dxP * dxP + dyP * dyP);
+
+    // If any skill is usable at this distance, begin casting.
+    if (this._tryUseSkills(distToPlayer, player, engine)) {
+      return; // started a cast — skip movement
+    }
+
+    // If in range of the shortest-range skill, hold position (cooldown pending).
+    if (this._isInAnySkillRange(distToPlayer, player)) {
+      return;
+    }
+
+    // ── Movement (chase toward player) ───────────────────────────────────
     let targetX = player.x;
     let targetY = player.y;
 
     const hasDirectPath = engine?.hasLineOfSight?.(this.x, this.y, player.x, player.y) ?? true;
     if (hasDirectPath) {
-      // Keep nearby enemies aggressive and direct when there is no wall blocking the lane.
       this._path = null;
       this._pathIndex = 0;
       this._repathTimer = ENEMY_AI.repathInterval;
@@ -90,7 +144,6 @@ export class Enemy extends Entity {
       if (this._repathTimer <= 0) {
         this._repathTimer = ENEMY_AI.repathInterval;
         this._path = engine?.getPathForEnemy?.(this, player.x, player.y) ?? null;
-        // Skip current node (enemy is already near it).
         this._pathIndex = this._path?.length > 1 ? 1 : 0;
       }
 
@@ -119,6 +172,65 @@ export class Enemy extends Entity {
       this.x += (dx / dist) * this.speed * this.speedMult * dt;
       this.y += (dy / dist) * this.speed * this.speedMult * dt;
     }
+  }
+
+  // ── Enemy skill helpers ───────────────────────────────────────────────
+
+  /**
+   * Returns the effective center-to-center distance at which a skill can hit.
+   */
+  _skillEffectiveRange(skill, target) {
+    return this.radius + (target.radius ?? 0) + (skill.range ?? 10);
+  }
+
+  /**
+   * Returns true if the enemy is within range of any of its skills.
+   */
+  _isInAnySkillRange(dist, target) {
+    for (const skill of this.skills) {
+      if (dist <= this._skillEffectiveRange(skill, target)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Try to begin casting the first ready skill that is in range.
+   * @returns {boolean} true if a cast was started (or instantly fired) this frame
+   */
+  _tryUseSkills(dist, player, engine) {
+    for (const skill of this.skills) {
+      if (skill._timer > 0) continue;
+      if (dist > this._skillEffectiveRange(skill, player)) continue;
+      const castTime = skill.castTime ?? 0;
+      if (castTime > 0) {
+        this._casting = { skill, elapsed: 0, duration: castTime };
+      } else {
+        this._deliverSkill(skill, player, engine);
+        skill._timer = skill.cooldown;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Deliver a skill hit to the player.  Rolls damage from the skill's damage
+   * range and applies it through the player's normal mitigation pipeline.
+   */
+  _deliverSkill(skill, player, engine) {
+    const rawDamage = rollDamageEntry(skill.damage);
+    const damage = rawDamage * (this.damageScale ?? 1);
+    player.takeDamage(Math.round(damage));
+    // Record attack visual
+    this._attackAge = 0;
+    this._attackAngle = Math.atan2(player.y - this.y, player.x - this.x);
+    if (player.health <= 0) {
+      engine?.gameOver();
+      return;
+    }
+    // onPlayerHit triggers screen shake / damage number; only fires when
+    // takeDamage actually landed (invulnerability resets to 0.5).
+    if (player.invulnerable > 0.45) engine?.onPlayerHit(damage);
   }
 
   takeDamage(amountOrMap, sourceTags = null, sourcePenetration = null) {
@@ -324,6 +436,23 @@ export class Enemy extends Entity {
 
     renderer.drawCircle(this.x, this.y, this.radius, this.color);
 
+    // ── Attack swing arc visual ────────────────────────────────────────
+    if (this._attackAge !== null) {
+      const t = this._attackAge / ATTACK_VISUAL_DURATION; // 0 → 1
+      const r = this.radius * (0.8 + t * 0.6);
+      const alpha = 0.7 * (1 - t);
+      const arcHalf = Math.PI / 4; // 90-degree arc
+      const { ctx } = renderer;
+      const p = renderer.toScreen(this.x, this.y);
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#ff4444';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, this._attackAngle - arcHalf, this._attackAngle + arcHalf);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     // Only show health bar when damaged
     if (this.health < this.maxHealth) {
       renderer.drawHealthBar(
@@ -334,6 +463,23 @@ export class Enemy extends Entity {
         this.radius * 2 + 4,
         -(this.radius + 8),
       );
+    }
+
+    // ── Cast bar (green, fills left-to-right while casting) ─────────────
+    if (this._casting) {
+      const barW = this.radius * 2 + 4;
+      const barH = 3;
+      const ratio = Math.min(1, this._casting.elapsed / this._casting.duration);
+      const healthShowing = this.health < this.maxHealth;
+      const offsetY = -(this.radius + (healthShowing ? 14 : 8));
+      const p = renderer.toScreen(this.x, this.y);
+      const bx = p.x - barW / 2;
+      const by = p.y + offsetY;
+      const { ctx } = renderer;
+      ctx.fillStyle = '#333';
+      ctx.fillRect(bx, by, barW, barH);
+      ctx.fillStyle = '#2ecc71';
+      ctx.fillRect(bx, by, barW * ratio, barH);
     }
   }
 }

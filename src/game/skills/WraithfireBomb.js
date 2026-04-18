@@ -91,11 +91,13 @@ export class WraithfireBomb extends Skill {
     }
     this._zones = this._zones.filter((z) => z.age < this.config.zoneDuration);
 
+    // Cast phase — freeze player and deliver after cast duration.
+    if (this._tickCast(dt, player, entities, engine)) return;
+
     // -- Cooldown (don't fire a new bomb while one is in flight) --
     this._timer += dt;
     if (this._timer >= this.cooldown && !this._bomb) {
-      this._timer -= this.cooldown;
-      this.fire(player, entities, engine);
+      this._claimCooldownAndCastOrFire(player, entities, engine);
     }
   }
 
@@ -121,14 +123,14 @@ export class WraithfireBomb extends Skill {
       2: { damage: 20, zoneRadius: 80, zoneDuration: 3.5 },
       3: { damage: 28, zoneRadius: 90, zonePulseRate: 0.45 },
       4: { damage: 38, zoneRadius: 100, zoneDuration: 4.5 },
-      5: { damage: 50, zoneRadius: 110, cooldown: 3.0, zonePulseRate: 0.35 },
+      5: { damage: 50, zoneRadius: 110, castTime: 0.50, zonePulseRate: 0.35 },
     };
     const s = table[this.level];
     if (!s) return;
-    if (s.damage        !== undefined) this.damage = s.damage;
-    if (s.zoneRadius    !== undefined) this.config = { ...this.config, zoneRadius: s.zoneRadius };
-    if (s.zoneDuration  !== undefined) this.config = { ...this.config, zoneDuration: s.zoneDuration };
-    if (s.zonePulseRate !== undefined) this.config = { ...this.config, zonePulseRate: s.zonePulseRate };
-    if (s.cooldown      !== undefined) this.cooldown = s.cooldown;
+    if (s.damage        !== undefined) this.damage    = s.damage;
+    if (s.castTime      !== undefined) this.castTime  = s.castTime;
+    if (s.zoneRadius    !== undefined) this.config    = { ...this.config, zoneRadius: s.zoneRadius };
+    if (s.zoneDuration  !== undefined) this.config    = { ...this.config, zoneDuration: s.zoneDuration };
+    if (s.zonePulseRate !== undefined) this.config    = { ...this.config, zonePulseRate: s.zonePulseRate };
   }
 }

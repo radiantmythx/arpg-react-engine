@@ -21,6 +21,7 @@ const MAP_TYPE_LABEL_BY_LAYOUT = {
   bsp_fortress: 'Fortress',
   meandering_cavern: 'Cavern',
   gauntlet_lane: 'Gauntlet',
+  strand_corridor: 'Strand',
   open_fields: 'Fields',
 };
 

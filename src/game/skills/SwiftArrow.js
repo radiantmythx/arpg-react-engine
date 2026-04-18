@@ -50,15 +50,15 @@ export class SwiftArrow extends Skill {
 
   _applyLevelStats() {
     const table = {
-      2: { damage: 15, cooldown: 0.80 },
-      3: { damage: 22, cooldown: 0.72 },
-      4: { damage: 30, cooldown: 0.62 },
-      5: { damage: 40, cooldown: 0.55, piercing: true },
+      2: { damage: 15, castTime: 0.26 },
+      3: { damage: 22, castTime: 0.23 },
+      4: { damage: 30, castTime: 0.20 },
+      5: { damage: 40, castTime: 0.17, piercing: true },
     };
     const s = table[this.level];
     if (!s) return;
     if (s.damage   !== undefined) this.damage   = s.damage;
-    if (s.cooldown !== undefined) this.cooldown = s.cooldown;
+    if (s.castTime !== undefined) this.castTime = s.castTime;
     if (s.piercing) this.config = { ...this.config, piercing: true };
   }
 }

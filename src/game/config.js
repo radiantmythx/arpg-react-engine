@@ -27,14 +27,31 @@ export const ENEMY_AI = {
   leashDistance: 1200,
 };
 
+/**
+ * Default skill loadout for enemies without explicit skills.
+ * Basic melee strike that rolls 5–10 physical damage on a 1.5 s cooldown.
+ * `range` = reach beyond the sum of attacker + target radii.
+ */
+export const DEFAULT_ENEMY_SKILLS = [
+  {
+    id: 'enemy_melee',
+    name: 'Melee Strike',
+    damage: { min: 5, max: 10 },
+    cooldown: 1.5,
+    castTime: 0.15,
+    range: 10,
+    tags: ['Attack', 'Melee', 'Physical'],
+  },
+];
+
 export const WEAPONS = {
   // ── Starter auto-fire skills (one per class) ─────────────────────────────
   MAGIC_BOLT: {
     id: 'MAGIC_BOLT',
     name: 'Magic Bolt',
     description: 'Launches a bolt of arcane energy at the nearest enemy.',
-    cooldown: 1.2,
-    castTime: 0,
+    cooldown: 0,
+    castTime: 0.50,   // attack speed/cast speed reduce this
     manaCost: 5,
     damage: 14,
     projectileSpeed: 420,
@@ -48,8 +65,8 @@ export const WEAPONS = {
     description: 'Looses a quick arrow toward the nearest enemy.',
     requiresWeaponType: ['bow'],
     requirementHint: 'Equip a Bow to use Swift Arrow.',
-    cooldown: 0.9,
-    castTime: 0,
+    cooldown: 0,
+    castTime: 0.30,   // reduced by attack speed
     manaCost: 4,
     damage: 10,
     projectileSpeed: 560,
@@ -63,8 +80,8 @@ export const WEAPONS = {
     description: 'Looses a chilled arrow that deals light Frost damage.',
     requiresWeaponType: ['bow'],
     requirementHint: 'Equip a Bow to use Frost Arrow.',
-    cooldown: 0.95,
-    castTime: 0,
+    cooldown: 0,
+    castTime: 0.35,   // reduced by attack speed
     manaCost: 4,
     damage: 9,
     projectileSpeed: 540,
@@ -76,8 +93,8 @@ export const WEAPONS = {
     id: 'MELEE_STRIKE',
     name: 'Melee Strike',
     description: 'Swings a weapon in a wide arc, striking all nearby enemies.',
-    cooldown: 1.5,
-    castTime: 0,
+    cooldown: 0,
+    castTime: 0.45,   // reduced by attack speed
     manaCost: 6,
     damage: 25,
     strikeRadius: 70,
@@ -89,8 +106,8 @@ export const WEAPONS = {
     description: 'A melee slash that deals mostly physical damage with a small blaze hit.',
     requiresWeaponType: ['sword', 'axe', 'lance', 'staff'],
     requirementHint: 'Equip a melee weapon (Sword, Axe, Lance, or Staff) to use Fire Strike.',
-    cooldown: 1.45,
-    castTime: 0,
+    cooldown: 0,
+    castTime: 0.45,   // reduced by attack speed
     manaCost: 6,
     damage: 24,
     strikeRadius: 70,
@@ -102,8 +119,8 @@ export const WEAPONS = {
     id: 'ARCANE_LANCE',
     name: 'Arcane Lance',
     description: 'Fires a lance of arcane energy at the nearest enemy.',
-    cooldown: 1.0,       // seconds between shots
-    castTime: 0.50,      // seconds from activation to projectile spawn
+    cooldown: 0,
+    castTime: 0.65,      // reduced by cast speed
     manaCost: 10,
     damage: 20,
     projectileSpeed: 400, // px/s
@@ -115,8 +132,8 @@ export const WEAPONS = {
     id: 'PHANTOM_BLADE',
     name: 'Phantom Blade',
     description: 'Hurls a spectral blade in the direction of movement.',
-    cooldown: 1.4,
-    castTime: 0.35,
+    cooldown: 0,
+    castTime: 0.55,   // reduced by attack speed
     manaCost: 9,
     damage: 15,
     projectileSpeed: 500,
@@ -128,8 +145,8 @@ export const WEAPONS = {
     id: 'RIGHTEOUS_PYRE',
     name: 'Righteous Pyre',
     description: 'Ignites a holy aura that continuously burns nearby enemies.',
-    cooldown: 0.5,
-    castTime: 0,         // auto-fire aura — no cast delay
+    cooldown: 0.5,       // pulse interval — aura does NOT freeze player
+    castTime: 0,         // intentionally zero: constant-pulse auras skip the cast phase
     manaCost: 7,
     damage: 5,
     auraRadius: 80,
@@ -139,8 +156,8 @@ export const WEAPONS = {
     id: 'TECTONIC_CLEAVE',
     name: 'Tectonic Cleave',
     description: 'Hurls an earth-rending projectile in a gravitied arc, piercing all enemies in its path.',
-    cooldown: 2.5,
-    castTime: 0.70,
+    cooldown: 1.5,       // recharge after cast; strong skill keeps cooldown
+    castTime: 1.20,      // heavy wind-up; reduced by cast speed
     manaCost: 18,
     damage: 40,
     projectileSpeed: 280,
@@ -153,8 +170,8 @@ export const WEAPONS = {
     id: 'SACRED_RITE',
     name: 'Sacred Rite',
     description: 'Hurls a consecrated flask that detonates into a lingering damage zone for 3 seconds.',
-    cooldown: 5.0,
-    castTime: 0,         // auto-fire
+    cooldown: 2.5,       // recharge; zone skill keeps cooldown
+    castTime: 0.70,      // flask lob wind-up; reduced by cast speed
     manaCost: 20,
     damage: 12,
     flaskSpeed: 350,
@@ -169,8 +186,8 @@ export const WEAPONS = {
     id: 'VOLTAIC_ARC',
     name: 'Voltaic Arc',
     description: 'Discharges a ring of electricity that radiates outward, zapping every enemy it crosses.',
-    cooldown: 3.0,
-    castTime: 0,         // auto-fire
+    cooldown: 1.5,       // recharge; ring skill keeps cooldown
+    castTime: 0.60,      // charge-up before discharge; reduced by cast speed
     manaCost: 14,
     damage: 25,
     expandSpeed: 320, // px/s ring expansion
@@ -183,8 +200,8 @@ export const WEAPONS = {
     id: 'CHAIN_LIGHTNING',
     name: 'Chain Lightning',
     description: 'Fires a bolt that arcs between up to 4 nearby enemies, dealing fading damage per hop.',
-    cooldown: 1.8,
-    castTime: 0.55,
+    cooldown: 0,
+    castTime: 0.55,   // charge-up; reduced by cast speed
     manaCost: 12,
     damage: 22,
     projectileSpeed: 500,
@@ -199,8 +216,8 @@ export const WEAPONS = {
     id: 'BONE_SPEAR',
     name: 'Bone Spear',
     description: 'Hurls a massive bone shard that pierces all enemies in its path.',
-    cooldown: 1.4,
-    castTime: 0.90,
+    cooldown: 0.5,       // short recharge; heavy spell keeps small cooldown
+    castTime: 1.00,      // long wind-up; reduced by cast speed
     manaCost: 16,
     damage: 55,
     projectileSpeed: 340,
@@ -212,8 +229,8 @@ export const WEAPONS = {
     id: 'VOID_SHARD_SWARM',
     name: 'Void Shard Swarm',
     description: 'Launches 3 homing shards that spiral outward before tracking the nearest enemy.',
-    cooldown: 2.0,
-    castTime: 0.45,
+    cooldown: 0,
+    castTime: 0.70,   // conjure time; reduced by cast speed
     manaCost: 13,
     damage: 16,
     projectileSpeed: 280,
@@ -225,8 +242,8 @@ export const WEAPONS = {
     id: 'WRAITHFIRE_BOMB',
     name: 'Wraithfire Bomb',
     description: 'Lobs an exploding bomb that leaves a burning zone dealing damage over time.',
-    cooldown: 4.0,
-    castTime: 0,         // auto-fire
+    cooldown: 2.0,       // recharge; zone skill keeps cooldown
+    castTime: 0.70,      // lob wind-up; reduced by cast speed
     manaCost: 17,
     damage: 15,
     bombLifetime: 1.0,  // seconds to reach target

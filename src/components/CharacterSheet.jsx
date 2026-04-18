@@ -67,6 +67,7 @@ function fmtStat(key, value) {
     xpMultiplier:     (v) => `+${Math.round((v - 1) * 100)}% XP gain`,
     speedFlat:        (v) => `+${v} move speed`,
     pickupRadiusFlat: (v) => `+${v} pickup radius`,
+    meleeStrikeRange: (v) => `+${Math.round(v * 100)}% melee strike range`,
     armorFlat:        (v) => `+${v} armor`,
     evasionFlat:      (v) => `+${v} evasion`,
     energyShieldFlat: (v) => `+${v} energy shield`,

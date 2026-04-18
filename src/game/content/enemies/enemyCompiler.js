@@ -1,5 +1,6 @@
 import { ENEMY_ARCHETYPE_BY_ID } from './enemyArchetypes.js';
 import { AI_PROFILE_BY_ID } from './aiProfiles.js';
+import { DEFAULT_ENEMY_SKILLS } from '../../config.js';
 
 /**
  * Compile an enemy archetype + ai profile to current runtime enemy config shape.
@@ -26,5 +27,6 @@ export function compileEnemyArchetypeToRuntime(enemyId) {
     xpValue: archetype.xpValue,
     color: archetype.color,
     resistances: archetype.resistances ?? {},
+    skills: archetype.skills ?? DEFAULT_ENEMY_SKILLS,
   };
 }

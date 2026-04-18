@@ -67,6 +67,9 @@ export class Player extends Entity {
     // Invulnerability frames in seconds — prevents rapid damage spam from enemies
     this.invulnerable = 0;
 
+    // Casting state — set by skills/ActiveSkillSystem during a cast phase
+    this.casting = null;
+
     // Bonus stats applied by passive items (initialised to neutral values).
     this.healthRegenPerS   = 0;   // HP restored per second (negative = drain)
     this.manaRegenPerS     = PLAYER.MANA_REGEN;
@@ -84,6 +87,7 @@ export class Player extends Entity {
     this.potionMaxChargesMult = 1;
     this.potionChargesPerUseMult = 1;
     this.moveSpeedMult = 1;
+    this.meleeStrikeRange = 0;
     /** Multiplicative incoming damage taken (map mods can temporarily change this). */
     this.incomingDamageMult = 1;
 
@@ -249,8 +253,11 @@ export class Player extends Entity {
     const { dx, dy } = input.getMovement();
     const terrainSpeedMult = Math.max(0.85, Math.min(1.02, this.terrainSpeedMult ?? 1));
 
-    this.x += dx * this.speed * (this.moveSpeedMult ?? 1) * terrainSpeedMult * dt;
-    this.y += dy * this.speed * (this.moveSpeedMult ?? 1) * terrainSpeedMult * dt;
+    // Freeze movement while casting a skill
+    if (!this.casting) {
+      this.x += dx * this.speed * (this.moveSpeedMult ?? 1) * terrainSpeedMult * dt;
+      this.y += dy * this.speed * (this.moveSpeedMult ?? 1) * terrainSpeedMult * dt;
+    }
 
     if (this.invulnerable > 0) {
       this.invulnerable -= dt;
@@ -492,5 +499,20 @@ export class Player extends Entity {
     );
 
     renderer.drawHealthBar(this.x, this.y, this.health, this.maxHealth, 30, -24);
+
+    // ── Cast bar (blue-green, fills left-to-right while casting) ────────
+    if (this.casting) {
+      const barW = 32;
+      const barH = 3;
+      const ratio = Math.min(1, this.casting.elapsed / this.casting.duration);
+      const p = renderer.toScreen(this.x, this.y);
+      const bx = p.x - barW / 2;
+      const by = p.y - 19;  // just below the health bar
+      const { ctx } = renderer;
+      ctx.fillStyle = '#333';
+      ctx.fillRect(bx, by, barW, barH);
+      ctx.fillStyle = '#3ae0d0';
+      ctx.fillRect(bx, by, barW * ratio, barH);
+    }
   }
 }

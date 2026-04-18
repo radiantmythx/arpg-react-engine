@@ -50,9 +50,11 @@ const ITEM_ICON = {
   support_gem:'◆',
   map_item:   '🗺',
   map:        '🗺',
+  currency:   '○',
 };
 
 function getItemIcon(item) {
+  if (item.type === 'currency')     return item.icon ?? '○';
   if (item.type === 'skill_gem')    return item.gemIcon ?? '◇';
   if (item.type === 'support_gem')  return item.gemIcon ?? '◆';
   if (item.type === 'map_item')     return '🗺';
@@ -201,6 +203,7 @@ export function InventoryScreen({
   gold,
   feedback,
   cursorItem,
+  compatibleItemUids = null,
   mousePos,
   onClose,
   onItemClick,
@@ -423,10 +426,12 @@ export function InventoryScreen({
           );
         })}
 
-        {filteredInventoryItems.map((item) => (
+        {filteredInventoryItems.map((item) => {
+          const isCompatible = compatibleItemUids?.has(item.uid) ?? false;
+          return (
           <div
             key={item.uid}
-            className={`inv-item inv-item--${item.rarity}`}
+            className={`inv-item inv-item--${item.rarity}${isCompatible ? ' inv-item--currency-target' : ''}`}
             draggable={!mobileMode && tab === 'gems' && isGemItem(item)}
             style={{
               position:    'absolute',
@@ -434,7 +439,8 @@ export function InventoryScreen({
               top:         item.gridY * cellSize,
               width:       item.gridW * cellSize,
               height:      item.gridH * cellSize,
-              borderColor: RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal,
+              borderColor: isCompatible ? '#ffe066' : (RARITY_COLORS[item.rarity] ?? RARITY_COLORS.normal),
+              boxShadow:   isCompatible ? '0 0 8px 2px rgba(255, 220, 50, 0.7)' : undefined,
             }}
             data-gem-selected={tab === 'gems' && (selectedSupportGemUid === item.uid || selectedSkillGemUid === item.uid) ? 'true' : undefined}
             data-mobile-selected={mobileMode && selectedMobileItemUid === item.uid ? 'true' : undefined}
@@ -474,7 +480,8 @@ export function InventoryScreen({
               {item.name}
             </span>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {tab === 'equipment' && inspectedInventoryItem && (

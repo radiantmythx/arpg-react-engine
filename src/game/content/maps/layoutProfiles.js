@@ -15,6 +15,14 @@ export const LAYOUT_PROFILES = [
     notes: 'Gauntlet verification profile for obstacle categories and placement rules.',
   },
   {
+    id: 'layout_strand_corridor',
+    theme: 'wastes',
+    layoutFamily: 'strand_corridor',
+    pathStyle: 'linear',
+    terrainProfile: 'ash+mud',
+    notes: 'Long strand-style corridor with linked hubs and boss endpoint.',
+  },
+  {
     id: 'layout_archive_flooded',
     theme: 'archive',
     layoutFamily: 'meandering_cavern',

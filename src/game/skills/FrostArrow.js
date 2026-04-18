@@ -49,15 +49,15 @@ export class FrostArrow extends Skill {
 
   _applyLevelStats() {
     const table = {
-      2: { damage: 13, cooldown: 0.88 },
-      3: { damage: 18, cooldown: 0.80 },
-      4: { damage: 24, cooldown: 0.72 },
-      5: { damage: 31, cooldown: 0.65, piercing: true },
+      2: { damage: 13, castTime: 0.31 },
+      3: { damage: 18, castTime: 0.27 },
+      4: { damage: 24, castTime: 0.23 },
+      5: { damage: 31, castTime: 0.20, piercing: true },
     };
     const s = table[this.level];
     if (!s) return;
     if (s.damage   !== undefined) this.damage   = s.damage;
-    if (s.cooldown !== undefined) this.cooldown = s.cooldown;
+    if (s.castTime !== undefined) this.castTime = s.castTime;
     if (s.piercing) this.config = { ...this.config, piercing: true };
   }
 }

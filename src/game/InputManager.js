@@ -33,7 +33,7 @@ export class InputManager {
    */
   getSkillActivations() {
     return {
-      space: this._justPressed.has('Space') || this._virtualPrimaryHeld,
+      space: this._keys.has('Space') || this._virtualPrimaryHeld,
       q: this._justPressed.has('KeyQ') || this._virtualSkillPress.has('KeyQ'),
       e: this._justPressed.has('KeyE') || this._virtualSkillPress.has('KeyE'),
       r: this._justPressed.has('KeyR') || this._virtualSkillPress.has('KeyR'),

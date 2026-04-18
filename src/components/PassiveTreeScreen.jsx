@@ -87,6 +87,7 @@ const STAT_LABELS = {
   frostResistance:      (v) => `+${Math.round(v*100)}% Frost Resistance`,
   xpMultiplier:         (v) => `+${Math.round(v*100)}% Experience Gained`,
   pickupRadiusBonus:    (v) => `+${v} Pickup Radius`,
+  meleeStrikeRange:     (v) => `+${Math.round(v*100)}% Melee Strike Range`,
   projectileCountBonus: (v) => `+${v} Projectile(s)`,
 };
 
@@ -213,6 +214,7 @@ export function PassiveTreeScreen({
   const stateRef   = useRef({ pan: { x: 0, y: 0 }, zoom: 1, drag: null, pulse: 0, ringPulses: [] });
   const rafRef     = useRef(null);
   const [tooltip, setTooltip] = useState(null); // { node, sx, sy }
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Normalise allocatedIds to a Set regardless of what App.jsx passes
   const allocSet = allocatedIds instanceof Set
@@ -246,7 +248,7 @@ export function PassiveTreeScreen({
   }
 
   // ── Main draw ─────────────────────────────────────────────────────────────
-  const draw = useCallback(() => {
+  const draw = useCallback(() => { // eslint-disable-line react-hooks/exhaustive-deps
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -338,14 +340,47 @@ export function PassiveTreeScreen({
     }
 
     // ── Nodes ─────────────────────────────────────────────────────────────────
+    // Search: figure out which nodes match before drawing
+    const q = searchQuery.trim().toLowerCase();
+    function nodeMatchesSearch(node) {
+      if (!q) return true;
+      if ((node.label ?? '').toLowerCase().includes(q)) return true;
+      if ((node.description ?? '').toLowerCase().includes(q)) return true;
+      // match stat label strings
+      const lines = statLines(node.stats);
+      return lines.some((l) => l.toLowerCase().includes(q));
+    }
+
     // Pulse alpha for allocatable nodes
     const pulse = 0.55 + 0.45 * Math.sin(s.pulse);
     for (const node of nodes) {
-      const pos   = nodeXY(node, cx, cy);
-      const alloc = allocSet.has(node.id);
-      const reach = allocatable.has(node.id);
+      const pos     = nodeXY(node, cx, cy);
+      const alloc   = allocSet.has(node.id);
+      const reach   = allocatable.has(node.id);
+      const matches = nodeMatchesSearch(node);
 
-      if (reach && !alloc) ctx.globalAlpha = pulse;
+      // When searching, non-matching nodes are visually suppressed
+      if (q && !matches) {
+        ctx.globalAlpha = 0.10;
+      } else if (q && matches) {
+        // Subtle highlight: draw a faint coloured ring behind the node
+        const col = SECTION_COLOR[node.section] ?? '#aaa';
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, (NODE_RADIUS[node.type] ?? 10) + 7, 0, Math.PI * 2);
+        ctx.strokeStyle = col;
+        ctx.lineWidth   = 2.5 / s.zoom;
+        ctx.globalAlpha = 0.65;
+        ctx.shadowColor = col;
+        ctx.shadowBlur  = 12;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      } else if (reach && !alloc) {
+        ctx.globalAlpha = pulse;
+      }
+
       drawNode(ctx, node, pos, alloc, reach);
       ctx.globalAlpha = 1;
     }
@@ -373,7 +408,7 @@ export function PassiveTreeScreen({
     ctx.fillText('Left-click: allocate   Right-click: refund   Scroll: zoom   Drag: pan', 14, 48);
 
     rafRef.current = requestAnimationFrame(draw);
-  }, [allocSet, nodes, skillPoints]);
+  }, [allocSet, nodes, skillPoints, searchQuery]);
 
   // ── Pulse + resize ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -600,8 +635,64 @@ export function PassiveTreeScreen({
   }, [allocSet, onAllocate, onRefund]);
 
   // ── Main return ─────────────────────────────────────────────────────────────
+  // ── Search helpers ──────────────────────────────────────────────────────
+  const matchCount = React.useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null;
+    return Object.values(TREE_NODE_MAP).filter((node) => {
+      if ((node.label ?? '').toLowerCase().includes(q)) return true;
+      if ((node.description ?? '').toLowerCase().includes(q)) return true;
+      return statLines(node.stats).some((l) => l.toLowerCase().includes(q));
+    }).length;
+  }, [searchQuery]);
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#07070f' }}>
+      {/* ── Search bar ── */}
+      <div style={{
+        position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+        display: 'flex', alignItems: 'center', gap: 8, zIndex: 100,
+      }}>
+        <div style={{ position: 'relative' }}>
+          <span style={{
+            position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)',
+            color: '#666', fontSize: 13, pointerEvents: 'none', userSelect: 'none',
+          }}>🔍</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search nodes…"
+            style={{
+              background: 'rgba(10,10,20,0.82)', border: '1px solid #3a3a5a',
+              borderRadius: 6, color: '#e0e0f0', fontFamily: 'serif', fontSize: 13,
+              padding: '5px 10px 5px 28px', width: 220, outline: 'none',
+              boxShadow: searchQuery ? '0 0 8px rgba(160,140,255,0.35)' : 'none',
+              borderColor: searchQuery ? '#7060cc' : '#3a3a5a',
+            }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{
+                position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', color: '#666', cursor: 'pointer',
+                fontSize: 14, lineHeight: 1, padding: 0,
+              }}
+            >✕</button>
+          )}
+        </div>
+        {matchCount !== null && (
+          <span style={{
+            color: matchCount > 0 ? '#a0c0ff' : '#ff7070',
+            fontSize: 12, fontFamily: 'serif',
+            background: 'rgba(10,10,20,0.72)', border: '1px solid #2a2a3a',
+            borderRadius: 4, padding: '3px 8px',
+          }}>
+            {matchCount} match{matchCount !== 1 ? 'es' : ''}
+          </span>
+        )}
+      </div>
       <canvas
         ref={canvasRef}
         style={{ display: 'block', width: '100%', height: '100%', touchAction: 'none' }}

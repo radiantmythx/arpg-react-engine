@@ -984,6 +984,8 @@ const RAW_AFFIX_POOL = [
   { id: 'flat_physical_major',     type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatPhysicalDamage',      value: 18,   label: '+18 flat Physical Damage' },
   { id: 'inc_physical_minor',      type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedPhysicalDamage', value: 0.12, label: '+12% increased Physical Damage' },
   { id: 'inc_physical_major',      type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedPhysicalDamage', value: 0.22, label: '+22% increased Physical Damage' },
+  { id: 'melee_strike_range_minor', type: 'prefix', slots: ['weapon'], weaponTypes: ['sword', 'axe', 'lance', 'staff'], stat: 'meleeStrikeRange', value: 0.2, label: '+20% melee strike range' },
+  { id: 'melee_strike_range_major', type: 'prefix', slots: ['weapon'], weaponTypes: ['sword', 'axe', 'lance', 'staff'], stat: 'meleeStrikeRange', value: 0.35, label: '+35% melee strike range' },
   { id: 'more_physical',           type: 'suffix', slots: ['weapon'],            stat: 'morePhysicalDamage',      value: 0.10, label: '+10% more Physical Damage' },
 
   // ─── Blaze ────────────────────────────────────────────────────────────────

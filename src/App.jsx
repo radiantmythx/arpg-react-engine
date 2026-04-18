@@ -26,6 +26,7 @@ import { CHARACTER_MAP } from './game/data/characters.js';
 import { MetaProgression } from './game/MetaProgression.js';
 import { CharacterSave } from './game/CharacterSave.js';
 import { listFreeMaps } from './game/content/registries/index.js';
+import { canApplyCurrencyToItem } from './game/data/itemCrafting.js';
 import './styles/App.css';
 
 const FREE_MAPS = listFreeMaps();
@@ -863,10 +864,27 @@ export default function App() {
     setScreen(engine.state === 'HUB' ? 'HUB' : 'RUNNING');
   }, [screen, cursorItem]);
 
-  // Left-click item in grid → to cursor (swap if cursor held)
+  // Left-click item in grid → apply currency if held; otherwise pick up to cursor
   const handleInventoryItemClick = useCallback((uid) => {
     const engine = engineRef.current;
     if (!engine) return;
+    // --- Currency orb application ---
+    if (cursorItem?.type === 'currency' && cursorItem?.currencyAction) {
+      const targetItem = hud.inventory.items.find((i) => i.uid === uid);
+      if (targetItem && canApplyCurrencyToItem(targetItem, cursorItem.currencyAction)) {
+        const result = engine.applyCurrencyToInventoryItem(uid, cursorItem.currencyAction);
+        if (result?.ok) {
+          // Consume the orb from cursor
+          setCursorItem(null);
+          setVendorFeedback(`Applied ${cursorItem.name}.`);
+        } else {
+          setVendorFeedback(result?.blockedReason ?? 'Could not apply currency.');
+        }
+      } else {
+        setVendorFeedback('That item is not compatible with this orb.');
+      }
+      return;
+    }
     if (cursorItem) {
       // Swap: place cursor item, pick up clicked item
       const placed = engine.addToInventory(cursorItem);
@@ -886,13 +904,29 @@ export default function App() {
         setCursorItem(def);
       }
     }
-  }, [cursorItem]);
+  }, [cursorItem, hud.inventory.items]);
 
-  // Right-click item in grid → auto-equip (displaced item goes to cursor)
+  // Right-click item in grid → pick up currency to hold; auto-equip gear; gem tab hint
   const handleInventoryItemRightClick = useCallback((uid) => {
     const engine = engineRef.current;
     if (!engine) return;
     const invItem = hud.inventory.items.find((item) => item.uid === uid);
+    // Currency: right-click picks it up to cursor for application
+    if (invItem?.type === 'currency') {
+      if (cursorItem) {
+        // Cancel existing held currency or swap
+        const placed = engine.addToInventory(cursorItem);
+        if (!placed) engine.dropItemToWorld(cursorItem);
+        setCursorItem(null);
+      }
+      const def = engine.player.inventory.remove(uid);
+      if (def) {
+        engine._flushHudUpdate();
+        setCursorItem(def);
+        setVendorFeedback(`Holding ${def.name} — left-click a glowing item to apply.`);
+      }
+      return;
+    }
     if (invItem?.type === 'skill_gem') {
       setInvTab('gems');
       setVendorFeedback('Select this skill gem in the Gems tab, then choose a Primary/Q/E/R slot to equip it.');
@@ -902,7 +936,7 @@ export default function App() {
     if (!invItem || !equippable.includes(invItem.slot)) return;
     const displaced = engine.equipFromInventory(uid);
     if (displaced) setCursorItem(displaced);
-  }, [hud.inventory.items]);
+  }, [hud.inventory.items, cursorItem]);
 
   const handleInventoryDropItem = useCallback((uid) => {
     const engine = engineRef.current;
@@ -1210,6 +1244,9 @@ export default function App() {
   // Key handlers: Escape = close/back, V = inventory, G = gems, T = passive tree, P = portal prompt
   useEffect(() => {
     const onKey = (e) => {
+      // Don't steal keys while the user is typing in any input/textarea
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
       if (e.code === 'KeyT') {
         if (screen === 'RUNNING' || screen === 'HUB') openTree();
         else if (screen === 'TREE') closeTree();
@@ -1526,6 +1563,11 @@ export default function App() {
           gold={hud.gold ?? 0}
           feedback={vendorFeedback}
           cursorItem={cursorItem}
+          compatibleItemUids={
+            cursorItem?.type === 'currency' && cursorItem?.currencyAction
+              ? new Set(hud.inventory.items.filter((i) => canApplyCurrencyToItem(i, cursorItem.currencyAction)).map((i) => i.uid))
+              : null
+          }
           mousePos={mousePos}
           mobileMode={mobileMode}
           onClose={closeInventory}

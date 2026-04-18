@@ -67,11 +67,13 @@ export class SacredRite extends Skill {
     // Expire zones that have lasted their duration.
     this._zones = this._zones.filter((z) => z.age < this.config.zoneDuration);
 
+    // Cast phase — freeze player and deliver after cast duration.
+    if (this._tickCast(dt, player, entities, engine)) return;
+
     // --- Weapon cooldown (only fires when no flask is in flight) ---
     this._timer += dt;
     if (this._timer >= this.cooldown && !this._flask) {
-      this._timer -= this.cooldown;
-      this.fire(player, entities, engine);
+      this._claimCooldownAndCastOrFire(player, entities, engine);
     }
   }
 

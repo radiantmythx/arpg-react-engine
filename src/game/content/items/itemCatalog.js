@@ -924,3 +924,148 @@ for (const [id, flavorText] of Object.entries(_UNIQUE_FLAVOR_TEXTS)) {
 export const UNIQUE_ITEM_DEFS  = ITEM_DEFS.filter((i) => i.isUnique);
 /** Generic base items (defense-type bases from Phase 10.5) — procedurally rolled. */
 export const GENERIC_ITEM_DEFS = ITEM_DEFS.filter((i) => !i.isUnique);
+
+// ─── Currency orbs ───────────────────────────────────────────────────────────
+// type: 'currency' — no equip slot; right-click to hold, left-click a lit item to apply.
+// weight — relative drop frequency. rarity — nameplate colour tier (normal/magic/rare/unique).
+export const CURRENCY_DEFS = [
+  {
+    id: 'scroll_wisdom',
+    name: 'Scroll of Wisdom',
+    type: 'currency',
+    currencyAction: 'identify',
+    description: 'Identifies an unidentified item, revealing its affixes.',
+    color: '#b2bec3',
+    icon: '📜',
+    rarity: 'normal',
+    weight: 40,
+    gridW: 1, gridH: 1,
+    basePrice: 1,
+  },
+  {
+    id: 'orb_transmutation',
+    name: 'Orb of Transmutation',
+    type: 'currency',
+    currencyAction: 'transmute',
+    description: 'Upgrades a Normal item to Magic quality and adds an explicit affix.',
+    color: '#6b9cd4',
+    icon: '○',
+    rarity: 'normal',
+    weight: 25,
+    gridW: 1, gridH: 1,
+    basePrice: 2,
+  },
+  {
+    id: 'orb_augmentation',
+    name: 'Orb of Augmentation',
+    type: 'currency',
+    currencyAction: 'augment',
+    description: 'Adds one random explicit affix to a Magic item with an open affix slot.',
+    color: '#a8d8a8',
+    icon: '⊕',
+    rarity: 'normal',
+    weight: 22,
+    gridW: 1, gridH: 1,
+    basePrice: 3,
+  },
+  {
+    id: 'orb_alteration',
+    name: 'Orb of Alteration',
+    type: 'currency',
+    currencyAction: 'alteration',
+    description: 'Rerolls all explicit affixes on a Magic item.',
+    color: '#f1c40f',
+    icon: '◈',
+    rarity: 'magic',
+    weight: 15,
+    gridW: 1, gridH: 1,
+    basePrice: 4,
+  },
+  {
+    id: 'regal_orb',
+    name: 'Regal Orb',
+    type: 'currency',
+    currencyAction: 'regal_upgrade',
+    description: 'Upgrades a Magic item to Rare quality and adds one explicit affix.',
+    color: '#c0932f',
+    icon: '♦',
+    rarity: 'magic',
+    weight: 8,
+    gridW: 1, gridH: 1,
+    basePrice: 8,
+  },
+  {
+    id: 'orb_annulment',
+    name: 'Orb of Annulment',
+    type: 'currency',
+    currencyAction: 'annul',
+    description: 'Removes one random explicit affix from an item.',
+    color: '#c0392b',
+    icon: '⊖',
+    rarity: 'magic',
+    weight: 6,
+    gridW: 1, gridH: 1,
+    basePrice: 6,
+  },
+  {
+    id: 'chaos_orb',
+    name: 'Chaos Orb',
+    type: 'currency',
+    currencyAction: 'chaos_reroll',
+    description: 'Rerolls all explicit affixes on a Rare item into new random affixes.',
+    color: '#e17055',
+    icon: '⊗',
+    rarity: 'rare',
+    weight: 4,
+    gridW: 1, gridH: 1,
+    basePrice: 10,
+  },
+  {
+    id: 'exalted_orb',
+    name: 'Exalted Orb',
+    type: 'currency',
+    currencyAction: 'exalt',
+    description: 'Adds one new explicit affix to a Rare item that has an open affix slot.',
+    color: '#f0c040',
+    icon: '✦',
+    rarity: 'rare',
+    weight: 2,
+    gridW: 1, gridH: 1,
+    basePrice: 20,
+  },
+  {
+    id: 'divine_orb',
+    name: 'Divine Orb',
+    type: 'currency',
+    currencyAction: 'divine',
+    description: 'Rerolls the numeric values of all explicit affixes on an item to new rolls.',
+    color: '#e8c46a',
+    icon: '⊛',
+    rarity: 'unique',
+    weight: 1,
+    gridW: 1, gridH: 1,
+    basePrice: 30,
+  },
+];
+
+export const CURRENCY_DEFS_BY_ID = Object.fromEntries(CURRENCY_DEFS.map((d) => [d.id, d]));
+
+// ─── Weighted random currency orb picker ─────────────────────────────────────
+const _CURRENCY_TOTAL_WEIGHT = CURRENCY_DEFS.reduce((sum, d) => sum + (d.weight ?? 1), 0);
+
+/**
+ * Pick a random currency orb using the weighted rarity table.
+ * Returns a fresh item-def object (with uid) ready to pass to new ItemDrop().
+ */
+export function rollCurrencyOrb() {
+  let r = Math.random() * _CURRENCY_TOTAL_WEIGHT;
+  let chosen = CURRENCY_DEFS[0];
+  for (const def of CURRENCY_DEFS) {
+    r -= (def.weight ?? 1);
+    if (r <= 0) { chosen = def; break; }
+  }
+  const uid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `currency_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  return { ...chosen, uid };
+}

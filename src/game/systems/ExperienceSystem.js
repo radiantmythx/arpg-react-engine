@@ -234,11 +234,10 @@ export class ExperienceSystem {
     this.engine.player.skillPoints += 3 + Math.floor(lvl / 10) * 2;
     // Log the level-up event for the death recap timeline.
     this.engine.runEventLog.push({ type: 'level', time: this.engine.elapsed, level: this.engine.player.level });
-    // Flush HUD immediately so skillPoints is > 0 when the tree screen opens.
+    // Flush HUD immediately so skillPoints indicators update without forcing a pause.
     this.engine._flushHudUpdate();
-    this.engine.pause();
 
-    this.onLevelUp(); // open the passive tree screen
+    this.onLevelUp();
   }
 
   /**
