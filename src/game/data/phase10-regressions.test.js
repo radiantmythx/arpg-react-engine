@@ -72,7 +72,7 @@ describe('phase10 regressions', () => {
     const player = {
       maxHealth: 100,
       health: 100,
-      attackSpeed: 1,
+      attackSpeed: 0,
       autoSkills: [{ damage: 10, cooldown: 1 }],
       _activeModifierSnapshots: new Map(),
     };
@@ -87,7 +87,7 @@ describe('phase10 regressions', () => {
 
     const snapshot = applyModifierSet(player, [
       { statKey: 'maxHealth', value: 25, operation: 'add', target: 'player', layer: 100 },
-      { statKey: 'attackSpeed', value: 1.2, operation: 'multiply', target: 'player', layer: 100 },
+      { statKey: 'attackSpeed', value: 0.2, operation: 'add', target: 'player', layer: 100 },
       { statKey: 'damageMult', value: 1.5, operation: 'multiply', target: 'autoSkillDamage', layer: 200 },
       { statKey: 'cooldownMult', value: 0.8, operation: 'multiply', target: 'autoSkillCooldown', layer: 200 },
     ], {

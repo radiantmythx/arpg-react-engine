@@ -133,9 +133,15 @@ function SkillTooltip({ skill, pos }) {
           ))}
         </div>
       )}
-      {skill.castTime > 0 && (
-        <div className="hud-skill-tooltip__line">Cast: {skill.castTime.toFixed(2)}s</div>
-      )}
+      {skill.castTime > 0 && (() => {
+        const label = skill.isAttack ? 'Attack Speed' : 'Cast Speed';
+        const t = Number.isFinite(skill.actualCastTime) && skill.actualCastTime > 0
+          ? skill.actualCastTime
+          : skill.castTime;
+        return (
+          <div className="hud-skill-tooltip__line">{label}: {t.toFixed(2)}s</div>
+        );
+      })()}
       {skill.manaCost > 0 && (
         <div className="hud-skill-tooltip__line">Mana: {Math.round(skill.manaCost)}</div>
       )}

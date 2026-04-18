@@ -15,8 +15,6 @@ export const MODIFIER_LAYERS = {
 };
 
 const PASSIVE_MULT_KEYS = new Set([
-  'castSpeed',
-  'attackSpeed',
   'moveSpeedMult',
   'manaCostMult',
   'xpMultiplier',
@@ -26,8 +24,8 @@ const PASSIVE_MULT_KEYS = new Set([
 ]);
 
 const BONUS_BASELINES = {
-  castSpeed: 1,
-  attackSpeed: 1,
+  castSpeed: 0,
+  attackSpeed: 0,
   moveSpeedMult: 1,
   manaCostMult: 1,
   xpMultiplier: 1,

@@ -81,7 +81,7 @@ export const WEAPONS = {
     requiresWeaponType: ['bow'],
     requirementHint: 'Equip a Bow to use Frost Arrow.',
     cooldown: 0,
-    castTime: 0.35,   // reduced by attack speed
+    castTime: 0.65,   // reduced by attack speed
     manaCost: 4,
     damage: 9,
     projectileSpeed: 540,

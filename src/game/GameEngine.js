@@ -46,7 +46,7 @@ import { POTION_TUNING } from './content/tuning/index.js';
 import { createDefaultPotionBelt, normalizePotionBelt, POTION_MAP, rollPotionDrop, formatPotionEffectLine } from './data/potions.js';
 import { canEquipItemInSlot, normalizeWeaponItem } from './data/weaponTypes.js';
 import { evaluateSkillRequirements } from './data/skillRequirements.js';
-import { summarizeActiveModifiers, summarizeCharacterBonuses } from './data/modifierEngine.js';
+import { summarizeActiveModifiers, summarizeCharacterBonuses, resolveScopedSkillBonuses } from './data/modifierEngine.js';
 import { applyCraftingAction, CRAFTING_ACTIONS, canApplyCurrencyToItem } from './data/itemCrafting.js';
 
 /** World-space radius within which hovering the mouse highlights an ItemDrop. */
@@ -1969,6 +1969,17 @@ export class GameEngine {
       description: s.description ?? '',
       tags: s.tags ?? [],
       castTime: s.castTime ?? 0,
+      isAttack: (s.tags ?? []).includes('Attack'),
+      actualCastTime: (() => {
+        const ct = s.castTime ?? 0;
+        if (!ct) return 0;
+        const isAtk = (s.tags ?? []).includes('Attack');
+        const scoped = resolveScopedSkillBonuses(this.player, s);
+        const speed = isAtk
+          ? 1 + (this.player?.attackSpeed ?? 0) + scoped.attackSpeedInc
+          : 1 + (this.player?.castSpeed ?? 0) + scoped.castSpeedInc;
+        return ct / Math.max(0.01, speed);
+      })(),
       cooldown: s.cooldown,
       remaining: parseFloat(remaining.toFixed(1)),
       ready: remaining <= 0 && canAfford && requirementState.ok,

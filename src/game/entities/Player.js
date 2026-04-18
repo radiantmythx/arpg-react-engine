@@ -129,10 +129,10 @@ export class Player extends Entity {
     this.increasedAttackSpeedWithWand = 0;
     this.increasedAttackSpeedWithAttackSkills = 0;
     this.increasedCastSpeedWithSpellSkills = 0;
-    /** Speed multiplier for Spell castTimes (Phase 12.3). 1.0 = no change. */
-    this.castSpeed           = 1.0;
-    /** Speed multiplier for Attack castTimes (Phase 12.3). 1.0 = no change. */
-    this.attackSpeed         = 1.0;
+    /** Additive increased-pool for Spell castTimes. 0 = no bonus; 1.0 = +100% increased = 2x speed. */
+    this.castSpeed           = 0;
+    /** Additive increased-pool for Attack castTimes. 0 = no bonus; 1.0 = +100% increased = 2x speed. */
+    this.attackSpeed         = 0;
     /** Countdown for ArcaneSurge's +30% castSpeed buff; reverts on expiry. */
     this._arcaneCastSpeedTimer = 0;
 
@@ -323,7 +323,7 @@ export class Player extends Entity {
       this._arcaneCastSpeedTimer -= dt;
       if (this._arcaneCastSpeedTimer <= 0) {
         this._arcaneCastSpeedTimer = 0;
-        this.castSpeed = Math.max(1.0, Math.round((this.castSpeed - 0.3) * 100) / 100);
+        this.castSpeed = Math.max(0, Math.round((this.castSpeed - 0.3) * 100) / 100);
       }
     }
   }

@@ -144,7 +144,8 @@ export class ActiveSkillSystem {
    *
    * If the skill has a non-zero castTime the effect is deferred by
    * actualCastTime = skill.castTime / castSpeed, where castSpeed is
-   * player.attackSpeed for Attack-tagged skills and player.castSpeed otherwise.
+   * (1 + player.attackSpeed + scopedInc) for Attack-tagged skills and
+   * (1 + player.castSpeed + scopedInc) for Spell-tagged skills.
    * The slot is locked for re-activation during the cast animation.
    *
    * @param {number} slotIdx         — 0, 1, or 2
@@ -163,12 +164,14 @@ export class ActiveSkillSystem {
     const requirementState = evaluateSkillRequirements(skill, player);
     if (!requirementState.ok) return false;
 
-    // Determine cast speed divisor by tag
+    // Determine cast speed divisor by tag.
+    // Both player.attackSpeed and player.castSpeed are additive "increased" pools (0 = no bonus).
+    // speed = 1 + total_increased, so 1000% increased attack speed → speed = 11 → 11x faster.
     const isAttack = skill.tags?.includes('Attack');
     const scoped = resolveScopedSkillBonuses(player, skill);
     const speed = isAttack
-      ? (player.attackSpeed ?? 1.0) * (1 + scoped.attackSpeedInc)
-      : (player.castSpeed ?? 1.0) * (1 + scoped.castSpeedInc);
+      ? 1 + (player.attackSpeed ?? 0) + scoped.attackSpeedInc
+      : 1 + (player.castSpeed ?? 0) + scoped.castSpeedInc;
     const actualCastTime = (skill.castTime ?? 0) / speed;
     const manaCost = this._resolveManaCost(skill, player);
 
@@ -298,6 +301,17 @@ export class ActiveSkillSystem {
                         : 0,
         isMaxLevel:   (s.level ?? 1) >= (s.maxLevel ?? 20),
         castTime:     s.castTime ?? 0,
+        isAttack:     (s.tags ?? []).includes('Attack'),
+        actualCastTime: (() => {
+          const ct = s.castTime ?? 0;
+          if (!ct) return 0;
+          const isAtk = (s.tags ?? []).includes('Attack');
+          const scoped = player ? resolveScopedSkillBonuses(player, s) : { attackSpeedInc: 0, castSpeedInc: 0 };
+          const speed = isAtk
+            ? 1 + (player?.attackSpeed ?? 0) + scoped.attackSpeedInc
+            : 1 + (player?.castSpeed ?? 0) + scoped.castSpeedInc;
+          return ct / Math.max(0.01, speed);
+        })(),
         computedDamage: Number.isFinite(computed.damage) ? computed.damage : null,
         damageBreakdown: computed.damageBreakdown ?? null,
         damageRange: computed.damageRange ?? null,
