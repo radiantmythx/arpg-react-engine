@@ -20,6 +20,7 @@ export const CRAFTING_ACTIONS = [
   { id: 'regal_upgrade', label: 'Regal Upgrade', description: 'Upgrade a magic item to rare and add one legal explicit affix.' },
   { id: 'transmute', label: 'Transmute', description: 'Upgrade a normal item to magic and add one explicit affix.' },
   { id: 'alteration', label: 'Alteration', description: 'Reroll all explicit affixes on a magic item.' },
+  { id: 'chaos_reroll', label: 'Chaos Orb', description: 'Reroll all explicit affixes on a rare item.' },
   { id: 'annul', label: 'Annul', description: 'Remove one random explicit affix from the item.' },
 ];
 
@@ -96,6 +97,10 @@ function describeBlockedReason(reason, itemDef, action) {
       return 'This item has no open affix slot for an augment.';
     case 'regal_requires_magic':
       return 'Regal Upgrade requires a magic item.';
+    case 'chaos_requires_rare':
+      return 'Chaos Orb requires a Rare item.';
+    case 'augment_requires_magic':
+      return 'Orb of Augmentation requires a Magic item.';
     case 'no_legal_affix':
       return `No legal ${action?.label?.toLowerCase() ?? 'crafting'} outcome exists for this item.`;
     default:
@@ -124,7 +129,7 @@ function rollExplicitSet(baseItem, itemLevel, rng, preservedExplicitAffixes = []
     if (!options.length) break;
     const rolled = pickAffix(options, itemLevel, rng);
     if (!rolled) break;
-    chosen.push(normalizeAffixForItem(rolled));
+    chosen.push(normalizeAffixForItem(rolled, rng));
     blockedGroups.add(rolled.group);
     blockedFamilies.add(rolled.family);
   }
@@ -150,11 +155,26 @@ function rollSingleAugment(baseItem, itemLevel, rarity, rng, explicitAffixes) {
 }
 
 function finalizeCraftedItem(baseItem, rarity, explicitAffixes, implicitAffixes) {
+  // Enforce rarity-driven affix caps before hydration.
+  const caps = getAffixCapsForRarity(rarity);
+  const clampedExplicit = [
+    ...explicitAffixes.filter((a) => a.type === 'prefix').slice(0, caps.prefix),
+    ...explicitAffixes.filter((a) => a.type === 'suffix').slice(0, caps.suffix),
+  ];
+
+  if (clampedExplicit.length !== explicitAffixes.length) {
+    console.warn(
+      `[itemCrafting] Affix cap exceeded for rarity "${rarity}" `
+      + `(caps ${caps.prefix}p/${caps.suffix}s). `
+      + `Dropped ${explicitAffixes.length - clampedExplicit.length} affix(es).`
+    );
+  }
+
   const hydrated = hydrateItemAffixState({
     ...cloneItem(baseItem),
     rarity,
     color: RARITY_COLORS[rarity] ?? baseItem.color,
-    explicitAffixes,
+    explicitAffixes: clampedExplicit,
     implicitAffixes,
   });
   const normalized = normalizeWeaponItem(hydrated);
@@ -213,7 +233,7 @@ export function applyCraftingAction(itemDef, actionId, options = {}) {
       ok: true,
       action,
       beforeItem: current,
-      afterItem: finalizeCraftedItem(current, current.rarity ?? 'normal', [...prefixes, ...suffixes], [normalizeAffixForItem(rolled)]),
+      afterItem: finalizeCraftedItem(current, current.rarity ?? 'normal', [...prefixes, ...suffixes], [normalizeAffixForItem(rolled, rng)]),
     };
   }
 
@@ -250,7 +270,10 @@ export function applyCraftingAction(itemDef, actionId, options = {}) {
   }
 
   if (actionId === 'augment') {
-    const augment = rollSingleAugment(current, itemLevel, current.rarity ?? 'normal', rng, [...prefixes, ...suffixes]);
+    if ((current.rarity ?? 'normal') !== 'magic') {
+      return { ok: false, reason: 'augment_requires_magic', blockedReason: describeBlockedReason('augment_requires_magic', current, action), action };
+    }
+    const augment = rollSingleAugment(current, itemLevel, 'magic', rng, [...prefixes, ...suffixes]);
     if (!augment.ok) {
       return { ok: false, reason: augment.reason, blockedReason: describeBlockedReason(augment.reason, current, action), action };
     }
@@ -258,7 +281,7 @@ export function applyCraftingAction(itemDef, actionId, options = {}) {
       ok: true,
       action,
       beforeItem: current,
-      afterItem: finalizeCraftedItem(current, current.rarity ?? 'normal', [...prefixes, ...suffixes, augment.affix], currentImplicits),
+      afterItem: finalizeCraftedItem(current, 'magic', [...prefixes, ...suffixes, augment.affix], currentImplicits),
     };
   }
 
@@ -318,6 +341,24 @@ export function applyCraftingAction(itemDef, actionId, options = {}) {
     };
   }
 
+  if (actionId === 'chaos_reroll') {
+    if ((current.rarity ?? 'normal') !== 'rare') {
+      return { ok: false, reason: 'chaos_requires_rare', blockedReason: describeBlockedReason('chaos_requires_rare', current, action), action };
+    }
+    if (prefixes.length === 0 && suffixes.length === 0) {
+      return { ok: false, reason: 'no_legal_affix', blockedReason: 'This item has no affixes to reroll.', action };
+    }
+    const rareCaps = getAffixCapsForRarity('rare');
+    const rolledPrefixes = rollExplicitSet(current, itemLevel, rng, [], 'prefix', rareCaps.prefix);
+    const rolledSuffixes = rollExplicitSet(current, itemLevel, rng, rolledPrefixes, 'suffix', rareCaps.suffix);
+    return {
+      ok: true,
+      action,
+      beforeItem: current,
+      afterItem: finalizeCraftedItem(current, 'rare', [...rolledPrefixes, ...rolledSuffixes], currentImplicits),
+    };
+  }
+
   if (actionId === 'annul') {
     const allExplicits = [...prefixes, ...suffixes];
     if (allExplicits.length === 0) {
@@ -357,7 +398,8 @@ export function canApplyCurrencyToItem(itemDef, currencyAction) {
   const suffixCount = allExplicits.filter((a) => a?.type === 'suffix').length;
   const hasOpenSlot = prefixCount < caps.prefix || suffixCount < caps.suffix;
   if (currencyAction === 'transmute') return rarity === 'normal';
-  if (currencyAction === 'augment') return (rarity === 'magic' || rarity === 'rare') && hasOpenSlot;
+  if (currencyAction === 'augment') return rarity === 'magic' && hasOpenSlot;
+  if (currencyAction === 'chaos_reroll') return rarity === 'rare' && allExplicits.length > 0;
   if (currencyAction === 'alteration') return rarity === 'magic' && allExplicits.length > 0;
   if (currencyAction === 'regal_upgrade') return rarity === 'magic';
   if (currencyAction === 'annul') return allExplicits.length > 0;

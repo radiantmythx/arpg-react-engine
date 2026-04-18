@@ -62,11 +62,11 @@ function fmtStat(key, val) {
   switch (key) {
     case 'damageMult': {
       const p = Math.round((val - 1) * 100);
-      return `${sign(p)}% weapon damage`;
+      return `${sign(p)}% damage`;
     }
     case 'cooldownMult': {
       const p = Math.round((1 - val) * 100);
-      return p >= 0 ? `\u2212${p}% weapon cooldown` : `+${Math.abs(p)}% weapon cooldown`;
+      return p >= 0 ? `\u2212${p}% cooldown length` : `+${Math.abs(p)}% cooldown length`;
     }
     case 'maxHealthFlat':    return `${sign(val)} maximum life`;
     case 'maxManaFlat':      return `${sign(val)} maximum mana`;

@@ -24,7 +24,7 @@ This guide defines the stable authoring contract for skills, passives, affixes, 
 - Affix records must include: `id`, `kind`, `type`, `family`, `group`, `slots`, `tier`, and `modifier`.
 - `kind` is required: use `explicit` or `implicit` only.
 - `type` is required: use `prefix` or `suffix` only.
-- Affix caps are rarity-driven (normal 0/0, magic 1/1, rare 3/3); do not bypass caps in content.
+- Affix caps are rarity-driven (normal 0/0, magic 1 suffix/1 prefix, rare 3 suffix/3 prefix); do not bypass caps in content.
 - `pool.itemClasses`, `pool.weaponTypes`, and `pool.defenseTypes` should be used to constrain legal rolls.
 - Keep `modifier.statKey` aligned with canonical stat keys and use `modifier.operation` (`add` or `multiply`) deliberately.
 

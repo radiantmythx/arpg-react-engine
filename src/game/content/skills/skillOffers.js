@@ -207,7 +207,7 @@ export const SKILL_OFFER_POOL = [
   {
     id: 'blood_pact',
     name: 'Blood Pact',
-    description: 'Sacrifice 25% HP for +80% weapon damage for 4 s.',
+    description: 'Sacrifice 25% HP for +80% damage for 4 s.',
     isActiveSkill: false,
     available: (_player, engine) => !engine.activeSkillSystem.hasPureSkill('blood_pact'),
     createSkill: () => new BloodPact(),

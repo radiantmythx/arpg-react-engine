@@ -160,7 +160,7 @@
 .gem-doll {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
   overflow: hidden;
   padding-right: 0;
   flex: 1;
@@ -170,11 +170,11 @@
 .gem-skill-socket-block {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.35rem;
   background: rgba(14, 20, 34, 0.6);
   border: 1px solid rgba(78, 205, 196, 0.15);
   border-radius: 10px;
-  padding: 0.62rem;
+  padding: 0.5rem 0.62rem;
   position: relative;
 }
 
@@ -200,19 +200,27 @@
   border-color: rgba(78, 205, 196, 0.25);
 }
 
-.gem-skill-compact {
-  position: relative;
+/* Single row: icon | info | sockets */
+.gem-skill-main-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
-.gem-skill-header {
+/* Support sockets inline — right side of the row */
+.gem-socket-row {
   display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: 5px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .gem-skill-icon-slot {
-  width: 54px;
-  height: 54px;
+  width: 46px;
+  height: 46px;
   border-radius: 8px;
   border: 2px solid rgba(141, 191, 255, 0.45);
   background: rgba(58, 78, 108, 0.28);
@@ -389,14 +397,6 @@
   transition: width 300ms ease;
 }
 
-.gem-sockets-label {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.35);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
 .gem-socket-grid {
   display: flex;
   flex-wrap: wrap;
@@ -430,8 +430,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 54px;
-  height: 54px;
+  width: 46px;
+  height: 46px;
   border-radius: 8px;
   border: 2px solid;
   cursor: pointer;

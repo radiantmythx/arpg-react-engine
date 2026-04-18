@@ -348,7 +348,7 @@ class BloodPact extends SkillDef {
       id:          'blood_pact',
       name:        'Blood Pact',
       icon:        '♥',
-      description: 'Sacrifice 25% of your current HP to boost all weapon damage by +80% for 4 s.',
+      description: 'Sacrifice 25% of your current HP to boost all damage by +80% for 4 s.',
       cooldown:    10,
       castTime:    0.40,
       manaCost:    14,

@@ -1691,42 +1691,80 @@ body {
   position: fixed;
   inset: 0;
   z-index: 6000;
-  background: rgba(0, 0, 0, 0.72);
+  /* Dim only the left side of the screen */
+  background: linear-gradient(to left, transparent 900px, rgba(0,0,0,0.45) 900px);
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-end;
+  pointer-events: none; /* let clicks through on the left half */
 }
 
 .inventory-panel {
+  pointer-events: all;
   background: rgba(8, 8, 20, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-  padding: 1.2rem 1.4rem;
-  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.85);
+  border-left: 1px solid rgba(255, 255, 255, 0.13);
+  border-right: none;
+  border-top: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: -6px 0 40px rgba(0, 0, 0, 0.7);
   color: #e0e0e0;
   font-family: inherit;
+  width: 900px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-/* Wide variant for the new ARPG layout */
+/* Wide variant — unused in side-panel mode but kept for compat */
 .inv-panel-wide {
-  min-width: 820px;
-  max-width: 1050px;
+  /* width is now fixed on .inventory-panel */
 }
 
 .inv-header {
   display: flex;
   align-items: center;
   gap: 0.8rem;
-  margin-bottom: 0.9rem;
+  padding: 0.75rem 1.1rem 0.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .inv-content {
+  flex: 1 1 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Top half — paper doll / gem panel */
+.inv-top-half {
+  flex: 2 1 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.9rem 1.1rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+/* Bottom half — inventory grid */
+.inv-bottom-half {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0.7rem 1.1rem 0.9rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: rgba(0,0,0,0.18);
 }
 
 .inv-title {
-  font-size: 0.78rem;
+  font-size: 1.4rem;
   font-weight: 800;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -1744,19 +1782,22 @@ body {
 
 .inv-body {
   display: flex;
-  gap: 2rem;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.8rem;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .inv-body--gems {
-  flex-direction: row;
-  gap: 2rem;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.8rem;
+  align-items: stretch;
 }
 
 .inv-body--gems .inv-grid-wrap {
   flex: 0 0 auto;
   align-items: flex-start;
+  /* Grid sits in bottom half, so this override is no-op in new layout */
 }
 
 /* ── Tab bar inside inventory header ─────────────────── */
@@ -1775,7 +1816,7 @@ body {
   border-radius: 4px;
   color: rgba(255, 255, 255, 0.4);
   font-family: inherit;
-  font-size: 0.65rem;
+  font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: 0.5px;
   padding: 4px 12px;
@@ -1800,14 +1841,12 @@ body {
   color: #4ecdc4;
 }
 
-/* Wider panel for gem tab (3 columns need more room) */
+/* Wider panel for gem tab — unused in side-panel mode */
 .inv-panel-gems {
-  min-width: 900px;
-  max-width: 1060px;
 }
 
 .inv-header-hint {
-  font-size: 0.62rem;
+  font-size: 1.05rem;
   color: rgba(246, 225, 169, 0.86);
   letter-spacing: 0.02em;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
@@ -1869,7 +1908,7 @@ body {
 }
 
 .inv-section-step {
-  font-size: 0.62rem;
+  font-size: 1.1rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1878,7 +1917,7 @@ body {
 
 .inv-section-copy {
   margin-top: 0.2rem;
-  font-size: 0.72rem;
+  font-size: 1.2rem;
   line-height: 1.45;
   color: #dbe7f8;
 }
@@ -1994,11 +2033,32 @@ body {
 }
 
 /* ── Equipment paper doll (ARPG 10-slot) ──────────────── */
+
+/* Fixed-width left column — in side-panel mode this fills full width */
+.inv-left-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: hidden;
+}
+
+/* Gem panel fills the top half width */
+.inv-body--gems .gem-panel-body {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
 .equip-doll-arpg {
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
+  padding-bottom: 4px;
 }
 
 .doll-col-mid {
@@ -2007,12 +2067,9 @@ body {
   align-items: center;
 }
 
-/* Vertical divider between doll and inventory grid */
+/* Vertical divider — hidden in side-panel layout (no side-by-side columns) */
 .inv-divider {
-  width: 1px;
-  background: rgba(255, 255, 255, 0.10);
-  align-self: stretch;
-  flex-shrink: 0;
+  display: none;
 }
 
 .doll-row {
@@ -2056,12 +2113,12 @@ body {
 }
 
 .equip-tile-icon {
-  font-size: 1.2rem;
+  font-size: 2rem;
   line-height: 1;
 }
 
 .equip-tile-name {
-  font-size: 0.7rem;
+  font-size: 1.1rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-align: center;
@@ -2074,7 +2131,7 @@ body {
 }
 
 .equip-tile-empty {
-  font-size: 0.66rem;
+  font-size: 1.1rem;
   color: rgba(246, 225, 169, 0.7);
   text-align: center;
   line-height: 1.4;
@@ -2089,20 +2146,24 @@ body {
 .inv-grid-wrap {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-height: 0;
   gap: 0.6rem;
 }
 
 .inv-grid {
   display: grid;
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.18);
   border-radius: 4px;
-  overflow: hidden;
+  /* overflow visible so rarity glows/shadows on edge items aren't clipped */
+  overflow: visible;
 }
 
 .inv-cell {
-  width: 46px;
-  height: 46px;
+  /* width/height come from the grid template columns/rows — no fixed size */
   border-right: 1px solid rgba(255, 255, 255, 0.07);
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   box-sizing: border-box;
@@ -2116,7 +2177,7 @@ body {
 
 .inv-item {
   box-sizing: border-box;
-  border: 2px solid rgba(158, 158, 158, 0.7);
+  border: 3px solid rgba(158, 158, 158, 0.7);
   border-radius: 3px;
   background: rgba(20, 20, 40, 0.88);
   cursor: pointer;
@@ -2147,31 +2208,34 @@ body {
 }
 
 .inv-item--normal { border-color: rgba(158, 158, 158, 0.7); }
-.inv-item--magic  { border-color: rgba(107, 156, 212, 0.8); box-shadow: 0 0 5px rgba(107, 156, 212, 0.3); }
-.inv-item--rare   { border-color: rgba(241, 196, 15,  0.8); box-shadow: 0 0 7px rgba(241, 196, 15,  0.35); }
+.inv-item--magic  { border-color: rgba(107, 156, 212, 0.85); box-shadow: 0 0 6px rgba(107, 156, 212, 0.45); }
+.inv-item--rare   { border-color: rgba(241, 196, 15,  0.9);  box-shadow: 0 0 9px rgba(241, 196, 15,  0.5); }
 
 /* Large icon glyph shown in the grid cell */
 .inv-item-icon-glyph {
-  font-size: 1.4rem;
+  font-size: 2.2rem;
   line-height: 1;
   pointer-events: none;
 }
 
 .inv-item-name {
-  font-size: 0.55rem;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  text-align: center;
-  line-height: 1.15;
+  display: none;
+}
+
+.inv-item-stack-count {
+  position: absolute;
+  bottom: 3px;
+  right: 4px;
+  font-size: 0.9rem;
+  font-weight: 900;
+  color: #ffe066;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
   pointer-events: none;
-  padding: 0 2px;
-  word-break: break-word;
-  opacity: 1;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 8px rgba(241, 196, 15, 0.18);
+  line-height: 1;
 }
 
 .inv-hint {
-  font-size: 0.65rem;
+  font-size: 1.1rem;
   color: rgba(255, 255, 255, 0.28);
   letter-spacing: 0.3px;
   text-align: center;
@@ -4045,7 +4109,6 @@ body {
 }
 
 .app.mobile-mode .overlay,
-.app.mobile-mode .inventory-overlay,
 .app.mobile-mode .tree-overlay,
 .app.mobile-mode .vendor-overlay,
 .app.mobile-mode .mapsel-overlay,
@@ -4058,7 +4121,6 @@ body {
     max(env(safe-area-inset-left), 12px);
 }
 
-.app.mobile-mode.phone-portrait-mode .inventory-overlay,
 .app.mobile-mode.phone-portrait-mode .tree-overlay,
 .app.mobile-mode.phone-portrait-mode .vendor-overlay,
 .app.mobile-mode.phone-portrait-mode .mapsel-overlay,

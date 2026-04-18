@@ -881,7 +881,12 @@ export default function App() {
           setVendorFeedback(result?.blockedReason ?? 'Could not apply currency.');
         }
       } else {
-        setVendorFeedback('That item is not compatible with this orb.');
+        // Incompatible or missing item — return orb to inventory and exit crafting mode
+        const returned = engine.addToInventory(cursorItem);
+        if (!returned) engine.dropItemToWorld(cursorItem);
+        engine._flushHudUpdate();
+        setCursorItem(null);
+        setVendorFeedback('');
       }
       return;
     }
@@ -889,19 +894,21 @@ export default function App() {
       // Swap: place cursor item, pick up clicked item
       const placed = engine.addToInventory(cursorItem);
       if (placed) {
-        // Remove the clicked item from inventory and put on cursor
-        const def = engine.player.inventory.remove(uid);
+        // Remove the clicked item from inventory and put on cursor (full stack)
+        const def = engine.player.inventory.removeStack(uid);
         if (def) {
           engine._flushHudUpdate();
-          setCursorItem(def);
+          // Left-click moves items — strip currencyAction so we don't enter crafting mode
+          setCursorItem(def.type === 'currency' ? { ...def, currencyAction: undefined } : def);
         }
       }
     } else {
-      // Pick up to cursor
-      const def = engine.player.inventory.remove(uid);
+      // Pick up to cursor (full stack)
+      const def = engine.player.inventory.removeStack(uid);
       if (def) {
         engine._flushHudUpdate();
-        setCursorItem(def);
+        // Left-click moves items — strip currencyAction so we don't enter crafting mode
+        setCursorItem(def.type === 'currency' ? { ...def, currencyAction: undefined } : def);
       }
     }
   }, [cursorItem, hud.inventory.items]);
@@ -948,9 +955,19 @@ export default function App() {
   }, []);
 
   // Click empty grid cell with cursor item → place it there
+  // In crafting mode (currency with currencyAction), clicking empty cell exits crafting mode
   const handleInventoryCellClick = useCallback((col, row) => {
     const engine = engineRef.current;
     if (!engine || !cursorItem) return;
+    if (cursorItem.type === 'currency' && cursorItem.currencyAction) {
+      // Exit crafting mode — return orb to inventory
+      const returned = engine.addToInventory(cursorItem);
+      if (!returned) engine.dropItemToWorld(cursorItem);
+      engine._flushHudUpdate();
+      setCursorItem(null);
+      setVendorFeedback('');
+      return;
+    }
     const placed = engine.placeInInventory(cursorItem, col, row);
     if (placed) setCursorItem(null);
   }, [cursorItem]);

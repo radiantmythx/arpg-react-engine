@@ -17,7 +17,7 @@ const UPGRADE_POOL = [
   {
     id: 'dmg_up',
     name: 'Brutality',
-    description: '+20% weapon damage for all owned weapons',
+    description: '+20% damage for all owned weapons',
     apply: (player) => {
       for (const w of player.autoSkills) {
         w.damage = Math.round(w.damage * 1.2);

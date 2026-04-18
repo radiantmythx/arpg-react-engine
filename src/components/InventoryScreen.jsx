@@ -27,7 +27,7 @@ import { GemPanel } from './GemPanel.jsx';
 import { calcSellPrice } from '../game/ItemPricing.js';
 import { canEquipItemInSlot, getWeaponTypeLabel, listWeaponTypes, resolveWeaponType } from '../game/data/weaponTypes.js';
 
-const CELL_SIZE = 46;
+const CELL_SIZE = 72;
 const LONG_PRESS_MS = 420;
 
 function pulse(ms = 10) {
@@ -232,16 +232,65 @@ export function InventoryScreen({
   const [selectedSkillGemUid, setSelectedSkillGemUid] = useState(null);
   const [selectedMobileItemUid, setSelectedMobileItemUid] = useState(null);
   const [weaponFilter, setWeaponFilter] = useState('all');
+  const [dollTileSize, setDollTileSize] = useState(CELL_SIZE);
+  const [gridCellSize, setGridCellSize] = useState(CELL_SIZE);
   const touchTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
   const suppressClickUntilRef = useRef(0);
+  const leftPanelRef = useRef(null);
+  const bottomHalfRef = useRef(null);
   const { cols, rows, items } = inventory;
+
+  // Refresh hoveredItem after crafting mutates the item in-place (same uid, new data)
+  useEffect(() => {
+    if (!hoveredItem) return;
+    const updated = items.find((i) => i.uid === hoveredItem.uid);
+    if (updated && updated !== hoveredItem) setHoveredItem(updated);
+  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-fit tileSize so the paper doll fills the left panel height without scrolling.
+  // The doll spans 10 tile-units tall (rows: 2+3+3+2) plus 3 row-gaps.
+  // Re-runs when tab changes so switching back from Gems re-measures correctly.
   const tab = activeTab ?? 'equipment';
+  useEffect(() => {
+    if (mobileMode || tab !== 'equipment' || !leftPanelRef.current) return;
+    const el = leftPanelRef.current;
+    const measure = () => {
+      const filterBar = el.querySelector('.inv-filter-bar');
+      const filterH = filterBar ? filterBar.offsetHeight + 8 : 48;
+      const rowGapPx = 4; // gap passed to doll rows
+      const usable = el.clientHeight - filterH - (3 * rowGapPx);
+      const dollHeightUnits = 10; // 2+3+3+2 stacked tile-unit rows
+      const computed = Math.floor(usable / dollHeightUnits);
+      setDollTileSize(Math.max(24, Math.min(CELL_SIZE, computed)));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mobileMode, tab]);
+
+  // Auto-fit grid cells to fill the bottom half.
+  useEffect(() => {
+    if (mobileMode || !bottomHalfRef.current) return;
+    const el = bottomHalfRef.current;
+    const ro = new ResizeObserver(() => {
+      const padH = 26; // ~0.7rem top + 0.9rem bottom padding
+      const padW = 35; // ~1.1rem each side
+      const availW = el.clientWidth  - padW;
+      const availH = el.clientHeight - padH;
+      const byW = Math.floor(availW / cols);
+      const byH = Math.floor(availH / rows);
+      const computed = Math.min(byW, byH);
+      setGridCellSize(Math.max(32, Math.min(CELL_SIZE, computed)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mobileMode, cols, rows]);
   const mobileViewport = typeof window !== 'undefined' ? window.innerWidth : 390;
   const cellSize = mobileMode
     ? Math.max(32, Math.min(40, Math.floor((mobileViewport - 54) / Math.max(cols, 1))))
-    : CELL_SIZE;
-  const tileSize = mobileMode ? Math.max(30, Math.min(38, cellSize + 2)) : CELL_SIZE;
+    : gridCellSize;
+  const tileSize = mobileMode ? Math.max(30, Math.min(38, cellSize + 2)) : dollTileSize;
   const showGearPanel = !mobileMode || mobileSection === 'gear';
   const showBagPanel = !mobileMode || mobileSection === 'bag';
   const isGemItem = (item) => item?.type === 'support_gem' || item?.type === 'skill_gem';
@@ -391,8 +440,9 @@ export function InventoryScreen({
     />
   );
 
-  const renderInventoryGrid = (showHint = true) => (
+  const renderInventoryGrid = () => (
     <div className={`inv-grid-wrap${showBagPanel ? '' : ' inv-mobile-hidden'}`}>
+
       <div
         className="inv-grid"
         style={{
@@ -479,32 +529,14 @@ export function InventoryScreen({
             >
               {item.name}
             </span>
+            {item.type === 'currency' && (item.stackCount ?? 1) > 1 && (
+              <span className="inv-item-stack-count">{item.stackCount}</span>
+            )}
           </div>
           );
         })}
       </div>
 
-      {tab === 'equipment' && inspectedInventoryItem && (
-        <div className="inv-compare-panel">
-          <div className="inv-compare-title" style={{ color: RARITY_COLORS[inspectedInventoryItem.rarity] ?? RARITY_COLORS.normal }}>
-            {inspectedInventoryItem.name}
-          </div>
-          <div className="inv-compare-metrics">{inspectedMetrics}</div>
-          {resolveCompareItem(inspectedInventoryItem, equipment ?? {}) && (
-            <div className="inv-compare-metrics inv-compare-metrics--delta">
-              Equipped compare: {(resolveCompareItem(inspectedInventoryItem, equipment ?? {})?.name) ?? 'None'}
-            </div>
-          )}
-        </div>
-      )}
-
-      {showHint && (
-        <p className="inv-hint inv-hint--help">
-          {mobileMode
-            ? 'Tap: open actions or place · Hold: quick-equip'
-            : 'Left-click: pick up · Right-click: equip'}
-        </p>
-      )}
     </div>
   );
 
@@ -656,7 +688,10 @@ export function InventoryScreen({
           <button className="btn inv-close-btn" onClick={onClose}>✕</button>
         </div>
 
-        <div className={`inv-content phone-shell-scroll${mobileMode ? ' inv-content--mobile' : ''}`}>
+        <div className={`inv-content${mobileMode ? ' inv-content--mobile' : ''}`}>
+
+        {/* ══ TOP HALF — equip/gem panels ═══════════════════ */}
+        <div className="inv-top-half">
 
         {mobileMode && tab === 'equipment' && (
           <>
@@ -742,58 +777,57 @@ export function InventoryScreen({
         {/* ── Tab Content ─────────────────────────────────── */}
         {tab === 'equipment' && (
         <div className={`inv-body${mobileMode ? ' inv-body--mobile' : ''}`}>
-          <div className="inv-filter-bar">
-            <span className="inv-filter-label">Weapon Filter</span>
-            {WEAPON_FILTERS.map((filter) => (
-              <button
-                key={filter.id}
-                type="button"
-                className={`inv-filter-chip${weaponFilter === filter.id ? ' inv-filter-chip--active' : ''}`}
-                onClick={() => setWeaponFilter(filter.id)}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-          {/* ── ARPG Paper Doll ─────────────────────────── */}
-          <div className={`equip-doll-arpg${showGearPanel ? '' : ' inv-mobile-hidden'}`} style={{ gap }}>
-
-            {/* Row 1 — Helmet centred */}
-            <div className="doll-row" style={{ gap, justifyContent: 'center' }}>
-              {T('helmet')}
+          <div className={`inv-left-panel${showGearPanel ? '' : ' inv-mobile-hidden'}`} ref={!mobileMode ? leftPanelRef : undefined}>
+            <div className="inv-filter-bar">
+              <span className="inv-filter-label">Weapon Filter</span>
+              {WEAPON_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  className={`inv-filter-chip${weaponFilter === filter.id ? ' inv-filter-chip--active' : ''}`}
+                  onClick={() => setWeaponFilter(filter.id)}
+                >
+                  {filter.label}
+                </button>
+              ))}
             </div>
+            {/* ── ARPG Paper Doll ─────────────────────────── */}
+            <div className="equip-doll-arpg" style={{ gap }}>
 
-            {/* Row 2 — MainHand | Amulet | OffHand */}
-            <div className="doll-row" style={{ gap }}>
-              {T('mainhand')}
-              <div className="doll-col-mid" style={{ gap }}>
-                {T('amulet')}
-                {/* spacer to align ring slots */}
-                <div style={{ flex: 1 }} />
+              {/* Row 1 — Helmet centred */}
+              <div className="doll-row" style={{ gap, justifyContent: 'center' }}>
+                {T('helmet')}
               </div>
-              {T('offhand')}
-            </div>
 
-            {/* Row 3 — Ring1 | Body | Ring2 */}
-            <div className="doll-row" style={{ gap }}>
-              {T('ring1')}
-              {T('bodyarmor')}
-              {T('ring2')}
-            </div>
+              {/* Row 2 — MainHand | Amulet | OffHand */}
+              <div className="doll-row" style={{ gap }}>
+                {T('mainhand')}
+                <div className="doll-col-mid" style={{ gap }}>
+                  {T('amulet')}
+                  {/* spacer to align ring slots */}
+                  <div style={{ flex: 1 }} />
+                </div>
+                {T('offhand')}
+              </div>
 
-            {/* Row 4 — Gloves | Belt | Boots */}
-            <div className="doll-row" style={{ gap }}>
-              {T('gloves')}
-              {T('belt')}
-              {T('boots')}
+              {/* Row 3 — Ring1 | Body | Ring2 */}
+              <div className="doll-row" style={{ gap }}>
+                {T('ring1')}
+                {T('bodyarmor')}
+                {T('ring2')}
+              </div>
+
+              {/* Row 4 — Gloves | Belt | Boots */}
+              <div className="doll-row" style={{ gap }}>
+                {T('gloves')}
+                {T('belt')}
+                {T('boots')}
+              </div>
             </div>
           </div>
 
           {/* ── Divider ─────────────────────────────────── */}
           {!mobileMode && <div className="inv-divider" />}
-
-          {/* ── Inventory Grid (12×6) ───────────────────── */}
-          {renderInventoryGrid(true)}
         </div>
         )}
 
@@ -824,32 +858,37 @@ export function InventoryScreen({
                 />
               )
             ) : (
-              <>
-                <GemPanel
-                  primarySkill={primarySkill ?? null}
-                  activeSkills={activeSkills ?? []}
-                  cursorItem={cursorItem}
-                  selectedSupportGem={selectedSupportGem}
-                  selectedSkillGem={selectedSkillGem}
-                  onClearSelectedGem={() => setSelectedSupportGemUid(null)}
-                  onClearSelectedSkillGem={() => setSelectedSkillGemUid(null)}
-                  onSocketGem={onSocketGem}
-                  onUnsocketGem={onUnsocketGem}
-                  onEquipSkillGem={onEquipSkillGem}
-                  onUnequipSkillGem={onUnequipSkillGem}
-                  debugMode={debugMode}
-                  onDebugLevelUpSkillGem={onDebugLevelUpSkillGem}
-                  onHoverTooltip={handleGemTooltipHover}
-                  onClearTooltip={clearGemTooltipHover}
-                />
-                <div className="inv-divider" />
-                {renderInventoryGrid(false)}
-              </>
+              <GemPanel
+                primarySkill={primarySkill ?? null}
+                activeSkills={activeSkills ?? []}
+                cursorItem={cursorItem}
+                selectedSupportGem={selectedSupportGem}
+                selectedSkillGem={selectedSkillGem}
+                onClearSelectedGem={() => setSelectedSupportGemUid(null)}
+                onClearSelectedSkillGem={() => setSelectedSkillGemUid(null)}
+                onSocketGem={onSocketGem}
+                onUnsocketGem={onUnsocketGem}
+                onEquipSkillGem={onEquipSkillGem}
+                onUnequipSkillGem={onUnequipSkillGem}
+                debugMode={debugMode}
+                onDebugLevelUpSkillGem={onDebugLevelUpSkillGem}
+                onHoverTooltip={handleGemTooltipHover}
+                onClearTooltip={clearGemTooltipHover}
+              />
             )}
           </div>
         )}
+
+        </div>{/* end inv-top-half */}
+
+        {/* ══ BOTTOM HALF — inventory grid (always visible) ══ */}
+        <div className="inv-bottom-half" ref={!mobileMode ? bottomHalfRef : undefined}>
+          {renderInventoryGrid()}
         </div>
-      </div>
+
+        </div>{/* end inv-content */}
+
+      </div>{/* end inventory-panel */}
 
       {mobileMode && (
         <button className="btn inv-close-fab" onClick={onClose} aria-label="Close inventory">✕</button>

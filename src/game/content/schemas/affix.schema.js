@@ -3,7 +3,11 @@ import { isKnownItemStatKey } from '../../data/statKeys.js';
 
 const ALLOWED_TYPES = new Set(['prefix', 'suffix']);
 const ALLOWED_KINDS = new Set(['explicit', 'implicit']);
-const ALLOWED_TIERS = new Set(['minor', 'major', 'advanced', 'high', 'pinnacle']);
+const LEGACY_TIERS = new Set(['minor', 'major', 'advanced', 'high', 'pinnacle']);
+function isValidTier(tier) {
+  if (typeof tier === 'number') return Number.isInteger(tier) && tier >= 1 && tier <= 8;
+  return LEGACY_TIERS.has(tier); // backward compat for map mods
+}
 const ALLOWED_LEVEL_BRACKETS = new Set(['early', 'mid', 'late', 'endgame']);
 
 function isFiniteNumber(v) {
@@ -57,8 +61,8 @@ export function validateAffixesPlaceholder() {
       }
     }
 
-    if (!ALLOWED_TIERS.has(a.tier)) {
-      errors.push(`${loc} (${a.id}): tier must be minor|major|advanced|high|pinnacle`);
+    if (!isValidTier(a.tier)) {
+      errors.push(`${loc} (${a.id}): tier must be 1–8 (integer) or a legacy string tier`);
     }
     if (!isFiniteNumber(a.minItemLevel) || a.minItemLevel < 1) {
       errors.push(`${loc} (${a.id}): minItemLevel must be a positive number`);
@@ -93,7 +97,7 @@ export function validateAffixesPlaceholder() {
     }
 
     if (a.goldValue > 20) warnings.push(`${loc} (${a.id}): unusually high goldValue (${a.goldValue})`);
-    if (a.weight < 10) warnings.push(`${loc} (${a.id}): very low weight (${a.weight})`);
+    if (a.weight < 5) warnings.push(`${loc} (${a.id}): very low weight (${a.weight})`);
   }
 
   return { errors, warnings };

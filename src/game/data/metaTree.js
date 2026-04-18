@@ -141,7 +141,7 @@ export const META_TREE_NODES = [
   {
     id: 'mv1',
     label: '+5% Damage',
-    description: '+5% weapon damage at the start of every run.',
+    description: '+5% damage at the start of every run.',
     type: 'minor',
     cost: 4,
     position: { x: 568, y: 358 },
@@ -151,7 +151,7 @@ export const META_TREE_NODES = [
   {
     id: 'mv2',
     label: '+8% Damage',
-    description: '+8% weapon damage.',
+    description: '+8% damage.',
     type: 'minor',
     cost: 7,
     position: { x: 658, y: 406 },
@@ -171,7 +171,7 @@ export const META_TREE_NODES = [
   {
     id: 'mv_notable',
     label: 'Battle-Hardened',
-    description: '+12% weapon damage and +12 movement speed.',
+    description: '+12% damage and +12 movement speed.',
     type: 'notable',
     cost: 16,
     position: { x: 818, y: 466 },

@@ -15,7 +15,7 @@ export const ITEM_DEFS = [
   {
     id: 'voidforge',
     name: 'Voidforge',
-    description: '+30% weapon damage. The void hungers.',
+    description: '+30% damage. The void hungers.',
     slot: 'weapon',
     weaponType: 'sword',
     color: '#8e44ad',
@@ -26,7 +26,7 @@ export const ITEM_DEFS = [
   {
     id: 'choir_of_the_storm',
     name: 'Choir of the Storm',
-    description: '–20% weapon cooldown. Lightning answers the call.',
+    description: '–20% cooldown length. Lightning answers the call.',
     slot: 'weapon',
     weaponType: 'wand',
     color: '#00bcd4',
@@ -37,7 +37,7 @@ export const ITEM_DEFS = [
   {
     id: 'stormcaller_staff',
     name: 'Stormcaller Staff',
-    description: '+22% weapon damage and +12 max mana. A conduit for controlled ruin.',
+    description: '+22% damage and +12 max mana. A conduit for controlled ruin.',
     slot: 'weapon',
     weaponType: 'staff',
     color: '#6aa7ff',
@@ -189,7 +189,7 @@ export const ITEM_DEFS = [
   {
     id: 'aegis_aurora',
     name: 'Aegis Aurora',
-    description: '–15% weapon cooldown. A shield that strikes back.',
+    description: '–15% cooldown length. A shield that strikes back.',
     slot: 'offhand',
     weaponType: 'shield',
     color: '#74b9ff',
@@ -200,7 +200,7 @@ export const ITEM_DEFS = [
   {
     id: 'bloodseeker',
     name: 'Bloodseeker',
-    description: '+15% weapon damage and +20 movement speed. The hunt never ends.',
+    description: '+15% damage and +20 movement speed. The hunt never ends.',
     slot: 'offhand',
     weaponType: 'axe',
     color: '#d63031',
@@ -211,7 +211,7 @@ export const ITEM_DEFS = [
   {
     id: 'lioneyes_glare',
     name: "Lioneye's Glare",
-    description: '+20% weapon damage and –10% cooldown. Precision distilled.',
+    description: '+20% damage and –10% cooldown length. Precision distilled.',
     slot: 'offhand',
     weaponType: 'shield',
     color: '#ffeaa7',
@@ -225,7 +225,7 @@ export const ITEM_DEFS = [
   {
     id: 'void_edge',
     name: 'Void Edge',
-    description: '+35% weapon damage. The sword remembers every life it has taken.',
+    description: '+35% damage. The sword remembers every life it has taken.',
     slot: 'weapon',
     weaponType: 'sword',
     color: '#6c5ce7',
@@ -236,7 +236,7 @@ export const ITEM_DEFS = [
   {
     id: 'herald_of_thunder',
     name: 'Herald of Thunder',
-    description: '−25% weapon cooldown. Call down the storm on your command.',
+    description: '−25% cooldown length. Call down the storm on your command.',
     slot: 'weapon',
     weaponType: 'bow',
     color: '#f9ca24',
@@ -247,7 +247,7 @@ export const ITEM_DEFS = [
   {
     id: 'bone_reliquary',
     name: 'Bone Reliquary',
-    description: '+25% weapon damage and +20 max HP. Carved from what remains.',
+    description: '+25% damage and +20 max HP. Carved from what remains.',
     slot: 'weapon',
     weaponType: 'lance',
     color: '#dfe6e9',
@@ -388,7 +388,7 @@ export const ITEM_DEFS = [
   {
     id: 'abyssal_focus',
     name: 'Abyssal Focus',
-    description: '−20% weapon cooldown. Channel the void directly through your offhand.',
+    description: '−20% cooldown length. Channel the void directly through your offhand.',
     slot: 'offhand',
     weaponType: 'tome',
     color: '#6c5ce7',
@@ -399,7 +399,7 @@ export const ITEM_DEFS = [
   {
     id: 'warlord_buckler',
     name: "Warlord's Buckler",
-    description: '+20% weapon damage and +25 max HP. War never favoured the timid.',
+    description: '+20% damage and +25 max HP. War never favoured the timid.',
     slot: 'offhand',
     weaponType: 'shield',
     color: '#d63031',
@@ -410,7 +410,7 @@ export const ITEM_DEFS = [
   {
     id: 'siphon_talisman',
     name: 'Siphon Talisman',
-    description: '+15% weapon damage and −12% cooldown. Drain the world of its power.',
+    description: '+15% damage and −12% cooldown length. Drain the world of its power.',
     slot: 'offhand',
     weaponType: 'tome',
     color: '#00b894',

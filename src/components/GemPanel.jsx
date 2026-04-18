@@ -244,99 +244,99 @@ function SkillSocket({ skill, cursorGem, cursorSkillGem, onSocketGem, onUnsocket
       skill.blocked ? 'gem-skill-socket-block--blocked' : '',
       dragOverSkillTarget ? 'gem-skill-socket-block--drop-target' : '',
     ].filter(Boolean).join(' ')}>
-      <div className="gem-skill-compact">
+      {/* ── Single row: icon | info | sockets ── */}
+      <div
+        className="gem-skill-main-row"
+        onMouseEnter={(e) => !mobileMode && onHoverTooltip?.(skillTooltipData, e)}
+        onMouseMove={(e) => !mobileMode && onHoverTooltip?.(skillTooltipData, e)}
+        onMouseLeave={() => !mobileMode && onClearTooltip?.()}
+      >
         <div
-          className="gem-skill-header"
-          onMouseEnter={(e) => !mobileMode && onHoverTooltip?.(skillTooltipData, e)}
-          onMouseMove={(e) => !mobileMode && onHoverTooltip?.(skillTooltipData, e)}
-          onMouseLeave={() => !mobileMode && onClearTooltip?.()}
+          className={[
+            'gem-skill-icon-slot',
+            skill._isPlaceholder ? 'gem-skill-icon-slot--empty' : 'gem-skill-icon-slot--filled',
+            cursorSkillGem && canDropSkillGem ? 'gem-skill-icon-slot--ready' : '',
+            dragOverSkillTarget ? 'gem-skill-icon-slot--target' : '',
+          ].filter(Boolean).join(' ')}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSkillSlotActivate();
+          }}
+          onDragOver={(e) => {
+            if (!canDropSkillGem) return;
+            const uid = getDraggedSkillGemUid(e);
+            if (!uid) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setDragOverSkillTarget(true);
+          }}
+          onDragLeave={() => setDragOverSkillTarget(false)}
+          onDrop={(e) => {
+            if (!canDropSkillGem) return;
+            const uid = getDraggedSkillGemUid(e);
+            setDragOverSkillTarget(false);
+            if (!uid) return;
+            e.preventDefault();
+            equipOrReplaceSkillGem(uid);
+          }}
+          title={skill._isPlaceholder
+            ? (cursorSkillGem ? 'Click to equip held skill gem' : 'Empty skill socket')
+            : (cursorSkillGem ? 'Click to replace with held skill gem' : 'Click to unequip skill gem')}
         >
-          <div
-            className={[
-              'gem-skill-icon-slot',
-              skill._isPlaceholder ? 'gem-skill-icon-slot--empty' : 'gem-skill-icon-slot--filled',
-              cursorSkillGem && canDropSkillGem ? 'gem-skill-icon-slot--ready' : '',
-              dragOverSkillTarget ? 'gem-skill-icon-slot--target' : '',
-            ].filter(Boolean).join(' ')}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleSkillSlotActivate();
-            }}
-            onDragOver={(e) => {
-              if (!canDropSkillGem) return;
-              const uid = getDraggedSkillGemUid(e);
-              if (!uid) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-              setDragOverSkillTarget(true);
-            }}
-            onDragLeave={() => setDragOverSkillTarget(false)}
-            onDrop={(e) => {
-              if (!canDropSkillGem) return;
-              const uid = getDraggedSkillGemUid(e);
-              setDragOverSkillTarget(false);
-              if (!uid) return;
-              e.preventDefault();
-              equipOrReplaceSkillGem(uid);
-            }}
-            title={skill._isPlaceholder
-              ? (cursorSkillGem ? 'Click to equip held skill gem' : 'Empty skill socket')
-              : (cursorSkillGem ? 'Click to replace with held skill gem' : 'Click to unequip skill gem')}
-          >
-            <span className="gem-skill-icon-slot-glyph">{skill._isPlaceholder ? '◇' : (skill.icon ?? '⚡')}</span>
-          </div>
-          <div className="gem-skill-info">
-            <span className="gem-skill-slot-label">{skill._slotLabel ?? 'Skill'}</span>
-            <span className="gem-skill-name">{skill.name}</span>
-            <span className="gem-skill-level">
-              Lv {skill.level ?? 1}{isMax ? ' ✦' : ` / ${skill.maxLevel ?? 20}`}
-            </span>
-            {blockedReason && <span className="gem-skill-requirement">{blockedReason}</span>}
-            {requirementHint && <span className="gem-skill-requirement-hint">{requirementHint}</span>}
-            {debugMode && !skill._isPlaceholder && (
-              <button
-                type="button"
-                className="gem-skill-debug-btn"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onDebugLevelUpSkillGem?.(skill._slotKey);
-                }}
-              >
-                +1 Level (Debug)
-              </button>
-            )}
-            {!isMax && (
-              <div className="gem-skill-xpbar-bg">
-                <div className="gem-skill-xpbar-fill" style={{ width: `${xpPct}%` }} />
-              </div>
-            )}
-          </div>
+          <span className="gem-skill-icon-slot-glyph">{skill._isPlaceholder ? '◇' : (skill.icon ?? '⚡')}</span>
         </div>
 
+        <div className="gem-skill-info">
+          <span className="gem-skill-slot-label">{skill._slotLabel ?? 'Skill'}</span>
+          <span className="gem-skill-name">{skill.name}</span>
+          <span className="gem-skill-level">
+            Lv {skill.level ?? 1}{isMax ? ' ✦' : ` / ${skill.maxLevel ?? 20}`}
+          </span>
+          {blockedReason && <span className="gem-skill-requirement">{blockedReason}</span>}
+          {requirementHint && <span className="gem-skill-requirement-hint">{requirementHint}</span>}
+          {debugMode && !skill._isPlaceholder && (
+            <button
+              type="button"
+              className="gem-skill-debug-btn"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDebugLevelUpSkillGem?.(skill._slotKey);
+              }}
+            >
+              +1 Level (Debug)
+            </button>
+          )}
+        </div>
+
+        {/* Support sockets — same row as skill info */}
+        <div className="gem-socket-row">
+          {slots.map((support, idx) => (
+            <SocketSlot
+              key={idx}
+              skillId={skill.id}
+              slotIndex={idx}
+              support={support}
+              isOpen={idx < openSlots}
+              skillTags={skillTags}
+              cursorGem={cursorGem}
+              onSocketGem={onSocketGem}
+              onUnsocketGem={onUnsocketGem}
+              isPlaceholder={skill._isPlaceholder}
+              mobileMode={mobileMode}
+              onHoverTooltip={onHoverTooltip}
+              onClearTooltip={onClearTooltip}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* Socket slots grid */}
-      <div className="gem-sockets-label">Sockets ({openSlots} / {slots.length})</div>
-      <div className="gem-socket-grid">
-        {slots.map((support, idx) => (
-          <SocketSlot
-            key={idx}
-            skillId={skill.id}
-            slotIndex={idx}
-            support={support}
-            isOpen={idx < openSlots}
-            skillTags={skillTags}
-            cursorGem={cursorGem}
-            onSocketGem={onSocketGem}
-            onUnsocketGem={onUnsocketGem}
-            isPlaceholder={skill._isPlaceholder}
-            mobileMode={mobileMode}
-            onHoverTooltip={onHoverTooltip}
-            onClearTooltip={onClearTooltip}
-          />
-        ))}
-      </div>
+      {/* XP bar spans the full width of the block */}
+      {!isMax && (
+        <div className="gem-skill-xpbar-bg">
+          <div className="gem-skill-xpbar-fill" style={{ width: `${xpPct}%` }} />
+        </div>
+      )}
     </div>
   );
 }

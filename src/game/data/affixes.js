@@ -20,11 +20,16 @@
  */
 import { SCALING_CONFIG, clampAreaLevel } from '../config/scalingConfig.js';
 
-export const AFFIX_TIERS = ['minor', 'major', 'advanced', 'high', 'pinnacle'];
+// Numeric tiers: 1 (best — strongest rolls, highest ilvl required)
+//              → 8 (weakest — smallest rolls, always available)
+export const AFFIX_TIERS = [1, 2, 3, 4, 5, 6, 7, 8];
 export const AFFIX_KINDS = ['explicit', 'implicit'];
 export const AFFIX_LEVEL_BRACKETS = ['early', 'mid', 'late', 'endgame'];
 
-const TIER_TAGS = new Set(AFFIX_TIERS);
+// Backward-compat map for legacy string tier names (map mod pool, old saves)
+const LEGACY_TIER_MAP = { minor: 8, major: 6, advanced: 4, high: 2, pinnacle: 1 };
+
+const TIER_TAGS = new Set(); // Numeric tiers are not string pool tags
 const POOL_TAG_BY_DEFENSE = {
   armor: 'armorDefence',
   evasion: 'evasionDefence',
@@ -41,24 +46,31 @@ const POOL_TAG_BY_WEAPON = {
   shield: 'shieldWeapon',
 };
 
+// Tier selection weights by level bracket.
+// Keys are numeric tiers (8 = weakest/most common, 1 = best/rarest).
+// Higher weight = more likely to roll at that bracket.
 const DEFAULT_TIER_WEIGHTS_BY_BRACKET = {
-  early: { minor: 110, major: 28, advanced: 0, high: 0, pinnacle: 0 },
-  mid: { minor: 45, major: 65, advanced: 24, high: 0, pinnacle: 0 },
-  late: { minor: 16, major: 38, advanced: 54, high: 18, pinnacle: 0 },
-  endgame: { minor: 8, major: 24, advanced: 44, high: 30, pinnacle: 16 },
+  early:   { 8: 100, 7: 40,  6: 5,   5: 0,  4: 0,  3: 0,  2: 0, 1: 0 },
+  mid:     { 8: 40,  7: 80,  6: 60,  5: 25, 4: 5,  3: 0,  2: 0, 1: 0 },
+  late:    { 8: 10,  7: 30,  6: 45,  5: 55, 4: 50, 3: 20, 2: 5, 1: 0 },
+  endgame: { 8: 0,   7: 5,   6: 15,  5: 30, 4: 55, 3: 60, 2: 45, 1: 20 },
 };
 
-export function affixTierGate(tier, config = SCALING_CONFIG) {
-  const gate = Number(config?.affixGates?.[tier]);
-  return Number.isFinite(gate) ? gate : Number.POSITIVE_INFINITY;
+// Min item level required to access each numeric tier
+const AFFIX_TIER_GATES = { 1: 75, 2: 60, 3: 50, 4: 40, 5: 30, 6: 20, 7: 10, 8: 1 };
+
+// Accepts numeric tier (1-8) or legacy string ('minor','major', etc.)
+export function affixTierGate(tier) {
+  const numericTier = typeof tier === 'string' ? (LEGACY_TIER_MAP[tier] ?? 0) : tier;
+  return AFFIX_TIER_GATES[numericTier] ?? Number.POSITIVE_INFINITY;
 }
 
-export function isAffixTierUnlocked(itemLevel, tier, config = SCALING_CONFIG) {
-  return clampAreaLevel(itemLevel) >= affixTierGate(tier, config);
+export function isAffixTierUnlocked(itemLevel, tier) {
+  return clampAreaLevel(itemLevel) >= affixTierGate(tier);
 }
 
-export function unlockedAffixTiers(itemLevel, config = SCALING_CONFIG) {
-  return AFFIX_TIERS.filter((tier) => isAffixTierUnlocked(itemLevel, tier, config));
+export function unlockedAffixTiers(itemLevel) {
+  return AFFIX_TIERS.filter((tier) => isAffixTierUnlocked(itemLevel, tier));
 }
 
 export function getAffixLevelBracket(itemLevel) {
@@ -74,37 +86,56 @@ export function getTierWeightsForLevelBracket(levelBracket) {
 }
 
 function inferAffixTier(id = '') {
-  if (id.startsWith('more_')) return 'pinnacle';
-  if (id.includes('_epic')) return 'high';
-  if (id.includes('_minor')) return 'minor';
-  if (id.includes('_major')) return 'major';
-  return 'advanced';
+  // New convention: id ends with _t1 .. _t8
+  const match = id.match(/_t(\d+)$/);
+  if (match) return Number(match[1]);
+  // Legacy string suffix fallback
+  if (id.startsWith('more_')) return 1;
+  if (id.includes('_pinnacle')) return 1;
+  if (id.includes('_epic') || id.includes('_high')) return 2;
+  if (id.includes('_advanced')) return 4;
+  if (id.includes('_major')) return 6;
+  if (id.includes('_minor')) return 8;
+  return 5;
 }
 
-function inferGoldValue(id = '', tier = 'advanced') {
-  if (id.includes('_resist_')) {
-    if (tier === 'minor') return 3;
-    if (tier === 'major') return 6;
-    if (tier === 'advanced') return 8;
-    if (tier === 'high') return 10;
-    if (tier === 'pinnacle') return 12;
-    return 8;
-  }
-  if (tier === 'minor') return 2;
-  if (tier === 'major') return 5;
-  if (tier === 'advanced') return 8;
-  if (tier === 'high') return 10;
-  if (tier === 'pinnacle') return 12;
-  return 8;
+function inferGoldValue(tier = 5) {
+  const numericTier = typeof tier === 'string' ? (LEGACY_TIER_MAP[tier] ?? 5) : tier;
+  const map = { 1: 20, 2: 15, 3: 12, 4: 10, 5: 8, 6: 6, 7: 4, 8: 2 };
+  return map[numericTier] ?? 8;
 }
 
-function inferWeight(tier = 'advanced') {
-  if (tier === 'minor') return 100;
-  if (tier === 'major') return 65;
-  if (tier === 'advanced') return 45;
-  if (tier === 'high') return 30;
-  if (tier === 'pinnacle') return 18;
-  return 35;
+function inferWeight(tier = 5) {
+  const numericTier = typeof tier === 'string' ? (LEGACY_TIER_MAP[tier] ?? 5) : tier;
+  // tier 1 = rarest (low weight); tier 8 = most common (high weight)
+  const map = { 1: 8, 2: 14, 3: 22, 4: 35, 5: 50, 6: 65, 7: 80, 8: 100 };
+  return map[numericTier] ?? 35;
+}
+
+// ─── Label helpers ───────────────────────────────────────────────────────────
+// Used to generate human-readable affix labels from a rolled numeric value.
+const L = {
+  flat:   (noun) => (v) => `+${v} ${noun}`,
+  mult:   (noun) => (v) => `+${Math.round((v - 1) * 100)}% ${noun}`,
+  reduct: (noun) => (v) => `-${Math.round((1 - v) * 100)}% ${noun}`,
+  pct:    (noun) => (v) => `+${Math.round(v * 100)}% ${noun}`,
+};
+
+/**
+ * Expand a multi-tier affix family into individual tier entries.
+ * Each entry gets id = `${id}_t${tier}` and inherits all shared fields.
+ * @param {{ id: string, labelFn: Function, tiers: {tier:number, min:number, max:number}[], ...rest }} def
+ */
+function defineAffixFamily({ id, labelFn, tiers, ...shared }) {
+  return tiers.map(({ tier, min, max, ...tierOverrides }) => ({
+    ...shared,
+    id: `${id}_t${tier}`,
+    tier,
+    min,
+    max,
+    labelFn,
+    ...tierOverrides,
+  }));
 }
 
 function inferFamily(def = {}) {
@@ -164,7 +195,7 @@ function inferPoolTags(def = {}, kind = 'explicit', family = '', weaponTypes = [
     tags.add(POOL_TAG_BY_WEAPON[weaponType] ?? weaponType);
   }
 
-  return [...tags].filter((tag) => tag && !TIER_TAGS.has(tag));
+  return [...tags].filter(Boolean);
 }
 
 function normalizePool(def = {}, tier = 'advanced', family = '', kind = 'explicit') {
@@ -214,864 +245,821 @@ function enrichAffix(def) {
   const family = inferFamily(def);
   const group = inferGroup(def, family);
   const pool = normalizePool(def, tier, family, kind);
+
+  // Support both fixed-value (legacy/implicit) and ranged (new) affixes
+  const defMin = def.min ?? def.value ?? 0;
+  const defMax = def.max ?? def.value ?? 0;
+  const midValue = (defMin + defMax) / 2;
+
+  // Compute a fallback label for pool display (uses midpoint; instances use rolled value)
+  const labelFn = def.labelFn ?? null;
+  const label = def.label ?? (labelFn ? labelFn(midValue) : `${def.stat}: ${defMin}–${defMax}`);
+
   return {
     ...def,
     kind,
     family,
     group,
     tier,
+    min: defMin,
+    max: defMax,
+    value: midValue,   // midpoint; actual rolled value is on item instances
+    labelFn,
+    label,
     minItemLevel: Math.max(1, Math.floor(def.minItemLevel ?? affixTierGate(tier))),
-    goldValue: def.goldValue ?? inferGoldValue(def.id, tier),
+    goldValue: def.goldValue ?? inferGoldValue(tier),
     weight: def.weight ?? inferWeight(tier),
-    tags: def.tags ?? [kind, def.type, tier, family],
+    tags: def.tags ?? [kind, def.type, family],
     pool,
-    modifier: normalizeModifier(def),
+    modifier: normalizeModifier({ ...def, value: midValue }),
   };
 }
 
 const RAW_AFFIX_POOL = [
-  // ─── Weapon Prefixes ──────────────────────────────────────────────────────
-  {
-    id: 'wpn_dmg_minor',
-    type: 'prefix',
-    slots: ['weapon'],
-    stat: 'damageMult',
-    value: 1.10,
-    label: '+10% weapon damage',
-  },
-  {
-    id: 'wpn_dmg_major',
-    type: 'prefix',
-    slots: ['weapon'],
-    stat: 'damageMult',
-    value: 1.20,
-    label: '+20% weapon damage',
-  },
-  {
-    id: 'wpn_cd_minor',
-    type: 'prefix',
-    slots: ['weapon'],
-    stat: 'cooldownMult',
-    value: 0.90,
-    label: '−10% weapon cooldown',
-  },
-  {
-    id: 'wpn_cd_major',
-    type: 'prefix',
-    slots: ['weapon'],
-    stat: 'cooldownMult',
-    value: 0.85,
-    label: '−15% weapon cooldown',
-  },
-  {
-    id: 'wpn_bow_dmg_major',
-    type: 'prefix',
-    slots: ['weapon'],
-    stat: 'increasedDamageWithBow',
-    value: 0.18,
-    label: '+18% damage with bows',
-  },
-  {
-    id: 'wpn_wand_aspd_major',
-    type: 'prefix',
-    slots: ['weapon'],
-    stat: 'increasedAttackSpeedWithWand',
-    value: 0.16,
-    label: '+16% attack speed with wands',
-  },
-
-  // ─── Weapon Suffixes ──────────────────────────────────────────────────────
-  {
-    id: 'of_haste',
-    type: 'suffix',
-    slots: ['weapon'],
-    stat: 'speedFlat',
-    value: 20,
-    label: '+20 movement speed',
-  },
-  {
-    id: 'of_warding',
-    type: 'suffix',
-    slots: ['weapon'],
-    stat: 'maxHealthFlat',
-    value: 25,
-    label: '+25 max HP',
-  },
-  {
-    id: 'of_abundance',
-    type: 'suffix',
-    slots: ['weapon'],
-    stat: 'xpMultiplier',
-    value: 1.15,
-    label: '+15% XP gain',
-  },
-
-  // ─── Armor Prefixes ───────────────────────────────────────────────────────
-  {
-    id: 'arm_hp_minor',
-    type: 'prefix',
-    slots: ['armor'],
-    stat: 'maxHealthFlat',
-    value: 30,
-    label: '+30 max HP',
-  },
-  {
-    id: 'arm_hp_major',
-    type: 'prefix',
-    slots: ['armor'],
-    stat: 'maxHealthFlat',
-    value: 50,
-    label: '+50 max HP',
-  },
-  {
-    id: 'arm_regen_minor',
-    type: 'prefix',
-    slots: ['armor'],
-    stat: 'healthRegenPerS',
-    value: 2,
-    label: '+2 HP regen/s',
-  },
-  {
-    id: 'arm_regen_major',
-    type: 'prefix',
-    slots: ['armor'],
-    stat: 'healthRegenPerS',
-    value: 3,
-    label: '+3 HP regen/s',
-  },
-  {
-    id: 'arm_mana_major',
-    type: 'prefix',
-    slots: ['armor'],
-    stat: 'maxManaFlat',
-    value: 35,
-    label: '+35 maximum mana',
-  },
-
-  // ─── Armor Suffixes ───────────────────────────────────────────────────────
-  {
-    id: 'of_swiftness',
-    type: 'suffix',
-    slots: ['armor'],
-    stat: 'speedFlat',
-    value: 15,
-    label: '+15 movement speed',
-  },
-  {
-    id: 'of_plunder',
-    type: 'suffix',
-    slots: ['armor'],
-    stat: 'pickupRadiusFlat',
-    value: 20,
-    label: '+20 pickup radius',
-  },
-  {
-    id: 'of_knowledge',
-    type: 'suffix',
-    slots: ['armor'],
-    stat: 'xpMultiplier',
-    value: 1.10,
-    label: '+10% XP gain',
-  },
-
-  // ─── Jewelry Prefixes ─────────────────────────────────────────────────────
-  {
-    id: 'jew_xp_minor',
-    type: 'prefix',
-    slots: ['jewelry'],
-    stat: 'xpMultiplier',
-    value: 1.15,
-    label: '+15% XP gain',
-  },
-  {
-    id: 'jew_xp_major',
-    type: 'prefix',
-    slots: ['jewelry'],
-    stat: 'xpMultiplier',
-    value: 1.25,
-    label: '+25% XP gain',
-  },
-  {
-    id: 'jew_speed_minor',
-    type: 'prefix',
-    slots: ['jewelry'],
-    stat: 'speedFlat',
-    value: 15,
-    label: '+15 movement speed',
-  },
-  {
-    id: 'jew_speed_major',
-    type: 'prefix',
-    slots: ['jewelry'],
-    stat: 'speedFlat',
-    value: 25,
-    label: '+25 movement speed',
-  },
-  {
-    id: 'jew_mana_major',
-    type: 'prefix',
-    slots: ['jewelry'],
-    stat: 'maxManaFlat',
-    value: 45,
-    label: '+45 maximum mana',
-  },
-  {
-    id: 'jew_spell_focus_major',
-    type: 'prefix',
-    slots: ['jewelry'],
-    stat: 'increasedDamageWithSpellSkills',
-    value: 0.14,
-    label: '+14% spell skill damage',
-  },
-
-  // ─── Jewelry Suffixes ─────────────────────────────────────────────────────
-  {
-    id: 'of_the_hunt',
-    type: 'suffix',
-    slots: ['jewelry'],
-    stat: 'pickupRadiusFlat',
-    value: 25,
-    label: '+25 pickup radius',
-  },
-  {
-    id: 'of_might',
-    type: 'suffix',
-    slots: ['jewelry'],
-    stat: 'damageMult',
-    value: 1.10,
-    label: '+10% weapon damage',
-  },
-  {
-    id: 'of_fortitude',
-    type: 'suffix',
-    slots: ['jewelry'],
-    stat: 'maxHealthFlat',
-    value: 25,
-    label: '+25 max HP',
-  },
-  {
-    id: 'of_focus',
-    type: 'suffix',
-    slots: ['jewelry'],
-    stat: 'manaRegenPerS',
-    value: 3,
-    label: '+3 mana regen/s',
-  },
-  {
-    id: 'of_clarity_mana',
-    type: 'suffix',
-    slots: ['jewelry'],
-    stat: 'manaCostMult',
-    value: 0.9,
-    label: '−10% mana costs',
-  },
-
-  // ─── Helmet Prefixes ──────────────────────────────────────────────────────
-  {
-    id: 'helm_hp_minor',
-    type: 'prefix',
-    slots: ['helmet'],
-    stat: 'maxHealthFlat',
-    value: 25,
-    label: '+25 max HP',
-  },
-  {
-    id: 'helm_hp_major',
-    type: 'prefix',
-    slots: ['helmet'],
-    stat: 'maxHealthFlat',
-    value: 40,
-    label: '+40 max HP',
-  },
-  {
-    id: 'helm_xp_minor',
-    type: 'prefix',
-    slots: ['helmet'],
-    stat: 'xpMultiplier',
-    value: 1.15,
-    label: '+15% XP gain',
-  },
-
-  // ─── Helmet Suffixes ──────────────────────────────────────────────────────
-  {
-    id: 'of_clarity',
-    type: 'suffix',
-    slots: ['helmet'],
-    stat: 'xpMultiplier',
-    value: 1.10,
-    label: '+10% XP gain',
-  },
-  {
-    id: 'of_perception',
-    type: 'suffix',
-    slots: ['helmet'],
-    stat: 'pickupRadiusFlat',
-    value: 25,
-    label: '+25 pickup radius',
-  },
-  {
-    id: 'of_endurance',
-    type: 'suffix',
-    slots: ['helmet'],
-    stat: 'healthRegenPerS',
-    value: 2,
-    label: '+2 HP regen/s',
-  },
-
-  // ─── Boots Prefixes ───────────────────────────────────────────────────────
-  {
-    id: 'boot_speed_minor',
-    type: 'prefix',
-    slots: ['boots'],
-    stat: 'speedFlat',
-    value: 15,
-    label: '+15 movement speed',
-  },
-  {
-    id: 'boot_speed_major',
-    type: 'prefix',
-    slots: ['boots'],
-    stat: 'speedFlat',
-    value: 25,
-    label: '+25 movement speed',
-  },
-  {
-    id: 'boot_pickup',
-    type: 'prefix',
-    slots: ['boots'],
-    stat: 'pickupRadiusFlat',
-    value: 20,
-    label: '+20 pickup radius',
-  },
-
-  // ─── Boots Suffixes ───────────────────────────────────────────────────────
-  {
-    id: 'of_ranging',
-    type: 'suffix',
-    slots: ['boots'],
-    stat: 'pickupRadiusFlat',
-    value: 20,
-    label: '+20 pickup radius',
-  },
-  {
-    id: 'of_vitality',
-    type: 'suffix',
-    slots: ['boots'],
-    stat: 'maxHealthFlat',
-    value: 20,
-    label: '+20 max HP',
-  },
-  {
-    id: 'of_regeneration',
-    type: 'suffix',
-    slots: ['boots'],
-    stat: 'healthRegenPerS',
-    value: 1,
-    label: '+1 HP regen/s',
-  },
-
-  // ─── Offhand Prefixes ─────────────────────────────────────────────────────
-  {
-    id: 'off_cd_minor',
-    type: 'prefix',
-    slots: ['offhand'],
-    stat: 'cooldownMult',
-    value: 0.90,
-    label: '−10% weapon cooldown',
-  },
-  {
-    id: 'off_cd_major',
-    type: 'prefix',
-    slots: ['offhand'],
-    stat: 'cooldownMult',
-    value: 0.85,
-    label: '−15% weapon cooldown',
-  },
-  {
-    id: 'off_dmg_minor',
-    type: 'prefix',
-    slots: ['offhand'],
-    stat: 'damageMult',
-    value: 1.10,
-    label: '+10% weapon damage',
-  },
-
-  // ─── Offhand Suffixes ─────────────────────────────────────────────────────
-  {
-    id: 'of_alacrity',
-    type: 'suffix',
-    slots: ['offhand'],
-    stat: 'speedFlat',
-    value: 20,
-    label: '+20 movement speed',
-  },
-  {
-    id: 'of_shelter',
-    type: 'suffix',
-    slots: ['offhand'],
-    stat: 'maxHealthFlat',
-    value: 30,
-    label: '+30 max HP',
-  },
-  {
-    id: 'of_mending',
-    type: 'suffix',
-    slots: ['offhand'],
-    stat: 'healthRegenPerS',
-    value: 2,
-    label: '+2 HP regen/s',
-  },
-
-  // ── Phase 10 affixes ──────────────────────────────────────────────────────
-
-  // Weapon — 2 new entries
-  {
-    id: 'wpn_dmg_epic',
-    type: 'prefix',
-    slots: ['weapon'],
-    stat: 'damageMult',
-    value: 1.30,
-    label: '+30% weapon damage',
-  },
-  {
-    id: 'of_ruin',
-    type: 'suffix',
-    slots: ['weapon'],
-    stat: 'cooldownMult',
-    value: 0.80,
-    label: '−20% weapon cooldown',
-  },
-
-  // Armor — 2 new entries
-  {
-    id: 'arm_hp_epic',
-    type: 'prefix',
-    slots: ['armor'],
-    stat: 'maxHealthFlat',
-    value: 70,
-    label: '+70 max HP',
-  },
-  {
-    id: 'of_resilience',
-    type: 'suffix',
-    slots: ['armor'],
-    stat: 'healthRegenPerS',
-    value: 5,
-    label: '+5 HP regen/s',
-  },
-
-  // Jewelry — 2 new entries
-  {
-    id: 'jew_xp_epic',
-    type: 'prefix',
-    slots: ['jewelry'],
-    stat: 'xpMultiplier',
-    value: 1.35,
-    label: '+35% XP gain',
-  },
-  {
-    id: 'of_the_void',
-    type: 'suffix',
-    slots: ['jewelry'],
-    stat: 'pickupRadiusFlat',
-    value: 40,
-    label: '+40 pickup radius',
-  },
-
-  // Helmet — 2 new entries
-  {
-    id: 'helm_hp_epic',
-    type: 'prefix',
-    slots: ['helmet'],
-    stat: 'maxHealthFlat',
-    value: 55,
-    label: '+55 max HP',
-  },
-  {
-    id: 'of_foresight',
-    type: 'suffix',
-    slots: ['helmet'],
-    stat: 'xpMultiplier',
-    value: 1.20,
-    label: '+20% XP gain',
-  },
-
-  // Boots — 2 new entries
-  {
-    id: 'boot_speed_epic',
-    type: 'prefix',
-    slots: ['boots'],
-    stat: 'speedFlat',
-    value: 40,
-    label: '+40 movement speed',
-  },
-  {
-    id: 'of_the_chase',
-    type: 'suffix',
-    slots: ['boots'],
-    stat: 'pickupRadiusFlat',
-    value: 35,
-    label: '+35 pickup radius',
-  },
-
-  // Offhand — 2 new entries
-  {
-    id: 'off_cd_epic',
-    type: 'prefix',
-    slots: ['offhand'],
-    stat: 'cooldownMult',
-    value: 0.78,
-    label: '−22% weapon cooldown',
-  },
-  {
-    id: 'of_dominion',
-    type: 'suffix',
-    slots: ['offhand'],
-    stat: 'damageMult',
-    value: 1.18,
-    label: '+18% weapon damage',
-  },
-
-  // ── Phase 10.5 defense-type affixes ──────────────────────────────────────
-  // These only roll on items whose defenseType includes the matching type.
-  // The 'defenseTypes' array is checked in itemGenerator alongside 'slots'.
-
-  // Body Armour — armor prefixes
-  {
-    id: 'arm_armor_minor',
-    type: 'prefix',
-    slots: ['armor'],
-    defenseTypes: ['armor'],
-    stat: 'armorFlat',
-    value: 20,
-    label: '+20 armor',
-  },
-  {
-    id: 'arm_armor_major',
-    type: 'prefix',
-    slots: ['armor'],
-    defenseTypes: ['armor'],
-    stat: 'armorFlat',
-    value: 35,
-    label: '+35 armor',
-  },
-  // Body Armour — evasion prefixes
-  {
-    id: 'arm_evasion_minor',
-    type: 'prefix',
-    slots: ['armor'],
-    defenseTypes: ['evasion'],
-    stat: 'evasionFlat',
-    value: 22,
-    label: '+22 evasion',
-  },
-  {
-    id: 'arm_evasion_major',
-    type: 'prefix',
-    slots: ['armor'],
-    defenseTypes: ['evasion'],
-    stat: 'evasionFlat',
-    value: 38,
-    label: '+38 evasion',
-  },
-  // Body Armour — energy shield prefixes
-  {
-    id: 'arm_es_minor',
-    type: 'prefix',
-    slots: ['armor'],
-    defenseTypes: ['energyShield'],
-    stat: 'energyShieldFlat',
-    value: 12,
-    label: '+12 energy shield',
-  },
-  {
-    id: 'arm_es_major',
-    type: 'prefix',
-    slots: ['armor'],
-    defenseTypes: ['energyShield'],
-    stat: 'energyShieldFlat',
-    value: 20,
-    label: '+20 energy shield',
-  },
-
-  // Helmet — armor prefixes
-  {
-    id: 'helm_armor_minor',
-    type: 'prefix',
-    slots: ['helmet'],
-    defenseTypes: ['armor'],
-    stat: 'armorFlat',
-    value: 10,
-    label: '+10 armor',
-  },
-  {
-    id: 'helm_armor_major',
-    type: 'prefix',
-    slots: ['helmet'],
-    defenseTypes: ['armor'],
-    stat: 'armorFlat',
-    value: 18,
-    label: '+18 armor',
-  },
-  // Helmet — evasion prefixes
-  {
-    id: 'helm_evasion_minor',
-    type: 'prefix',
-    slots: ['helmet'],
-    defenseTypes: ['evasion'],
-    stat: 'evasionFlat',
-    value: 11,
-    label: '+11 evasion',
-  },
-  {
-    id: 'helm_evasion_major',
-    type: 'prefix',
-    slots: ['helmet'],
-    defenseTypes: ['evasion'],
-    stat: 'evasionFlat',
-    value: 20,
-    label: '+20 evasion',
-  },
-  // Helmet — energy shield prefixes
-  {
-    id: 'helm_es_minor',
-    type: 'prefix',
-    slots: ['helmet'],
-    defenseTypes: ['energyShield'],
-    stat: 'energyShieldFlat',
-    value: 7,
-    label: '+7 energy shield',
-  },
-  {
-    id: 'helm_es_major',
-    type: 'prefix',
-    slots: ['helmet'],
-    defenseTypes: ['energyShield'],
-    stat: 'energyShieldFlat',
-    value: 12,
-    label: '+12 energy shield',
-  },
-
-  // Boots — armor prefixes
-  {
-    id: 'boot_armor_minor',
-    type: 'prefix',
-    slots: ['boots'],
-    defenseTypes: ['armor'],
-    stat: 'armorFlat',
-    value: 8,
-    label: '+8 armor',
-  },
-  {
-    id: 'boot_armor_major',
-    type: 'prefix',
-    slots: ['boots'],
-    defenseTypes: ['armor'],
-    stat: 'armorFlat',
-    value: 14,
-    label: '+14 armor',
-  },
-  // Boots — evasion prefixes
-  {
-    id: 'boot_evasion_minor',
-    type: 'prefix',
-    slots: ['boots'],
-    defenseTypes: ['evasion'],
-    stat: 'evasionFlat',
-    value: 9,
-    label: '+9 evasion',
-  },
-  {
-    id: 'boot_evasion_major',
-    type: 'prefix',
-    slots: ['boots'],
-    defenseTypes: ['evasion'],
-    stat: 'evasionFlat',
-    value: 15,
-    label: '+15 evasion',
-  },
-  // Boots — energy shield prefixes
-  {
-    id: 'boot_es_minor',
-    type: 'prefix',
-    slots: ['boots'],
-    defenseTypes: ['energyShield'],
-    stat: 'energyShieldFlat',
-    value: 5,
-    label: '+5 energy shield',
-  },
-  {
-    id: 'boot_es_major',
-    type: 'prefix',
-    slots: ['boots'],
-    defenseTypes: ['energyShield'],
-    stat: 'energyShieldFlat',
-    value: 9,
-    label: '+9 energy shield',
-  },
-
-  // Offhand — armor prefixes
-  {
-    id: 'off_armor_minor',
-    type: 'prefix',
-    slots: ['offhand'],
-    defenseTypes: ['armor'],
-    stat: 'armorFlat',
-    value: 15,
-    label: '+15 armor',
-  },
-  {
-    id: 'off_armor_major',
-    type: 'prefix',
-    slots: ['offhand'],
-    defenseTypes: ['armor'],
-    stat: 'armorFlat',
-    value: 25,
-    label: '+25 armor',
-  },
-  // Offhand — evasion prefixes
-  {
-    id: 'off_evasion_minor',
-    type: 'prefix',
-    slots: ['offhand'],
-    defenseTypes: ['evasion'],
-    stat: 'evasionFlat',
-    value: 16,
-    label: '+16 evasion',
-  },
-  {
-    id: 'off_evasion_major',
-    type: 'prefix',
-    slots: ['offhand'],
-    defenseTypes: ['evasion'],
-    stat: 'evasionFlat',
-    value: 28,
-    label: '+28 evasion',
-  },
-  // Offhand — energy shield prefixes
-  {
-    id: 'off_es_minor',
-    type: 'prefix',
-    slots: ['offhand'],
-    defenseTypes: ['energyShield'],
-    stat: 'energyShieldFlat',
-    value: 10,
-    label: '+10 energy shield',
-  },
-  {
-    id: 'off_es_major',
-    type: 'prefix',
-    slots: ['offhand'],
-    defenseTypes: ['energyShield'],
-    stat: 'energyShieldFlat',
-    value: 18,
-    label: '+18 energy shield',
-  },
-
-  // ── Elemental Damage Affixes ───────────────────────────────────────────────
-  //
-  // Three-layer model (PoE-style):
-  //   flat     stat: flatXxxDamage      — prefix on weapon/jewelry; adds raw damage per hit
-  //   increased stat: increasedXxxDamage — prefix on weapon/armor/jewelry/offhand; additive % pool
-  //   more      stat: moreXxxDamage      — suffix on weapon; multiplicative after increased
-  //
-  // Elemental types: Physical, Blaze, Thunder, Frost, Holy, Unholy
-  //
-  // Also includes elemental resistance suffixes (reducedDamageTaken from that element).
-
-  // ─── Physical ────────────────────────────────────────────────────────────
-  { id: 'flat_physical_minor',     type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatPhysicalDamage',      value: 8,    label: '+8 flat Physical Damage' },
-  { id: 'flat_physical_major',     type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatPhysicalDamage',      value: 18,   label: '+18 flat Physical Damage' },
-  { id: 'inc_physical_minor',      type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedPhysicalDamage', value: 0.12, label: '+12% increased Physical Damage' },
-  { id: 'inc_physical_major',      type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedPhysicalDamage', value: 0.22, label: '+22% increased Physical Damage' },
-  { id: 'melee_strike_range_minor', type: 'prefix', slots: ['weapon'], weaponTypes: ['sword', 'axe', 'lance', 'staff'], stat: 'meleeStrikeRange', value: 0.2, label: '+20% melee strike range' },
-  { id: 'melee_strike_range_major', type: 'prefix', slots: ['weapon'], weaponTypes: ['sword', 'axe', 'lance', 'staff'], stat: 'meleeStrikeRange', value: 0.35, label: '+35% melee strike range' },
-  { id: 'more_physical',           type: 'suffix', slots: ['weapon'],            stat: 'morePhysicalDamage',      value: 0.10, label: '+10% more Physical Damage' },
-
-  // ─── Blaze ────────────────────────────────────────────────────────────────
-  { id: 'flat_blaze_minor',        type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatBlazeDamage',         value: 10,   label: '+10 flat Blaze Damage' },
-  { id: 'flat_blaze_major',        type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatBlazeDamage',         value: 20,   label: '+20 flat Blaze Damage' },
-  { id: 'inc_blaze_minor',         type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedBlazeDamage',    value: 0.12, label: '+12% increased Blaze Damage' },
-  { id: 'inc_blaze_major',         type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedBlazeDamage',    value: 0.22, label: '+22% increased Blaze Damage' },
-  { id: 'more_blaze',              type: 'suffix', slots: ['weapon'],            stat: 'moreBlazeDamage',         value: 0.10, label: '+10% more Blaze Damage' },
-  { id: 'of_blaze_resist_minor',   type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'blazeResistance', value: 0.12, label: '+12% Blaze Resistance' },
-  { id: 'of_blaze_resist_major',   type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'blazeResistance', value: 0.22, label: '+22% Blaze Resistance' },
-
-  // ─── Thunder ──────────────────────────────────────────────────────────────
-  { id: 'flat_thunder_minor',      type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatThunderDamage',       value: 6,    label: '+6 flat Thunder Damage' },
-  { id: 'flat_thunder_major',      type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatThunderDamage',       value: 16,   label: '+16 flat Thunder Damage' },
-  { id: 'inc_thunder_minor',       type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedThunderDamage',  value: 0.12, label: '+12% increased Thunder Damage' },
-  { id: 'inc_thunder_major',       type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedThunderDamage',  value: 0.22, label: '+22% increased Thunder Damage' },
-  { id: 'more_thunder',            type: 'suffix', slots: ['weapon'],            stat: 'moreThunderDamage',       value: 0.10, label: '+10% more Thunder Damage' },
-  { id: 'of_thunder_resist_minor', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'thunderResistance', value: 0.12, label: '+12% Thunder Resistance' },
-  { id: 'of_thunder_resist_major', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'thunderResistance', value: 0.22, label: '+22% Thunder Resistance' },
-
-  // ─── Frost ────────────────────────────────────────────────────────────────
-  { id: 'flat_frost_minor',        type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatFrostDamage',         value: 9,    label: '+9 flat Frost Damage' },
-  { id: 'flat_frost_major',        type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatFrostDamage',         value: 18,   label: '+18 flat Frost Damage' },
-  { id: 'inc_frost_minor',         type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedFrostDamage',    value: 0.12, label: '+12% increased Frost Damage' },
-  { id: 'inc_frost_major',         type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedFrostDamage',    value: 0.22, label: '+22% increased Frost Damage' },
-  { id: 'more_frost',              type: 'suffix', slots: ['weapon'],            stat: 'moreFrostDamage',         value: 0.10, label: '+10% more Frost Damage' },
-  { id: 'of_frost_resist_minor',   type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'frostResistance', value: 0.12, label: '+12% Frost Resistance' },
-  { id: 'of_frost_resist_major',   type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'frostResistance', value: 0.22, label: '+22% Frost Resistance' },
-
-  // ─── Holy ─────────────────────────────────────────────────────────────────
-  { id: 'flat_holy_minor',         type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatHolyDamage',          value: 10,   label: '+10 flat Holy Damage' },
-  { id: 'flat_holy_major',         type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatHolyDamage',          value: 22,   label: '+22 flat Holy Damage' },
-  { id: 'inc_holy_minor',          type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedHolyDamage',     value: 0.12, label: '+12% increased Holy Damage' },
-  { id: 'inc_holy_major',          type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedHolyDamage',     value: 0.22, label: '+22% increased Holy Damage' },
-  { id: 'more_holy',               type: 'suffix', slots: ['weapon'],            stat: 'moreHolyDamage',          value: 0.10, label: '+10% more Holy Damage' },
-  { id: 'of_holy_resist_minor',    type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'holyResistance', value: 0.12, label: '+12% Holy Resistance' },
-  { id: 'of_holy_resist_major',    type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'holyResistance', value: 0.22, label: '+22% Holy Resistance' },
-
-  // ─── Unholy ───────────────────────────────────────────────────────────────
-  { id: 'flat_unholy_minor',       type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatUnholyDamage',        value: 10,   label: '+10 flat Unholy Damage' },
-  { id: 'flat_unholy_major',       type: 'prefix', slots: ['weapon', 'jewelry'], stat: 'flatUnholyDamage',        value: 20,   label: '+20 flat Unholy Damage' },
-  { id: 'inc_unholy_minor',        type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedUnholyDamage',   value: 0.12, label: '+12% increased Unholy Damage' },
-  { id: 'inc_unholy_major',        type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'], stat: 'increasedUnholyDamage',   value: 0.22, label: '+22% increased Unholy Damage' },
-  { id: 'more_unholy',             type: 'suffix', slots: ['weapon'],            stat: 'moreUnholyDamage',        value: 0.10, label: '+10% more Unholy Damage' },
-  { id: 'of_unholy_resist_minor',  type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'unholyResistance', value: 0.12, label: '+12% Unholy Resistance' },
-  { id: 'of_unholy_resist_major',  type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'], stat: 'unholyResistance', value: 0.22, label: '+22% Unholy Resistance' },
+  // ─── Weapon: damage / cooldown prefixes ─────────────────────────────────
+  ...defineAffixFamily({
+    id: 'wpn_dmg', type: 'prefix', slots: ['weapon'], stat: 'damageMult',
+    labelFn: L.mult('damage'),
+    tiers: [
+      { tier: 1, min: 1.40, max: 1.52 },
+      { tier: 3, min: 1.26, max: 1.35 },
+      { tier: 6, min: 1.16, max: 1.24 },
+      { tier: 8, min: 1.06, max: 1.12 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'wpn_cd', type: 'prefix', slots: ['weapon'], stat: 'cooldownMult',
+    labelFn: L.reduct('cooldown length'),
+    tiers: [
+      { tier: 1, min: 0.66, max: 0.76 },
+      { tier: 3, min: 0.76, max: 0.83 },
+      { tier: 6, min: 0.82, max: 0.88 },
+      { tier: 8, min: 0.88, max: 0.92 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'wpn_bow_dmg', type: 'prefix', slots: ['weapon'], weaponTypes: ['bow'],
+    stat: 'increasedDamageWithBow', labelFn: L.pct('damage with Bows'),
+    tiers: [
+      { tier: 1, min: 0.30, max: 0.40 },
+      { tier: 3, min: 0.22, max: 0.30 },
+      { tier: 6, min: 0.14, max: 0.22 },
+      { tier: 8, min: 0.07, max: 0.14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'wpn_wand_aspd', type: 'prefix', slots: ['weapon'], weaponTypes: ['wand'],
+    stat: 'increasedAttackSpeedWithWand', labelFn: L.pct('Attack Speed with Wands'),
+    tiers: [
+      { tier: 1, min: 0.25, max: 0.36 },
+      { tier: 3, min: 0.18, max: 0.26 },
+      { tier: 6, min: 0.12, max: 0.20 },
+      { tier: 8, min: 0.06, max: 0.13 },
+    ],
+  }),
+  // ─── Weapon: suffixes ─────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'wpn_speed', type: 'suffix', slots: ['weapon'], stat: 'speedFlat',
+    labelFn: L.flat('movement speed'),
+    tiers: [
+      { tier: 1, min: 38, max: 52 },
+      { tier: 3, min: 26, max: 38 },
+      { tier: 6, min: 16, max: 26 },
+      { tier: 8, min: 8,  max: 16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'wpn_hp', type: 'suffix', slots: ['weapon'], stat: 'maxHealthFlat',
+    labelFn: L.flat('max Life'),
+    tiers: [
+      { tier: 1, min: 55, max: 80 },
+      { tier: 3, min: 36, max: 55 },
+      { tier: 6, min: 20, max: 36 },
+      { tier: 8, min: 10, max: 20 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'wpn_xp', type: 'suffix', slots: ['weapon'], stat: 'xpMultiplier',
+    labelFn: L.mult('XP gain'),
+    tiers: [
+      { tier: 1, min: 1.35, max: 1.50 },
+      { tier: 3, min: 1.22, max: 1.32 },
+      { tier: 6, min: 1.11, max: 1.20 },
+      { tier: 8, min: 1.05, max: 1.12 },
+    ],
+  }),
+  // ─── Armor: all-type prefixes ──────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'arm_hp', type: 'prefix', slots: ['armor'], stat: 'maxHealthFlat',
+    labelFn: L.flat('max Life'),
+    tiers: [
+      { tier: 1, min: 125, max: 155 },
+      { tier: 3, min: 72,  max: 90  },
+      { tier: 6, min: 44,  max: 58  },
+      { tier: 8, min: 25,  max: 36  },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'arm_regen', type: 'prefix', slots: ['armor'], stat: 'healthRegenPerS',
+    labelFn: L.flat('Life regen/s'),
+    tiers: [
+      { tier: 1, min: 7, max: 12 },
+      { tier: 3, min: 5, max: 8  },
+      { tier: 6, min: 3, max: 5  },
+      { tier: 8, min: 1, max: 3  },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'arm_mana', type: 'prefix', slots: ['armor'], stat: 'maxManaFlat',
+    labelFn: L.flat('max Mana'),
+    tiers: [
+      { tier: 1, min: 70, max: 95 },
+      { tier: 3, min: 48, max: 65 },
+      { tier: 6, min: 28, max: 44 },
+      { tier: 8, min: 14, max: 25 },
+    ],
+  }),
+  // ─── Armor: suffixes ──────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'arm_speed', type: 'suffix', slots: ['armor'], stat: 'speedFlat',
+    labelFn: L.flat('movement speed'),
+    tiers: [
+      { tier: 1, min: 38, max: 52 },
+      { tier: 3, min: 24, max: 36 },
+      { tier: 6, min: 11, max: 20 },
+      { tier: 8, min: 5,  max: 12 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'arm_pickup', type: 'suffix', slots: ['armor'], stat: 'pickupRadiusFlat',
+    labelFn: L.flat('pickup radius'),
+    tiers: [
+      { tier: 1, min: 44, max: 62 },
+      { tier: 3, min: 28, max: 42 },
+      { tier: 6, min: 15, max: 26 },
+      { tier: 8, min: 8,  max: 15 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'arm_xp', type: 'suffix', slots: ['armor'], stat: 'xpMultiplier',
+    labelFn: L.mult('XP gain'),
+    tiers: [
+      { tier: 1, min: 1.28, max: 1.42 },
+      { tier: 3, min: 1.16, max: 1.26 },
+      { tier: 6, min: 1.06, max: 1.15 },
+      { tier: 8, min: 1.02, max: 1.08 },
+    ],
+  }),
+  // ─── Armor: defense-type prefixes ─────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'arm_armor_def', type: 'prefix', slots: ['armor'], defenseTypes: ['armor'],
+    stat: 'armorFlat', labelFn: L.flat('Armour'),
+    tiers: [
+      { tier: 1, min: 90,  max: 120 },
+      { tier: 3, min: 55,  max: 80  },
+      { tier: 6, min: 28,  max: 44  },
+      { tier: 8, min: 16,  max: 24  },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'arm_evasion_def', type: 'prefix', slots: ['armor'], defenseTypes: ['evasion'],
+    stat: 'evasionFlat', labelFn: L.flat('Evasion'),
+    tiers: [
+      { tier: 1, min: 95,  max: 130 },
+      { tier: 3, min: 60,  max: 85  },
+      { tier: 6, min: 32,  max: 46  },
+      { tier: 8, min: 18,  max: 28  },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'arm_es_def', type: 'prefix', slots: ['armor'], defenseTypes: ['energyShield'],
+    stat: 'energyShieldFlat', labelFn: L.flat('Energy Shield'),
+    tiers: [
+      { tier: 1, min: 110, max: 150 },
+      { tier: 3, min: 60,  max: 85  },
+      { tier: 6, min: 17,  max: 25  },
+      { tier: 8, min: 10,  max: 16  },
+    ],
+  }),
+  // ─── Jewelry: prefixes ────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'jew_xp', type: 'prefix', slots: ['jewelry'], stat: 'xpMultiplier',
+    labelFn: L.mult('XP gain'),
+    tiers: [
+      { tier: 1, min: 1.44, max: 1.60 },
+      { tier: 3, min: 1.30, max: 1.42 },
+      { tier: 6, min: 1.20, max: 1.31 },
+      { tier: 8, min: 1.11, max: 1.20 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'jew_speed', type: 'prefix', slots: ['jewelry'], stat: 'speedFlat',
+    labelFn: L.flat('movement speed'),
+    tiers: [
+      { tier: 1, min: 48, max: 65 },
+      { tier: 3, min: 30, max: 44 },
+      { tier: 6, min: 20, max: 31 },
+      { tier: 8, min: 10, max: 19 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'jew_mana', type: 'prefix', slots: ['jewelry'], stat: 'maxManaFlat',
+    labelFn: L.flat('max Mana'),
+    tiers: [
+      { tier: 1, min: 80,  max: 110 },
+      { tier: 3, min: 52,  max: 72  },
+      { tier: 6, min: 36,  max: 55  },
+      { tier: 8, min: 18,  max: 34  },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'jew_spell', type: 'prefix', slots: ['jewelry'],
+    stat: 'increasedDamageWithSpellSkills', labelFn: L.pct('Spell Skill Damage'),
+    tiers: [
+      { tier: 1, min: 0.26, max: 0.36 },
+      { tier: 3, min: 0.18, max: 0.26 },
+      { tier: 6, min: 0.10, max: 0.18 },
+      { tier: 8, min: 0.05, max: 0.11 },
+    ],
+  }),
+  // ─── Jewelry: suffixes ────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'jew_pickup', type: 'suffix', slots: ['jewelry'], stat: 'pickupRadiusFlat',
+    labelFn: L.flat('pickup radius'),
+    tiers: [
+      { tier: 1, min: 52, max: 72 },
+      { tier: 3, min: 32, max: 50 },
+      { tier: 6, min: 20, max: 32 },
+      { tier: 8, min: 10, max: 20 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'jew_dmg', type: 'suffix', slots: ['jewelry'], stat: 'damageMult',
+    labelFn: L.mult('damage'),
+    tiers: [
+      { tier: 1, min: 1.28, max: 1.42 },
+      { tier: 3, min: 1.16, max: 1.26 },
+      { tier: 6, min: 1.06, max: 1.14 },
+      { tier: 8, min: 1.02, max: 1.07 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'jew_hp', type: 'suffix', slots: ['jewelry'], stat: 'maxHealthFlat',
+    labelFn: L.flat('max Life'),
+    tiers: [
+      { tier: 1, min: 52, max: 72 },
+      { tier: 3, min: 34, max: 50 },
+      { tier: 6, min: 20, max: 32 },
+      { tier: 8, min: 10, max: 20 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'jew_manaregen', type: 'suffix', slots: ['jewelry'], stat: 'manaRegenPerS',
+    labelFn: L.flat('Mana regen/s'),
+    tiers: [
+      { tier: 1, min: 7, max: 12 },
+      { tier: 3, min: 4, max: 7  },
+      { tier: 6, min: 2, max: 4  },
+      { tier: 8, min: 1, max: 2  },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'jew_manacost', type: 'suffix', slots: ['jewelry'], stat: 'manaCostMult',
+    labelFn: L.reduct('Mana Costs'),
+    tiers: [
+      { tier: 1, min: 0.68, max: 0.80 },
+      { tier: 3, min: 0.78, max: 0.87 },
+      { tier: 6, min: 0.86, max: 0.94 },
+      { tier: 8, min: 0.92, max: 0.97 },
+    ],
+  }),
+  // ─── Helmet: prefixes ─────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'helm_hp', type: 'prefix', slots: ['helmet'], stat: 'maxHealthFlat',
+    labelFn: L.flat('max Life'),
+    tiers: [
+      { tier: 1, min: 80,  max: 110 },
+      { tier: 3, min: 48,  max: 70  },
+      { tier: 6, min: 30,  max: 46  },
+      { tier: 8, min: 18,  max: 30  },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'helm_xp', type: 'prefix', slots: ['helmet'], stat: 'xpMultiplier',
+    labelFn: L.mult('XP gain'),
+    tiers: [
+      { tier: 1, min: 1.28, max: 1.42 },
+      { tier: 3, min: 1.16, max: 1.26 },
+      { tier: 6, min: 1.08, max: 1.18 },
+      { tier: 8, min: 1.04, max: 1.12 },
+    ],
+  }),
+  // ─── Helmet: suffixes ─────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'helm_xp_suf', type: 'suffix', slots: ['helmet'], stat: 'xpMultiplier',
+    labelFn: L.mult('XP gain'),
+    tiers: [
+      { tier: 1, min: 1.22, max: 1.34 },
+      { tier: 3, min: 1.14, max: 1.23 },
+      { tier: 6, min: 1.06, max: 1.14 },
+      { tier: 8, min: 1.03, max: 1.09 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'helm_pickup', type: 'suffix', slots: ['helmet'], stat: 'pickupRadiusFlat',
+    labelFn: L.flat('pickup radius'),
+    tiers: [
+      { tier: 1, min: 42, max: 58 },
+      { tier: 3, min: 28, max: 40 },
+      { tier: 6, min: 18, max: 28 },
+      { tier: 8, min: 10, max: 18 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'helm_regen', type: 'suffix', slots: ['helmet'], stat: 'healthRegenPerS',
+    labelFn: L.flat('Life regen/s'),
+    tiers: [
+      { tier: 1, min: 5, max: 9 },
+      { tier: 3, min: 3, max: 6 },
+      { tier: 6, min: 2, max: 4 },
+      { tier: 8, min: 1, max: 2 },
+    ],
+  }),
+  // ─── Helmet: defense-type prefixes ────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'helm_armor_def', type: 'prefix', slots: ['helmet'], defenseTypes: ['armor'],
+    stat: 'armorFlat', labelFn: L.flat('Armour'),
+    tiers: [
+      { tier: 1, min: 55, max: 80 },
+      { tier: 3, min: 34, max: 50 },
+      { tier: 6, min: 14, max: 22 },
+      { tier: 8, min: 8,  max: 14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'helm_evasion_def', type: 'prefix', slots: ['helmet'], defenseTypes: ['evasion'],
+    stat: 'evasionFlat', labelFn: L.flat('Evasion'),
+    tiers: [
+      { tier: 1, min: 60, max: 88 },
+      { tier: 3, min: 36, max: 54 },
+      { tier: 6, min: 16, max: 24 },
+      { tier: 8, min: 8,  max: 15 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'helm_es_def', type: 'prefix', slots: ['helmet'], defenseTypes: ['energyShield'],
+    stat: 'energyShieldFlat', labelFn: L.flat('Energy Shield'),
+    tiers: [
+      { tier: 1, min: 48, max: 70 },
+      { tier: 3, min: 25, max: 38 },
+      { tier: 6, min: 9,  max: 16 },
+      { tier: 8, min: 5,  max: 9  },
+    ],
+  }),
+  // ─── Boots: prefixes ──────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'boot_speed', type: 'prefix', slots: ['boots'], stat: 'speedFlat',
+    labelFn: L.flat('movement speed'),
+    tiers: [
+      { tier: 1, min: 48, max: 65 },
+      { tier: 3, min: 35, max: 50 },
+      { tier: 6, min: 20, max: 32 },
+      { tier: 8, min: 10, max: 20 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'boot_pickup', type: 'prefix', slots: ['boots'], stat: 'pickupRadiusFlat',
+    labelFn: L.flat('pickup radius'),
+    tiers: [
+      { tier: 1, min: 42, max: 58 },
+      { tier: 3, min: 28, max: 40 },
+      { tier: 6, min: 16, max: 26 },
+      { tier: 8, min: 8,  max: 16 },
+    ],
+  }),
+  // ─── Boots: suffixes ──────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'boot_pickup_suf', type: 'suffix', slots: ['boots'], stat: 'pickupRadiusFlat',
+    labelFn: L.flat('pickup radius'),
+    tiers: [
+      { tier: 1, min: 42, max: 58 },
+      { tier: 3, min: 28, max: 40 },
+      { tier: 6, min: 15, max: 26 },
+      { tier: 8, min: 8,  max: 16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'boot_vitality', type: 'suffix', slots: ['boots'], stat: 'maxHealthFlat',
+    labelFn: L.flat('max Life'),
+    tiers: [
+      { tier: 1, min: 52, max: 72 },
+      { tier: 3, min: 32, max: 48 },
+      { tier: 6, min: 16, max: 26 },
+      { tier: 8, min: 8,  max: 16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'boot_regen', type: 'suffix', slots: ['boots'], stat: 'healthRegenPerS',
+    labelFn: L.flat('Life regen/s'),
+    tiers: [
+      { tier: 1, min: 4, max: 7 },
+      { tier: 3, min: 2, max: 4 },
+      { tier: 6, min: 1, max: 3 },
+      { tier: 8, min: 1, max: 2 },
+    ],
+  }),
+  // ─── Boots: defense-type prefixes ─────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'boot_armor_def', type: 'prefix', slots: ['boots'], defenseTypes: ['armor'],
+    stat: 'armorFlat', labelFn: L.flat('Armour'),
+    tiers: [
+      { tier: 1, min: 42, max: 60 },
+      { tier: 3, min: 26, max: 38 },
+      { tier: 6, min: 10, max: 18 },
+      { tier: 8, min: 6,  max: 12 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'boot_evasion_def', type: 'prefix', slots: ['boots'], defenseTypes: ['evasion'],
+    stat: 'evasionFlat', labelFn: L.flat('Evasion'),
+    tiers: [
+      { tier: 1, min: 45, max: 65 },
+      { tier: 3, min: 28, max: 40 },
+      { tier: 6, min: 11, max: 19 },
+      { tier: 8, min: 6,  max: 12 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'boot_es_def', type: 'prefix', slots: ['boots'], defenseTypes: ['energyShield'],
+    stat: 'energyShieldFlat', labelFn: L.flat('Energy Shield'),
+    tiers: [
+      { tier: 1, min: 35, max: 52 },
+      { tier: 3, min: 20, max: 32 },
+      { tier: 6, min: 7,  max: 13 },
+      { tier: 8, min: 4,  max: 8  },
+    ],
+  }),
+  // ─── Offhand: prefixes ────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'off_cd', type: 'prefix', slots: ['offhand'], stat: 'cooldownMult',
+    labelFn: L.reduct('cooldown length'),
+    tiers: [
+      { tier: 1, min: 0.66, max: 0.76 },
+      { tier: 3, min: 0.75, max: 0.82 },
+      { tier: 6, min: 0.82, max: 0.88 },
+      { tier: 8, min: 0.88, max: 0.92 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'off_dmg', type: 'prefix', slots: ['offhand'], stat: 'damageMult',
+    labelFn: L.mult('damage'),
+    tiers: [
+      { tier: 1, min: 1.28, max: 1.40 },
+      { tier: 3, min: 1.18, max: 1.28 },
+      { tier: 6, min: 1.10, max: 1.20 },
+      { tier: 8, min: 1.05, max: 1.13 },
+    ],
+  }),
+  // ─── Offhand: suffixes ────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'off_speed', type: 'suffix', slots: ['offhand'], stat: 'speedFlat',
+    labelFn: L.flat('movement speed'),
+    tiers: [
+      { tier: 1, min: 38, max: 52 },
+      { tier: 3, min: 26, max: 38 },
+      { tier: 6, min: 16, max: 26 },
+      { tier: 8, min: 8,  max: 16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'off_hp', type: 'suffix', slots: ['offhand'], stat: 'maxHealthFlat',
+    labelFn: L.flat('max Life'),
+    tiers: [
+      { tier: 1, min: 60, max: 85 },
+      { tier: 3, min: 38, max: 56 },
+      { tier: 6, min: 24, max: 38 },
+      { tier: 8, min: 12, max: 22 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'off_regen', type: 'suffix', slots: ['offhand'], stat: 'healthRegenPerS',
+    labelFn: L.flat('Life regen/s'),
+    tiers: [
+      { tier: 1, min: 5, max: 9 },
+      { tier: 3, min: 3, max: 5 },
+      { tier: 6, min: 1, max: 3 },
+      { tier: 8, min: 1, max: 2 },
+    ],
+  }),
+  // ─── Offhand: defense-type prefixes ───────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'off_armor_def', type: 'prefix', slots: ['offhand'], defenseTypes: ['armor'],
+    stat: 'armorFlat', labelFn: L.flat('Armour'),
+    tiers: [
+      { tier: 1, min: 65, max: 95 },
+      { tier: 3, min: 40, max: 58 },
+      { tier: 6, min: 20, max: 30 },
+      { tier: 8, min: 12, max: 20 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'off_evasion_def', type: 'prefix', slots: ['offhand'], defenseTypes: ['evasion'],
+    stat: 'evasionFlat', labelFn: L.flat('Evasion'),
+    tiers: [
+      { tier: 1, min: 72,  max: 105 },
+      { tier: 3, min: 44,  max: 64  },
+      { tier: 6, min: 22,  max: 34  },
+      { tier: 8, min: 12,  max: 22  },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'off_es_def', type: 'prefix', slots: ['offhand'], defenseTypes: ['energyShield'],
+    stat: 'energyShieldFlat', labelFn: L.flat('Energy Shield'),
+    tiers: [
+      { tier: 1, min: 65, max: 95 },
+      { tier: 3, min: 38, max: 55 },
+      { tier: 6, min: 14, max: 22 },
+      { tier: 8, min: 8,  max: 14 },
+    ],
+  }),
+  // ─── Melee reach ──────────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'melee_range', type: 'prefix', slots: ['weapon'],
+    weaponTypes: ['sword', 'axe', 'lance', 'staff'],
+    stat: 'meleeStrikeRange', labelFn: L.pct('melee strike range'),
+    tiers: [
+      { tier: 1, min: 0.40, max: 0.55 },
+      { tier: 3, min: 0.30, max: 0.42 },
+      { tier: 6, min: 0.18, max: 0.30 },
+      { tier: 8, min: 0.08, max: 0.20 },
+    ],
+  }),
+  // ─── Elemental: Physical ──────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'flat_physical', type: 'prefix', slots: ['weapon', 'jewelry'],
+    stat: 'flatPhysicalDamage', labelFn: L.flat('flat Physical Damage'),
+    tiers: [
+      { tier: 1, min: 35, max: 55 },
+      { tier: 3, min: 22, max: 35 },
+      { tier: 6, min: 14, max: 22 },
+      { tier: 8, min: 6,  max: 12 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'inc_physical', type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'],
+    stat: 'increasedPhysicalDamage', labelFn: L.pct('increased Physical Damage'),
+    tiers: [
+      { tier: 1, min: 0.36, max: 0.50 },
+      { tier: 3, min: 0.26, max: 0.36 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'more_physical', type: 'suffix', slots: ['weapon'],
+    stat: 'morePhysicalDamage', labelFn: L.pct('more Physical Damage'),
+    tiers: [
+      { tier: 1, min: 0.12, max: 0.20 },
+      { tier: 3, min: 0.08, max: 0.14 },
+    ],
+  }),
+  // ─── Elemental: Blaze ─────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'flat_blaze', type: 'prefix', slots: ['weapon', 'jewelry'],
+    stat: 'flatBlazeDamage', labelFn: L.flat('flat Blaze Damage'),
+    tiers: [
+      { tier: 1, min: 38, max: 58 },
+      { tier: 3, min: 24, max: 38 },
+      { tier: 6, min: 15, max: 25 },
+      { tier: 8, min: 7,  max: 14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'inc_blaze', type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'],
+    stat: 'increasedBlazeDamage', labelFn: L.pct('increased Blaze Damage'),
+    tiers: [
+      { tier: 1, min: 0.36, max: 0.50 },
+      { tier: 3, min: 0.26, max: 0.36 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'more_blaze', type: 'suffix', slots: ['weapon'],
+    stat: 'moreBlazeDamage', labelFn: L.pct('more Blaze Damage'),
+    tiers: [
+      { tier: 1, min: 0.12, max: 0.20 },
+      { tier: 3, min: 0.08, max: 0.14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'resist_blaze', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'],
+    stat: 'blazeResistance', labelFn: L.pct('Blaze Resistance'),
+    tiers: [
+      { tier: 1, min: 0.40, max: 0.56 },
+      { tier: 3, min: 0.30, max: 0.42 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.15 },
+    ],
+  }),
+  // ─── Elemental: Thunder ───────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'flat_thunder', type: 'prefix', slots: ['weapon', 'jewelry'],
+    stat: 'flatThunderDamage', labelFn: L.flat('flat Thunder Damage'),
+    tiers: [
+      { tier: 1, min: 32, max: 50 },
+      { tier: 3, min: 20, max: 32 },
+      { tier: 6, min: 12, max: 20 },
+      { tier: 8, min: 5,  max: 10 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'inc_thunder', type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'],
+    stat: 'increasedThunderDamage', labelFn: L.pct('increased Thunder Damage'),
+    tiers: [
+      { tier: 1, min: 0.36, max: 0.50 },
+      { tier: 3, min: 0.26, max: 0.36 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'more_thunder', type: 'suffix', slots: ['weapon'],
+    stat: 'moreThunderDamage', labelFn: L.pct('more Thunder Damage'),
+    tiers: [
+      { tier: 1, min: 0.12, max: 0.20 },
+      { tier: 3, min: 0.08, max: 0.14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'resist_thunder', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'],
+    stat: 'thunderResistance', labelFn: L.pct('Thunder Resistance'),
+    tiers: [
+      { tier: 1, min: 0.40, max: 0.56 },
+      { tier: 3, min: 0.30, max: 0.42 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.15 },
+    ],
+  }),
+  // ─── Elemental: Frost ─────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'flat_frost', type: 'prefix', slots: ['weapon', 'jewelry'],
+    stat: 'flatFrostDamage', labelFn: L.flat('flat Frost Damage'),
+    tiers: [
+      { tier: 1, min: 35, max: 55 },
+      { tier: 3, min: 22, max: 35 },
+      { tier: 6, min: 13, max: 23 },
+      { tier: 8, min: 6,  max: 12 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'inc_frost', type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'],
+    stat: 'increasedFrostDamage', labelFn: L.pct('increased Frost Damage'),
+    tiers: [
+      { tier: 1, min: 0.36, max: 0.50 },
+      { tier: 3, min: 0.26, max: 0.36 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'more_frost', type: 'suffix', slots: ['weapon'],
+    stat: 'moreFrostDamage', labelFn: L.pct('more Frost Damage'),
+    tiers: [
+      { tier: 1, min: 0.12, max: 0.20 },
+      { tier: 3, min: 0.08, max: 0.14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'resist_frost', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'],
+    stat: 'frostResistance', labelFn: L.pct('Frost Resistance'),
+    tiers: [
+      { tier: 1, min: 0.40, max: 0.56 },
+      { tier: 3, min: 0.30, max: 0.42 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.15 },
+    ],
+  }),
+  // ─── Elemental: Holy ──────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'flat_holy', type: 'prefix', slots: ['weapon', 'jewelry'],
+    stat: 'flatHolyDamage', labelFn: L.flat('flat Holy Damage'),
+    tiers: [
+      { tier: 1, min: 38, max: 62 },
+      { tier: 3, min: 24, max: 38 },
+      { tier: 6, min: 14, max: 24 },
+      { tier: 8, min: 7,  max: 14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'inc_holy', type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'],
+    stat: 'increasedHolyDamage', labelFn: L.pct('increased Holy Damage'),
+    tiers: [
+      { tier: 1, min: 0.36, max: 0.50 },
+      { tier: 3, min: 0.26, max: 0.36 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'more_holy', type: 'suffix', slots: ['weapon'],
+    stat: 'moreHolyDamage', labelFn: L.pct('more Holy Damage'),
+    tiers: [
+      { tier: 1, min: 0.12, max: 0.20 },
+      { tier: 3, min: 0.08, max: 0.14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'resist_holy', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'],
+    stat: 'holyResistance', labelFn: L.pct('Holy Resistance'),
+    tiers: [
+      { tier: 1, min: 0.40, max: 0.56 },
+      { tier: 3, min: 0.30, max: 0.42 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.15 },
+    ],
+  }),
+  // ─── Elemental: Unholy ────────────────────────────────────────────────────
+  ...defineAffixFamily({
+    id: 'flat_unholy', type: 'prefix', slots: ['weapon', 'jewelry'],
+    stat: 'flatUnholyDamage', labelFn: L.flat('flat Unholy Damage'),
+    tiers: [
+      { tier: 1, min: 36, max: 58 },
+      { tier: 3, min: 22, max: 36 },
+      { tier: 6, min: 14, max: 22 },
+      { tier: 8, min: 7,  max: 14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'inc_unholy', type: 'prefix', slots: ['weapon', 'armor', 'jewelry', 'offhand'],
+    stat: 'increasedUnholyDamage', labelFn: L.pct('increased Unholy Damage'),
+    tiers: [
+      { tier: 1, min: 0.36, max: 0.50 },
+      { tier: 3, min: 0.26, max: 0.36 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.16 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'more_unholy', type: 'suffix', slots: ['weapon'],
+    stat: 'moreUnholyDamage', labelFn: L.pct('more Unholy Damage'),
+    tiers: [
+      { tier: 1, min: 0.12, max: 0.20 },
+      { tier: 3, min: 0.08, max: 0.14 },
+    ],
+  }),
+  ...defineAffixFamily({
+    id: 'resist_unholy', type: 'suffix', slots: ['armor', 'jewelry', 'helmet', 'boots'],
+    stat: 'unholyResistance', labelFn: L.pct('Unholy Resistance'),
+    tiers: [
+      { tier: 1, min: 0.40, max: 0.56 },
+      { tier: 3, min: 0.30, max: 0.42 },
+      { tier: 6, min: 0.16, max: 0.26 },
+      { tier: 8, min: 0.08, max: 0.15 },
+    ],
+  }),
 ];
+
 
 const RAW_IMPLICIT_AFFIX_POOL = [
   {
-    id: 'implicit_weapon_edge_minor',
+    id: 'implicit_weapon_edge',
     kind: 'implicit',
     type: 'prefix',
     family: 'weapon_edge',
     group: 'implicit_weapon_edge',
     slots: ['weapon'],
     stat: 'damageMult',
-    value: 1.06,
-    label: 'Implicit: +6% weapon damage',
-    tier: 'minor',
+    tier: 6,
+    min: 1.04, max: 1.08,
+    labelFn: L.mult('damage'),
   },
   {
-    id: 'implicit_armor_guard_minor',
+    id: 'implicit_armor_guard',
     kind: 'implicit',
     type: 'prefix',
     family: 'armor_guard',
     group: 'implicit_armor_guard',
     slots: ['armor', 'helmet', 'boots', 'offhand'],
     stat: 'maxHealthFlat',
-    value: 10,
-    label: 'Implicit: +10 maximum life',
-    tier: 'minor',
+    tier: 8,
+    min: 8, max: 14,
+    labelFn: L.flat('maximum Life'),
   },
   {
-    id: 'implicit_jewelry_focus_minor',
+    id: 'implicit_jewelry_focus',
     kind: 'implicit',
     type: 'prefix',
     family: 'jewelry_focus',
     group: 'implicit_jewelry_focus',
     slots: ['jewelry'],
     stat: 'xpMultiplier',
-    value: 1.03,
-    label: 'Implicit: +3% experience gain',
-    tier: 'minor',
+    tier: 8,
+    min: 1.02, max: 1.05,
+    labelFn: L.mult('experience gain'),
   },
 ];
+
 
 export const EXPLICIT_AFFIX_POOL = RAW_AFFIX_POOL.map((def) => enrichAffix({ ...def, kind: def.kind ?? 'explicit' }));
 export const IMPLICIT_AFFIX_POOL = RAW_IMPLICIT_AFFIX_POOL.map(enrichAffix);

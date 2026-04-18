@@ -6,6 +6,8 @@
  * All public mutating methods are O(gridW × gridH) — items are rare, so this is fine.
  */
 
+const MAX_CURRENCY_STACK = 20;
+
 const RARITY_COLORS = {
   normal: '#9e9e9e',
   magic:  '#6b9cd4',
@@ -63,9 +65,35 @@ export class InventoryGrid {
 
   /**
    * Remove item by uid.
-   * @returns {object|null} the removed itemDef, or null if not found
+   * For stacked currency items (stackCount > 1) this decrements the stack
+   * and returns a single-unit copy rather than removing the grid entry.
+   * @returns {object|null} the removed (or decremented) itemDef, or null if not found
    */
   remove(uid) {
+    const entry = this._items.get(uid);
+    if (!entry) return null;
+    const { itemDef, gridX, gridY } = entry;
+    // Stacked currency — peel off one unit
+    if (itemDef.type === 'currency' && (itemDef.stackCount ?? 1) > 1) {
+      const singleUnit = { ...itemDef, stackCount: 1 };
+      itemDef.stackCount -= 1;
+      return singleUnit;
+    }
+    for (let r = gridY; r < gridY + itemDef.gridH; r++) {
+      for (let c = gridX; c < gridX + itemDef.gridW; c++) {
+        if (this._grid[r][c] === uid) this._grid[r][c] = null;
+      }
+    }
+    this._items.delete(uid);
+    return itemDef;
+  }
+
+  /**
+   * Remove item by uid, always removing the entire stack even for currency.
+   * Use for move operations (left-click pickup). Use remove() for single-unit orb consumption.
+   * @returns {object|null}
+   */
+  removeStack(uid) {
     const entry = this._items.get(uid);
     if (!entry) return null;
     const { itemDef, gridX, gridY } = entry;
@@ -95,9 +123,22 @@ export class InventoryGrid {
 
   /**
    * Auto-place at first available position.
+   * For currency items, attempts to stack onto an existing entry of the same id
+   * before claiming a new cell.
    * @returns {boolean} success (false = inventory full)
    */
   autoPlace(itemDef) {
+    // Currency stacking — find an existing partial stack
+    if (itemDef.type === 'currency') {
+      for (const [, entry] of this._items) {
+        const existing = entry.itemDef;
+        if (existing.id === itemDef.id && (existing.stackCount ?? 1) < MAX_CURRENCY_STACK) {
+          existing.stackCount = (existing.stackCount ?? 1) + (itemDef.stackCount ?? 1);
+          if (existing.stackCount > MAX_CURRENCY_STACK) existing.stackCount = MAX_CURRENCY_STACK;
+          return true;
+        }
+      }
+    }
     const pos = this.findFirstFit(itemDef);
     if (!pos) return false;
     return this.place(itemDef, pos.col, pos.row);
@@ -160,6 +201,7 @@ export class InventoryGrid {
         // Currency orb fields
         icon:        itemDef.icon ?? null,
         currencyAction: itemDef.currencyAction ?? null,
+        stackCount:  itemDef.stackCount ?? (itemDef.type === 'currency' ? 1 : undefined),
       })),
     };
   }

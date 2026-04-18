@@ -24,6 +24,18 @@ import { ITEM_GENERATION_TUNING } from '../content/tuning/index.js';
 import { clampAreaLevel } from '../config/scalingConfig.js';
 import { normalizeWeaponItem } from './weaponTypes.js';
 
+/**
+ * Translate a runtime-normalized item slot (e.g. 'mainhand', 'bodyarmor', 'amulet')
+ * back to the canonical affix-pool vocabulary ('weapon', 'armor', 'jewelry').
+ * Slots that need no translation (helmet, boots, offhand, …) are returned as-is.
+ */
+function affixSlotFor(slot) {
+  if (slot === 'mainhand') return 'weapon';
+  if (slot === 'bodyarmor') return 'armor';
+  if (slot === 'amulet' || slot === 'ring' || slot === 'ring1' || slot === 'ring2') return 'jewelry';
+  return slot;
+}
+
 // Rarity display colors — mirrors PoE naming tiers
 export const RARITY_COLORS = {
   normal: '#9e9e9e',
@@ -97,10 +109,11 @@ export function weightRollWithRng(candidates = [], rng = Math.random) {
 }
 
 export function buildAffixItemContext(baseDef, itemLevel) {
+  const slot = affixSlotFor(baseDef.slot);
   const defenseTypes = baseDef.defenseType ? baseDef.defenseType.split('/') : [];
   const levelBracket = getAffixLevelBracket(itemLevel);
   const itemTags = new Set(Array.isArray(baseDef.tags) ? baseDef.tags.filter(Boolean) : []);
-  itemTags.add(baseDef.slot);
+  itemTags.add(slot);
   itemTags.add(levelBracket);
   if (baseDef.weaponType) {
     itemTags.add(baseDef.weaponType);
@@ -114,8 +127,8 @@ export function buildAffixItemContext(baseDef, itemLevel) {
   return {
     itemLevel,
     levelBracket,
-    itemClass: baseDef.slot,
-    slot: baseDef.slot,
+    itemClass: slot,
+    slot,
     weaponType: baseDef.weaponType ?? null,
     defenseTypes,
     tags: [...itemTags],
@@ -123,18 +136,20 @@ export function buildAffixItemContext(baseDef, itemLevel) {
 }
 
 export function buildExplicitCandidates(baseDef, itemLevel) {
+  const slot = affixSlotFor(baseDef.slot);
   const itemContext = buildAffixItemContext(baseDef, itemLevel);
   return EXPLICIT_AFFIX_POOL.filter((a) => {
-    if (!a.slots.includes(baseDef.slot)) return false;
+    if (!a.slots.includes(slot)) return false;
     if (!isAffixTierUnlocked(itemLevel, a.tier)) return false;
     return affixMatchesItemContext(a, itemContext);
   });
 }
 
 export function buildImplicitCandidates(baseDef, itemLevel) {
+  const slot = affixSlotFor(baseDef.slot);
   const itemContext = buildAffixItemContext(baseDef, itemLevel);
   return IMPLICIT_AFFIX_POOL.filter((a) => {
-    if (!a.slots.includes(baseDef.slot)) return false;
+    if (!a.slots.includes(slot)) return false;
     if (!isAffixTierUnlocked(itemLevel, a.tier)) return false;
     return affixMatchesItemContext(a, itemContext);
   });
@@ -144,31 +159,58 @@ export function rollTierForCandidates(candidates = [], itemLevel, rng = Math.ran
   const bracket = getAffixLevelBracket(itemLevel);
   const weights = getTierWeightsForLevelBracket(bracket);
   const tierCandidates = Object.entries(weights)
-    .filter(([tier, weight]) => weight > 0 && candidates.some((candidate) => candidate.tier === tier))
-    .map(([tier, weight]) => ({ tier, weight }));
+    .filter(([tier, weight]) => weight > 0 && candidates.some((candidate) => candidate.tier === Number(tier)))
+    .map(([tier, weight]) => ({ tier: Number(tier), weight }));
   const selected = weightRollWithRng(tierCandidates, rng);
   return selected?.tier ?? null;
 }
 
-export function normalizeAffixForItem(affix) {
+function _rollAffixValue(min, max, stat, rng) {
+  const raw = min + rng() * (max - min);
+  // Multiplier stats (value near 1.0) → 2 decimal places; flat stats → integer
+  const isMultiplier = min >= 0.5 && max <= 5.0 && (max - min) < 2;
+  return isMultiplier ? Math.round(raw * 100) / 100 : Math.round(raw);
+}
+
+export function normalizeAffixForItem(affix, rng = Math.random) {
   const resolved = typeof affix === 'string' ? (AFFIX_BY_ID[affix] ?? null) : affix;
   if (!resolved) return null;
+
+  // Use pre-rolled value from saved instances; otherwise roll from min/max range
+  let rolledValue = resolved.rolledValue;
+  const poolMin = resolved.min;
+  const poolMax = resolved.max;
+  if (rolledValue == null && poolMin != null && poolMax != null) {
+    rolledValue = _rollAffixValue(poolMin, poolMax, resolved.modifier?.statKey ?? resolved.stat, rng);
+  }
+
+  // Compute label: use labelFn if available (pool def), else fall back to stored label
+  let label = resolved.label;
+  if (resolved.labelFn && rolledValue != null) {
+    label = resolved.labelFn(rolledValue);
+  }
+
+  const value = rolledValue ?? resolved.modifier?.value ?? resolved.value;
+
   return {
     id: resolved.id,
     kind: resolved.kind ?? 'explicit',
     type: resolved.type,
     family: resolved.family,
     group: resolved.group,
-    label: resolved.label,
+    label,
     stat: resolved.modifier?.statKey ?? resolved.stat,
-    value: resolved.modifier?.value ?? resolved.value,
+    value,
+    rolledValue,
+    min: poolMin,
+    max: poolMax,
     tier: resolved.tier,
     minItemLevel: resolved.minItemLevel,
     goldValue: resolved.goldValue,
     weight: resolved.weight,
     tags: resolved.tags,
     pool: resolved.pool,
-    modifier: resolved.modifier,
+    modifier: resolved.modifier ? { ...resolved.modifier, value } : resolved.modifier,
   };
 }
 
@@ -185,7 +227,15 @@ function splitAffixSets(itemDef = {}) {
 export function hydrateItemAffixState(itemDef = {}) {
   const baseStats = itemDef.baseStats ?? itemDef.stats ?? {};
   const { explicit, implicit } = splitAffixSets(itemDef);
-  const explicitAffixes = explicit.map(normalizeAffixForItem).filter(Boolean);
+  const normalized = explicit.map(normalizeAffixForItem).filter(Boolean);
+
+  // Enforce rarity-driven caps when loading from saves or content definitions.
+  const caps = getAffixCapsForRarity(itemDef.rarity ?? 'normal');
+  const explicitAffixes = [
+    ...normalized.filter((a) => a.type === 'prefix').slice(0, caps.prefix),
+    ...normalized.filter((a) => a.type === 'suffix').slice(0, caps.suffix),
+  ];
+
   const implicitAffixes = implicit.map(normalizeAffixForItem).filter(Boolean);
   const affixes = [...implicitAffixes, ...explicitAffixes];
   const stats = mergeAffixStats(baseStats, affixes);
@@ -318,8 +368,8 @@ export function generateItem(baseDef, rarity, options = {}) {
     return normalizeWeaponItem(hydrated);
   }
 
-  const explicitAffixes = rollExplicitAffixes(baseDef, rarity, itemLevel, rng).map(normalizeAffixForItem);
-  const implicitAffixes = rollImplicitAffixes(baseDef, itemLevel, rng).map(normalizeAffixForItem);
+  const explicitAffixes = rollExplicitAffixes(baseDef, rarity, itemLevel, rng).map((a) => normalizeAffixForItem(a, rng));
+  const implicitAffixes = rollImplicitAffixes(baseDef, itemLevel, rng).map((a) => normalizeAffixForItem(a, rng));
   const affixes = [...implicitAffixes, ...explicitAffixes];
   const statsWithImplicits = mergeAffixStats(baseDef.stats ?? {}, implicitAffixes);
   const finalStats = mergeAffixStats(statsWithImplicits, explicitAffixes);

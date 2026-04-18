@@ -30,8 +30,8 @@ const RARITY_CLRS = {
 
 function fmtStat(key, value) {
   const map = {
-    damageMult:       (v) => `+${Math.round((v - 1) * 100)}% weapon damage`,
-    cooldownMult:     (v) => `${Math.round((v - 1) * 100)}% weapon cooldown`,
+    damageMult:       (v) => `+${Math.round((v - 1) * 100)}% damage`,
+    cooldownMult:     (v) => `${Math.round((v - 1) * 100)}% cooldown length`,
     maxHealthFlat:    (v) => `+${v} max life`,
     healthRegenPerS:  (v) => `+${v} life regen/s`,
     xpMultiplier:     (v) => `+${Math.round((v - 1) * 100)}% XP gain`,
