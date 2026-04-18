@@ -28,6 +28,7 @@ import { calcSellPrice } from '../game/ItemPricing.js';
 import { canEquipItemInSlot, getWeaponTypeLabel, listWeaponTypes, resolveWeaponType } from '../game/data/weaponTypes.js';
 
 const CELL_SIZE = 72;
+const DOLL_TILE_SIZE = 56; // fixed desktop tile size for the paper doll
 const LONG_PRESS_MS = 420;
 
 function pulse(ms = 10) {
@@ -232,12 +233,10 @@ export function InventoryScreen({
   const [selectedSkillGemUid, setSelectedSkillGemUid] = useState(null);
   const [selectedMobileItemUid, setSelectedMobileItemUid] = useState(null);
   const [weaponFilter, setWeaponFilter] = useState('all');
-  const [dollTileSize, setDollTileSize] = useState(CELL_SIZE);
   const [gridCellSize, setGridCellSize] = useState(CELL_SIZE);
   const touchTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
   const suppressClickUntilRef = useRef(0);
-  const leftPanelRef = useRef(null);
   const bottomHalfRef = useRef(null);
   const { cols, rows, items } = inventory;
 
@@ -248,26 +247,7 @@ export function InventoryScreen({
     if (updated && updated !== hoveredItem) setHoveredItem(updated);
   }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fit tileSize so the paper doll fills the left panel height without scrolling.
-  // The doll spans 10 tile-units tall (rows: 2+3+3+2) plus 3 row-gaps.
-  // Re-runs when tab changes so switching back from Gems re-measures correctly.
   const tab = activeTab ?? 'equipment';
-  useEffect(() => {
-    if (mobileMode || tab !== 'equipment' || !leftPanelRef.current) return;
-    const el = leftPanelRef.current;
-    const measure = () => {
-      const filterBar = el.querySelector('.inv-filter-bar');
-      const filterH = filterBar ? filterBar.offsetHeight + 8 : 48;
-      const rowGapPx = 4; // gap passed to doll rows
-      const usable = el.clientHeight - filterH - (3 * rowGapPx);
-      const dollHeightUnits = 10; // 2+3+3+2 stacked tile-unit rows
-      const computed = Math.floor(usable / dollHeightUnits);
-      setDollTileSize(Math.max(24, Math.min(CELL_SIZE, computed)));
-    };
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [mobileMode, tab]);
 
   // Auto-fit grid cells to fill the bottom half.
   useEffect(() => {
@@ -290,7 +270,7 @@ export function InventoryScreen({
   const cellSize = mobileMode
     ? Math.max(32, Math.min(40, Math.floor((mobileViewport - 54) / Math.max(cols, 1))))
     : gridCellSize;
-  const tileSize = mobileMode ? Math.max(30, Math.min(38, cellSize + 2)) : dollTileSize;
+  const tileSize = mobileMode ? Math.max(30, Math.min(38, cellSize + 2)) : DOLL_TILE_SIZE;
   const showGearPanel = !mobileMode || mobileSection === 'gear';
   const showBagPanel = !mobileMode || mobileSection === 'bag';
   const isGemItem = (item) => item?.type === 'support_gem' || item?.type === 'skill_gem';
@@ -653,26 +633,10 @@ export function InventoryScreen({
 
   return (
     <div className="inventory-overlay" onContextMenu={(e) => e.preventDefault()}>
-      <div className={`inventory-panel inv-panel-wide phone-shell-panel${tab === 'gems' ? ' inv-panel-gems' : ''}`}>
+      <div className={`inventory-panel inv-panel-wide phone-shell-panel`}>
         {/* ── Header ──────────────────────────────────────── */}
         <div className="inv-header phone-shell-header">
           <span className="inv-title">INVENTORY</span>
-
-          {/* Tab switcher */}
-          <div className="inv-tabs">
-            <button
-              className={`inv-tab${tab === 'equipment' ? ' inv-tab--active' : ''}`}
-              onClick={() => onTabChange?.('equipment')}
-            >
-              ⚔ Equipment
-            </button>
-            <button
-              className={`inv-tab${tab === 'gems' ? ' inv-tab--active' : ''}`}
-              onClick={() => onTabChange?.('gems')}
-            >
-              ◆ Gems
-            </button>
-          </div>
 
           <div className="inv-header-hint inv-header-hint--help">
             {mobileMode ? (
@@ -680,7 +644,7 @@ export function InventoryScreen({
                 ? 'Tap to move · hold an item to quick-equip or use it · tap a destination to place'
                 : 'Your worn gear is grouped here so it is easier to manage on smaller screens.'}</>
             ) : (
-              <><kbd>V</kbd> equip &nbsp;·&nbsp; <kbd>G</kbd> gems &nbsp;·&nbsp; <kbd>Esc</kbd> close</>
+              <><kbd>V</kbd> equip &nbsp;·&nbsp; <kbd>Esc</kbd> close</>
             )}
           </div>
           <div className="inv-header-hint inv-header-hint--gold">Gold: {gold ?? 0}</div>
@@ -693,7 +657,7 @@ export function InventoryScreen({
         {/* ══ TOP HALF — equip/gem panels ═══════════════════ */}
         <div className="inv-top-half">
 
-        {mobileMode && tab === 'equipment' && (
+        {mobileMode && (
           <>
             <div className="inv-mobile-view-tabs">
               <button
@@ -725,73 +689,10 @@ export function InventoryScreen({
           </>
         )}
 
-        {mobileMode && tab === 'gems' && (
-          <>
-            <div className="inv-mobile-view-tabs inv-mobile-view-tabs--gems">
-              <button
-                type="button"
-                className={`inv-mobile-view-tab${mobileGemStep === 'supports' ? ' inv-mobile-view-tab--active' : ''}`}
-                onClick={() => setMobileGemStep('supports')}
-              >
-                ① Support Gems
-              </button>
-              <button
-                type="button"
-                className={`inv-mobile-view-tab${mobileGemStep === 'sockets' ? ' inv-mobile-view-tab--active' : ''}`}
-                onClick={() => setMobileGemStep('sockets')}
-              >
-                ② Link Skills
-              </button>
-            </div>
-
-            <div className="inv-section-card inv-section-card--gems">
-              <div>
-                <div className="inv-section-step">{selectedSupportGem ? 'Step 2 · Link the selected support' : 'Step 1 · Choose a support gem'}</div>
-                <div className="inv-section-copy">
-                  {selectedSupportGem
-                    ? <>Selected: <strong>{selectedSupportGem.name}</strong>. Open <strong>Link Skills</strong> and tap a highlighted compatible socket.</>
-                    : selectedSkillGem
-                      ? <>Selected: <strong>{selectedSkillGem.name}</strong>. Open <strong>Link Skills</strong> and tap a slot action to equip it.</>
-                      : 'Start by picking a support gem or skill gem from your inventory, then move to Link Skills.'}
-                </div>
-              </div>
-              {(selectedSupportGem || selectedSkillGem) && (
-                <div className="inv-section-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => setMobileGemStep('supports')}>Change</button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      setSelectedSupportGemUid(null);
-                      setSelectedSkillGemUid(null);
-                    }}
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* ── Tab Content ─────────────────────────────────── */}
-        {tab === 'equipment' && (
+        {/* ── Equipment body: paper doll (left) + Gem Panel (right) ── */}
         <div className={`inv-body${mobileMode ? ' inv-body--mobile' : ''}`}>
-          <div className={`inv-left-panel${showGearPanel ? '' : ' inv-mobile-hidden'}`} ref={!mobileMode ? leftPanelRef : undefined}>
-            <div className="inv-filter-bar">
-              <span className="inv-filter-label">Weapon Filter</span>
-              {WEAPON_FILTERS.map((filter) => (
-                <button
-                  key={filter.id}
-                  type="button"
-                  className={`inv-filter-chip${weaponFilter === filter.id ? ' inv-filter-chip--active' : ''}`}
-                  onClick={() => setWeaponFilter(filter.id)}
-                >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-            {/* ── ARPG Paper Doll ─────────────────────────── */}
+          {/* ── Paper Doll column ─────────────────────────── */}
+          <div className={`inv-left-panel${showGearPanel ? '' : ' inv-mobile-hidden'}`}>
             <div className="equip-doll-arpg" style={{ gap }}>
 
               {/* Row 1 — Helmet centred */}
@@ -804,7 +705,6 @@ export function InventoryScreen({
                 {T('mainhand')}
                 <div className="doll-col-mid" style={{ gap }}>
                   {T('amulet')}
-                  {/* spacer to align ring slots */}
                   <div style={{ flex: 1 }} />
                 </div>
                 {T('offhand')}
@@ -826,38 +726,9 @@ export function InventoryScreen({
             </div>
           </div>
 
-          {/* ── Divider ─────────────────────────────────── */}
-          {!mobileMode && <div className="inv-divider" />}
-        </div>
-        )}
-
-        {/* ── Gems Tab ────────────────────────────────────── */}
-        {tab === 'gems' && (
-          <div className={`inv-body inv-body--gems${mobileMode ? ' inv-body--mobile inv-body--gems-mobile' : ''}`}>
-            {mobileMode ? (
-              mobileGemStep === 'supports' ? (
-                renderGemSelectionList()
-              ) : (
-                <GemPanel
-                  primarySkill={primarySkill ?? null}
-                  activeSkills={activeSkills ?? []}
-                  cursorItem={cursorItem}
-                  selectedSupportGem={selectedSupportGem}
-                  selectedSkillGem={selectedSkillGem}
-                  onClearSelectedGem={() => setSelectedSupportGemUid(null)}
-                  onClearSelectedSkillGem={() => setSelectedSkillGemUid(null)}
-                  onSocketGem={onSocketGem}
-                  onUnsocketGem={onUnsocketGem}
-                  onEquipSkillGem={onEquipSkillGem}
-                  onUnequipSkillGem={onUnequipSkillGem}
-                  debugMode={debugMode}
-                  onDebugLevelUpSkillGem={onDebugLevelUpSkillGem}
-                  mobileMode={mobileMode}
-                  onHoverTooltip={handleGemTooltipHover}
-                  onClearTooltip={clearGemTooltipHover}
-                />
-              )
-            ) : (
+          {/* ── Gem Panel column (desktop: beside doll) ───── */}
+          {!mobileMode && (
+            <div className="inv-gem-side">
               <GemPanel
                 primarySkill={primarySkill ?? null}
                 activeSkills={activeSkills ?? []}
@@ -875,9 +746,31 @@ export function InventoryScreen({
                 onHoverTooltip={handleGemTooltipHover}
                 onClearTooltip={clearGemTooltipHover}
               />
-            )}
-          </div>
-        )}
+            </div>
+          )}
+
+          {/* ── Mobile: GemPanel in gear view ───────────── */}
+          {mobileMode && showGearPanel && (
+            <GemPanel
+              primarySkill={primarySkill ?? null}
+              activeSkills={activeSkills ?? []}
+              cursorItem={cursorItem}
+              selectedSupportGem={selectedSupportGem}
+              selectedSkillGem={selectedSkillGem}
+              onClearSelectedGem={() => setSelectedSupportGemUid(null)}
+              onClearSelectedSkillGem={() => setSelectedSkillGemUid(null)}
+              onSocketGem={onSocketGem}
+              onUnsocketGem={onUnsocketGem}
+              onEquipSkillGem={onEquipSkillGem}
+              onUnequipSkillGem={onUnequipSkillGem}
+              debugMode={debugMode}
+              onDebugLevelUpSkillGem={onDebugLevelUpSkillGem}
+              mobileMode={mobileMode}
+              onHoverTooltip={handleGemTooltipHover}
+              onClearTooltip={clearGemTooltipHover}
+            />
+          )}
+        </div>
 
         </div>{/* end inv-top-half */}
 

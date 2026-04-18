@@ -414,8 +414,6 @@ export function GemPanel({ primarySkill, activeSkills, cursorItem, selectedSuppo
   return (
     <div className={`gem-panel-body gem-panel-body--paperdoll${mobileMode ? ' gem-panel-body--mobile' : ''}`}>
       <div className="gem-doll-wrap">
-        <p className="gem-section-label">SKILLS & SOCKETS</p>
-
         {mobileMode ? (
           <div className={`gem-flow-card${cursorGem ? ' gem-flow-card--selected' : ''}`}>
             <div className="gem-flow-step">{cursorGem ? 'Step 2 · Link the selected support' : 'Link Skills view'}</div>
@@ -447,29 +445,13 @@ export function GemPanel({ primarySkill, activeSkills, cursorItem, selectedSuppo
           </div>
         ) : cursorGem ? (
           <p className="gem-desktop-hint">
-            Held support gem: <span className="gem-selected-name">{cursorGem.name}</span> (click or drop into compatible socket)
+            Held support gem: <span className="gem-selected-name">{cursorGem.name}</span> — drop into a compatible socket
           </p>
-        ) : (
+        ) : cursorSkillGem ? (
           <p className="gem-desktop-hint">
-            {cursorSkillGem
-              ? <>Held skill gem: <span className="gem-selected-name">{cursorSkillGem.name}</span> (click or drop into a skill slot)</>
-              : 'Click a skill or support gem to pick it up, then click or drop it into a skill/support socket.'}
+            Held skill gem: <span className="gem-selected-name">{cursorSkillGem.name}</span> — drop into a skill slot
           </p>
-        )}
-
-        {blockedSkills.length > 0 && (
-          <div className="gem-gate-summary">
-            <div className="gem-gate-summary__title">
-              {blockedSkills.length} skill gate{blockedSkills.length === 1 ? '' : 's'} active
-            </div>
-            <div className="gem-gate-summary__copy">
-              {blockedSkills.map((skill) => `${skill._slotLabel}: ${skill.blockedReason}`).join(' · ')}
-            </div>
-            {requirementHints.map((hint, index) => (
-              <div key={`${hint}-${index}`} className="gem-gate-summary__hint">{hint}</div>
-            ))}
-          </div>
-        )}
+        ) : null}
 
         {mobileMode && skills.length > 1 && (
           <div className="gem-skill-switcher">

@@ -15,7 +15,7 @@ import { CharacterSelectScreen } from './components/CharacterSelectScreen.jsx';
 import { DeathScreen } from './components/DeathScreen.jsx';
 import { HubScreen } from './components/HubScreen.jsx';
 import { MapSelectScreen } from './components/MapSelectScreen.jsx';
-import { MapCompleteScreen } from './components/MapCompleteScreen.jsx';
+import { MapClearBanner } from './components/MapClearBanner.jsx';
 import { CharacterSheet } from './components/CharacterSheet.jsx';
 import { VendorScreen } from './components/VendorScreen.jsx';
 import { BossAnnouncement } from './components/BossAnnouncement.jsx';
@@ -244,6 +244,7 @@ export default function App() {
   const [activeCharacterName, setActiveCharacterName] = useState('');
   const [activeMapInfo, setActiveMapInfo] = useState(null);
   const [mapCompleteInfo, setMapCompleteInfo] = useState(null);
+  const [mapClearBanner, setMapClearBanner] = useState(null); // { mapName, bossName }
   const [vendorStock, setVendorStock] = useState([]);
   const [vendorFeedback, setVendorFeedback] = useState('');
   const [sheetMode, setSheetMode] = useState('sheet');
@@ -316,7 +317,14 @@ export default function App() {
 
   const handleMapComplete = useCallback((stats) => {
     setMapCompleteInfo(stats ?? null);
-    setScreen('MAP_COMPLETE');
+    // Auto-stay in the map — show a transient banner instead of a blocking screen
+    const engine = engineRef.current;
+    engine?.stayInClearedMap?.();
+    setScreen('RUNNING');
+    setMapClearBanner({
+      mapName: stats?.mapName ?? 'Unknown Map',
+      bossName: stats?.bossName ?? '',
+    });
   }, []);
 
   const handleAchievementUnlock = useCallback((characterId) => {
@@ -1452,14 +1460,6 @@ export default function App() {
         />
       )}
 
-      {screen === 'MAP_COMPLETE' && (
-        <MapCompleteScreen
-          stats={mapCompleteInfo ?? {}}
-          onReturnHub={handleReturnToHubAfterClear}
-          onStay={handleStayInMapAfterClear}
-        />
-      )}
-
       {screen === 'SHEET' && (
         <CharacterSheet
           hud={hud}
@@ -1656,6 +1656,14 @@ export default function App() {
         <BossAnnouncement
           bossName={bossAnnouncement}
           onDone={() => setBossAnnouncement(null)}
+        />
+      )}
+
+      {mapClearBanner && (
+        <MapClearBanner
+          mapName={mapClearBanner.mapName}
+          bossName={mapClearBanner.bossName}
+          onDone={() => setMapClearBanner(null)}
         />
       )}
 
